@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -q '\\.rs'; then cd /c/Users/lucam/Projects/curl-tui && /c/Users/lucam/.cargo/bin/cargo check --workspace 2>&1 | tail -20; fi",
+            "timeout": 30000
+          }
+        ]
+      }
+    ],
+    "PreCommit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /c/Users/lucam/Projects/curl-tui && /c/Users/lucam/.cargo/bin/cargo fmt --all --check && /c/Users/lucam/.cargo/bin/cargo clippy --workspace -- -D warnings && /c/Users/lucam/.cargo/bin/cargo test --workspace",
+            "timeout": 120000
+          }
+        ]
+      }
+    ]
+  }
+}
