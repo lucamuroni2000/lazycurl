@@ -1,6 +1,7 @@
 mod app;
 mod events;
 mod input;
+pub mod text_input;
 mod ui;
 
 use std::collections::HashMap;
