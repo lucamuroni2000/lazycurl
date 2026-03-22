@@ -55,10 +55,9 @@ fn run_loop(
             ui::draw(frame, app);
         })?;
 
-        if let Some(event) = events::poll_event(Duration::from_millis(100))? {
-            if let Event::Key(key) = event {
-                let action = events::key_to_action(key);
-                match action {
+        if let Some(Event::Key(key)) = events::poll_event(Duration::from_millis(100))? {
+            let action = events::key_to_action(key);
+            match action {
                     Action::Quit => {
                         app.should_quit = true;
                     }
@@ -83,7 +82,6 @@ fn run_loop(
                     // CopyCurl are wired in Tasks 15-17
                     _ => {}
                 }
-            }
         }
 
         if app.should_quit {
@@ -91,4 +89,3 @@ fn run_loop(
         }
     }
 }
-

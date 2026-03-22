@@ -2,13 +2,8 @@ use crate::secret;
 use crate::types::HistoryEntry;
 use std::path::Path;
 
-const DEFAULT_MAX_ENTRIES: usize = 10_000;
-
 /// Append a history entry to the JSONL file.
-pub fn append_entry(
-    path: &Path,
-    entry: &HistoryEntry,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn append_entry(path: &Path, entry: &HistoryEntry) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -35,10 +30,7 @@ pub fn append_entry_redacted(
 }
 
 /// Prune history file to keep only the most recent `max_entries` entries.
-pub fn prune_history(
-    path: &Path,
-    max_entries: usize,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn prune_history(path: &Path, max_entries: usize) -> Result<(), Box<dyn std::error::Error>> {
     if !path.exists() {
         return Ok(());
     }

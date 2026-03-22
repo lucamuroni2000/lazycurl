@@ -310,8 +310,7 @@ impl CurlCommandBuilder {
     }
 
     pub fn query_param(mut self, key: &str, value: &str) -> Self {
-        self.query_params
-            .push((key.to_string(), value.to_string()));
+        self.query_params.push((key.to_string(), value.to_string()));
         self
     }
 
@@ -340,8 +339,7 @@ mod tests {
 
     #[test]
     fn test_basic_get_args() {
-        let cmd = CurlCommandBuilder::new("https://api.example.com/users")
-            .build();
+        let cmd = CurlCommandBuilder::new("https://api.example.com/users").build();
         let args = cmd.to_args();
         assert!(args.contains(&"-s".to_string()));
         assert!(args.contains(&"https://api.example.com/users".to_string()));
@@ -489,10 +487,14 @@ mod tests {
 
     #[test]
     fn test_parse_response_headers() {
-        let raw_headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Custom: value\r\n\r\n";
+        let raw_headers =
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Custom: value\r\n\r\n";
         let headers = parse_headers(raw_headers);
         assert_eq!(headers.len(), 2);
-        assert_eq!(headers[0], ("Content-Type".to_string(), "application/json".to_string()));
+        assert_eq!(
+            headers[0],
+            ("Content-Type".to_string(), "application/json".to_string())
+        );
         assert_eq!(headers[1], ("X-Custom".to_string(), "value".to_string()));
     }
 

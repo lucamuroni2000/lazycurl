@@ -47,7 +47,10 @@ fn find_path_for(dir: &Path, collection: &Collection) -> PathBuf {
 }
 
 /// Save a collection to the given directory.
-pub fn save_collection(dir: &Path, collection: &Collection) -> Result<(), Box<dyn std::error::Error>> {
+pub fn save_collection(
+    dir: &Path,
+    collection: &Collection,
+) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(dir)?;
     let path = find_path_for(dir, collection);
     let content = serde_json::to_string_pretty(collection)?;

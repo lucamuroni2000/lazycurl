@@ -1,5 +1,6 @@
+#![allow(dead_code)]
 use curl_tui_core::config::AppConfig;
-use curl_tui_core::types::{Collection, Environment, CurlResponse, Request, Method};
+use curl_tui_core::types::{Collection, CurlResponse, Environment, Method, Request};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Pane {

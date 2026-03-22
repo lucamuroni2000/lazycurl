@@ -12,8 +12,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         .border_style(Style::default().fg(Color::DarkGray));
 
     if app.collections.is_empty() {
-        let text = Paragraph::new("No collections.\nPress Ctrl+N to create one.")
-            .block(block);
+        let text = Paragraph::new("No collections.\nPress Ctrl+N to create one.").block(block);
         frame.render_widget(text, area);
     } else {
         let items: Vec<String> = app

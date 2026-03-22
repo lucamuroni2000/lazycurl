@@ -3,7 +3,9 @@
     "allow": [
       "mcp__plugin_context7_context7__query-docs",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(export PATH=\"/c/Users/lucam/.cargo/bin:$PATH\")",
+      "Bash(cargo test:*)"
     ]
   }
 }

@@ -183,10 +183,7 @@ mod tests {
 
     #[test]
     fn test_resolve_multiple_variables() {
-        let global = make_vars(&[
-            ("host", "example.com", false),
-            ("port", "8080", false),
-        ]);
+        let global = make_vars(&[("host", "example.com", false), ("port", "8080", false)]);
         let resolver = FileVariableResolver::new(global, None, None);
         let (result, _) = resolver.resolve("http://{{host}}:{{port}}/api").unwrap();
         assert_eq!(result, "http://example.com:8080/api");
@@ -194,10 +191,7 @@ mod tests {
 
     #[test]
     fn test_resolve_circular_reference() {
-        let global = make_vars(&[
-            ("a", "{{b}}", false),
-            ("b", "{{a}}", false),
-        ]);
+        let global = make_vars(&[("a", "{{b}}", false), ("b", "{{a}}", false)]);
         let resolver = FileVariableResolver::new(global, None, None);
         let result = resolver.resolve("{{a}}");
         assert!(matches!(result, Err(ResolveError::CircularReference(_))));
