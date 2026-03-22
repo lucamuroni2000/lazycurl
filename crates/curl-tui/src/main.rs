@@ -55,6 +55,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build keymap from config
     let keymap = input::build_keymap(&app.config.keybindings);
 
+    // Load current request fields into text inputs
+    app.load_request_into_inputs();
+
     // Main loop
     let result = run_loop(&mut terminal, &mut app, &keymap).await;
 
@@ -76,42 +79,135 @@ async fn run_loop(
             ui::draw(frame, app);
         })?;
 
-        if let Some(Event::Key(key)) = events::poll_event(Duration::from_millis(100))? {
-            {
-                let action = input::resolve_action(key, keymap);
-                match action {
-                    Action::Quit => {
-                        app.should_quit = true;
+        if let Some(Event::Key(key)) = events::poll_event(Duration::from_millis(50))? {
+            let action = match app.input_mode {
+                app::InputMode::Normal => {
+                    // First try keymap, then navigation fallback
+                    let mapped = input::resolve_action(key, keymap);
+                    if matches!(mapped, Action::None) {
+                        input::resolve_navigation(key)
+                    } else {
+                        mapped
                     }
-                    Action::Cancel => {
-                        if app.show_help {
-                            app.show_help = false;
-                        }
-                    }
-                    Action::CyclePaneForward => app.cycle_pane_forward(),
-                    Action::CyclePaneBackward => app.cycle_pane_backward(),
-                    Action::ToggleCollections => app.toggle_pane(0),
-                    Action::ToggleRequest => app.toggle_pane(1),
-                    Action::ToggleResponse => app.toggle_pane(2),
-                    Action::RevealSecrets => {
-                        app.secrets_revealed = !app.secrets_revealed;
-                    }
-                    Action::Help => {
-                        app.show_help = !app.show_help;
-                    }
-                    Action::SendRequest => app.send_request().await,
-                    Action::SaveRequest => app.save_current_request(),
-                    Action::NewRequest => app.new_request(),
-                    Action::SwitchEnvironment => app.cycle_environment(),
-                    Action::CopyCurl => {
-                        if let Some(req) = &app.current_request {
-                            let cmd = CurlCommandBuilder::new(&req.url).method(req.method).build();
-                            let display = cmd.to_display_string(&[]);
-                            app.status_message = Some(format!("Copied: {}", display));
-                        }
-                    }
-                    _ => {}
                 }
+                app::InputMode::Editing => input::resolve_editing(key),
+            };
+
+            match action {
+                Action::Quit => app.should_quit = true,
+                Action::Cancel => {
+                    if app.input_mode == app::InputMode::Editing {
+                        app.stop_editing();
+                    } else if app.show_help {
+                        app.show_help = false;
+                    }
+                }
+                Action::CyclePaneForward => {
+                    if app.input_mode == app::InputMode::Editing {
+                        app.stop_editing();
+                    }
+                    app.cycle_pane_forward();
+                }
+                Action::CyclePaneBackward => {
+                    if app.input_mode == app::InputMode::Editing {
+                        app.stop_editing();
+                    }
+                    app.cycle_pane_backward();
+                }
+                Action::ToggleCollections => app.toggle_pane(0),
+                Action::ToggleRequest => app.toggle_pane(1),
+                Action::ToggleResponse => app.toggle_pane(2),
+                Action::RevealSecrets => app.secrets_revealed = !app.secrets_revealed,
+                Action::Help => app.show_help = !app.show_help,
+                Action::SendRequest => {
+                    if app.input_mode == app::InputMode::Editing {
+                        app.stop_editing();
+                    }
+                    app.send_request().await;
+                }
+                Action::SaveRequest => app.save_current_request(),
+                Action::NewRequest => {
+                    app.new_request();
+                    app.load_request_into_inputs();
+                }
+                Action::SwitchEnvironment => app.cycle_environment(),
+                Action::CopyCurl => {
+                    if let Some(req) = &app.current_request {
+                        let cmd =
+                            CurlCommandBuilder::new(&req.url).method(req.method).build();
+                        let display = cmd.to_display_string(&[]);
+                        app.status_message = Some(format!("Copied: {}", display));
+                    }
+                }
+                // Navigation actions (Normal mode)
+                Action::MoveUp => app.handle_move_up(),
+                Action::MoveDown => app.handle_move_down(),
+                Action::Enter => {
+                    if app.input_mode == app::InputMode::Editing {
+                        // Confirm current field, move to next or exit editing
+                        app.stop_editing();
+                    } else {
+                        app.handle_enter();
+                    }
+                }
+                Action::NextTab => match app.active_pane {
+                    app::Pane::Request => app.next_request_tab(),
+                    app::Pane::Response => app.next_response_tab(),
+                    _ => {}
+                },
+                Action::PrevTab => match app.active_pane {
+                    app::Pane::Request => app.prev_request_tab(),
+                    app::Pane::Response => app.prev_response_tab(),
+                    _ => {}
+                },
+                Action::AddItem => match app.active_pane {
+                    app::Pane::Request => match app.request_tab {
+                        app::RequestTab::Headers => app.add_header(),
+                        app::RequestTab::Params => app.add_param(),
+                        _ => {}
+                    },
+                    _ => {}
+                },
+                Action::DeleteItem => {
+                    // TODO: implement delete for headers/params
+                }
+                // Editing actions
+                Action::CharInput(c) => {
+                    if let Some(input) = app.active_text_input() {
+                        input.insert_char(c);
+                    }
+                }
+                Action::Backspace => {
+                    if let Some(input) = app.active_text_input() {
+                        input.delete_char_before();
+                    }
+                }
+                Action::Delete => {
+                    if let Some(input) = app.active_text_input() {
+                        input.delete_char_after();
+                    }
+                }
+                Action::CursorLeft => {
+                    if let Some(input) = app.active_text_input() {
+                        input.move_left();
+                    }
+                }
+                Action::CursorRight => {
+                    if let Some(input) = app.active_text_input() {
+                        input.move_right();
+                    }
+                }
+                Action::Home => {
+                    if let Some(input) = app.active_text_input() {
+                        input.move_home();
+                    }
+                }
+                Action::End => {
+                    if let Some(input) = app.active_text_input() {
+                        input.move_end();
+                    }
+                }
+                _ => {}
             }
         }
 

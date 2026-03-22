@@ -464,6 +464,323 @@ impl App {
         self.status_message = Some("New request created".to_string());
     }
 
+    /// Enter editing mode for a specific field
+    pub fn start_editing(&mut self, field: EditField) {
+        self.input_mode = InputMode::Editing;
+        self.edit_field = Some(field);
+    }
+
+    /// Exit editing mode, syncing text input back to request
+    pub fn stop_editing(&mut self) {
+        if let Some(field) = self.edit_field.take() {
+            self.sync_field_to_request(field);
+        }
+        self.input_mode = InputMode::Normal;
+    }
+
+    /// Get a mutable reference to the active TextInput
+    pub fn active_text_input(&mut self) -> Option<&mut crate::text_input::TextInput> {
+        match self.edit_field? {
+            EditField::Url => Some(&mut self.url_input),
+            EditField::BodyContent => Some(&mut self.body_input),
+            EditField::HeaderKey(i) => self.header_key_inputs.get_mut(i),
+            EditField::HeaderValue(i) => self.header_value_inputs.get_mut(i),
+            EditField::ParamKey(i) => self.param_key_inputs.get_mut(i),
+            EditField::ParamValue(i) => self.param_value_inputs.get_mut(i),
+        }
+    }
+
+    /// Sync the text input content back to the current request
+    fn sync_field_to_request(&mut self, field: EditField) {
+        let Some(request) = &mut self.current_request else {
+            return;
+        };
+        match field {
+            EditField::Url => {
+                request.url = self.url_input.content().to_string();
+            }
+            EditField::BodyContent => {
+                let content = self.body_input.content().to_string();
+                if content.is_empty() {
+                    request.body = Option::None;
+                } else {
+                    request.body = Some(curl_tui_core::types::Body::Json { content });
+                }
+            }
+            EditField::HeaderKey(i) => {
+                if let Some(header) = request.headers.get_mut(i) {
+                    header.key = self.header_key_inputs[i].content().to_string();
+                }
+            }
+            EditField::HeaderValue(i) => {
+                if let Some(header) = request.headers.get_mut(i) {
+                    header.value = self.header_value_inputs[i].content().to_string();
+                }
+            }
+            EditField::ParamKey(i) => {
+                if let Some(param) = request.params.get_mut(i) {
+                    param.key = self.param_key_inputs[i].content().to_string();
+                }
+            }
+            EditField::ParamValue(i) => {
+                if let Some(param) = request.params.get_mut(i) {
+                    param.value = self.param_value_inputs[i].content().to_string();
+                }
+            }
+        }
+    }
+
+    /// Load a request's fields into the text inputs
+    pub fn load_request_into_inputs(&mut self) {
+        if let Some(request) = &self.current_request {
+            self.url_input.set_content(&request.url);
+            match &request.body {
+                Some(curl_tui_core::types::Body::Json { content }) => {
+                    self.body_input.set_content(content);
+                }
+                Some(curl_tui_core::types::Body::Text { content }) => {
+                    self.body_input.set_content(content);
+                }
+                _ => {
+                    self.body_input.clear();
+                }
+            }
+            // Populate header inputs
+            self.header_key_inputs = request
+                .headers
+                .iter()
+                .map(|h| crate::text_input::TextInput::new(&h.key))
+                .collect();
+            self.header_value_inputs = request
+                .headers
+                .iter()
+                .map(|h| crate::text_input::TextInput::new(&h.value))
+                .collect();
+            // Populate param inputs
+            self.param_key_inputs = request
+                .params
+                .iter()
+                .map(|p| crate::text_input::TextInput::new(&p.key))
+                .collect();
+            self.param_value_inputs = request
+                .params
+                .iter()
+                .map(|p| crate::text_input::TextInput::new(&p.value))
+                .collect();
+        }
+    }
+
+    /// Add a new empty header to the current request
+    pub fn add_header(&mut self) {
+        if let Some(request) = &mut self.current_request {
+            request.headers.push(curl_tui_core::types::Header {
+                key: String::new(),
+                value: String::new(),
+                enabled: true,
+            });
+            self.header_key_inputs
+                .push(crate::text_input::TextInput::default());
+            self.header_value_inputs
+                .push(crate::text_input::TextInput::default());
+            let idx = request.headers.len() - 1;
+            self.start_editing(EditField::HeaderKey(idx));
+        }
+    }
+
+    /// Add a new empty param to the current request
+    pub fn add_param(&mut self) {
+        if let Some(request) = &mut self.current_request {
+            request.params.push(curl_tui_core::types::Param {
+                key: String::new(),
+                value: String::new(),
+                enabled: true,
+            });
+            self.param_key_inputs
+                .push(crate::text_input::TextInput::default());
+            self.param_value_inputs
+                .push(crate::text_input::TextInput::default());
+            let idx = request.params.len() - 1;
+            self.start_editing(EditField::ParamKey(idx));
+        }
+    }
+
+    /// Handle Enter in Normal mode based on active pane
+    pub fn handle_enter(&mut self) {
+        match self.active_pane {
+            Pane::Collections => {
+                // Load the selected request
+                if let Some(col_idx) = self.selected_collection {
+                    if let Some(collection) = self.collections.get(col_idx) {
+                        if let Some(req_idx) = self.selected_request {
+                            if let Some(req) = collection.requests.get(req_idx) {
+                                let cloned = req.clone();
+                                let name = cloned.name.clone();
+                                self.current_request = Some(cloned);
+                                self.load_request_into_inputs();
+                                self.active_pane = Pane::Request;
+                                self.status_message = Some(format!("Loaded: {}", name));
+                            }
+                        }
+                    }
+                }
+            }
+            Pane::Request => {
+                // Start editing the URL field
+                self.start_editing(EditField::Url);
+            }
+            _ => {}
+        }
+    }
+
+    /// Handle MoveUp in Normal mode based on active pane
+    pub fn handle_move_up(&mut self) {
+        match self.active_pane {
+            Pane::Collections => {
+                self.move_collection_cursor_up();
+                self.adjust_collection_scroll(20); // approximate; UI will clamp
+            }
+            Pane::Request => {
+                // Could move between header rows in future
+            }
+            Pane::Response => {
+                if self.response_scroll > 0 {
+                    self.response_scroll -= 1;
+                }
+            }
+        }
+    }
+
+    /// Handle MoveDown in Normal mode based on active pane
+    pub fn handle_move_down(&mut self) {
+        match self.active_pane {
+            Pane::Collections => {
+                self.move_collection_cursor_down();
+                self.adjust_collection_scroll(20); // approximate; UI will clamp
+            }
+            Pane::Request => {
+                // Could move between header rows in future
+            }
+            Pane::Response => {
+                self.response_scroll = self.response_scroll.saturating_add(1);
+            }
+        }
+    }
+
+    /// Calculate the flat index of the current collection cursor position
+    fn collection_cursor_flat_index(&self) -> usize {
+        let mut idx = 0;
+        for (col_idx, col) in self.collections.iter().enumerate() {
+            if Some(col_idx) == self.selected_collection && self.selected_request.is_none() {
+                return idx;
+            }
+            idx += 1; // collection row
+            for (req_idx, _) in col.requests.iter().enumerate() {
+                if Some(col_idx) == self.selected_collection
+                    && Some(req_idx) == self.selected_request
+                {
+                    return idx;
+                }
+                idx += 1;
+            }
+        }
+        idx
+    }
+
+    /// Adjust collection_scroll to keep the cursor visible
+    fn adjust_collection_scroll(&mut self, visible_height: usize) {
+        let cursor = self.collection_cursor_flat_index();
+        if cursor < self.collection_scroll {
+            self.collection_scroll = cursor;
+        } else if cursor >= self.collection_scroll + visible_height {
+            self.collection_scroll = cursor - visible_height + 1;
+        }
+    }
+
+    /// Move collection cursor up through the flat list of collections and their requests
+    fn move_collection_cursor_up(&mut self) {
+        if let Some(req_idx) = self.selected_request {
+            if req_idx > 0 {
+                self.selected_request = Some(req_idx - 1);
+            } else {
+                // Move back to collection level
+                self.selected_request = Option::None;
+            }
+        } else if let Some(col_idx) = self.selected_collection {
+            if col_idx > 0 {
+                self.selected_collection = Some(col_idx - 1);
+                // Select last request of previous collection
+                if let Some(col) = self.collections.get(col_idx - 1) {
+                    if !col.requests.is_empty() {
+                        self.selected_request = Some(col.requests.len() - 1);
+                    }
+                }
+            }
+        } else if !self.collections.is_empty() {
+            self.selected_collection = Some(0);
+        }
+    }
+
+    /// Move collection cursor down through the flat list
+    fn move_collection_cursor_down(&mut self) {
+        if let Some(col_idx) = self.selected_collection {
+            if let Some(collection) = self.collections.get(col_idx) {
+                if let Some(req_idx) = self.selected_request {
+                    if req_idx + 1 < collection.requests.len() {
+                        self.selected_request = Some(req_idx + 1);
+                    } else if col_idx + 1 < self.collections.len() {
+                        // Move to next collection
+                        self.selected_collection = Some(col_idx + 1);
+                        self.selected_request = Option::None;
+                    }
+                } else if !collection.requests.is_empty() {
+                    self.selected_request = Some(0);
+                } else if col_idx + 1 < self.collections.len() {
+                    self.selected_collection = Some(col_idx + 1);
+                }
+            }
+        } else if !self.collections.is_empty() {
+            self.selected_collection = Some(0);
+        }
+    }
+
+    /// Switch to next request tab
+    pub fn next_request_tab(&mut self) {
+        self.request_tab = match self.request_tab {
+            RequestTab::Headers => RequestTab::Body,
+            RequestTab::Body => RequestTab::Auth,
+            RequestTab::Auth => RequestTab::Params,
+            RequestTab::Params => RequestTab::Headers,
+        };
+    }
+
+    /// Switch to previous request tab
+    pub fn prev_request_tab(&mut self) {
+        self.request_tab = match self.request_tab {
+            RequestTab::Headers => RequestTab::Params,
+            RequestTab::Body => RequestTab::Headers,
+            RequestTab::Auth => RequestTab::Body,
+            RequestTab::Params => RequestTab::Auth,
+        };
+    }
+
+    /// Switch to next response tab
+    pub fn next_response_tab(&mut self) {
+        self.response_tab = match self.response_tab {
+            ResponseTab::Body => ResponseTab::Headers,
+            ResponseTab::Headers => ResponseTab::Timing,
+            ResponseTab::Timing => ResponseTab::Body,
+        };
+    }
+
+    /// Switch to previous response tab
+    pub fn prev_response_tab(&mut self) {
+        self.response_tab = match self.response_tab {
+            ResponseTab::Body => ResponseTab::Timing,
+            ResponseTab::Headers => ResponseTab::Body,
+            ResponseTab::Timing => ResponseTab::Headers,
+        };
+    }
+
     pub fn cycle_environment(&mut self) {
         if self.environments.is_empty() {
             self.status_message = Some("No environments configured".to_string());
