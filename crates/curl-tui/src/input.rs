@@ -108,3 +108,49 @@ pub fn resolve_action(key: KeyEvent, keymap: &HashMap<(KeyModifiers, KeyCode), A
         .cloned()
         .unwrap_or(Action::None)
 }
+
+/// Resolve a key event when in Normal mode but not bound in the keymap.
+/// Handles arrow keys, Enter, tab switching, etc.
+pub fn resolve_navigation(key: KeyEvent) -> Action {
+    if key.kind != KeyEventKind::Press {
+        return Action::None;
+    }
+    match (key.modifiers, key.code) {
+        (KeyModifiers::NONE, KeyCode::Up) => Action::MoveUp,
+        (KeyModifiers::NONE, KeyCode::Down) => Action::MoveDown,
+        (KeyModifiers::NONE, KeyCode::Enter) => Action::Enter,
+        (KeyModifiers::NONE, KeyCode::Left) => Action::PrevTab,
+        (KeyModifiers::NONE, KeyCode::Right) => Action::NextTab,
+        (KeyModifiers::NONE, KeyCode::Char('a')) => Action::AddItem,
+        (KeyModifiers::NONE, KeyCode::Char('d')) => Action::DeleteItem,
+        (KeyModifiers::NONE, KeyCode::Char('j')) => Action::MoveDown,
+        (KeyModifiers::NONE, KeyCode::Char('k')) => Action::MoveUp,
+        _ => Action::None,
+    }
+}
+
+/// Resolve a key event when in Editing mode.
+/// Characters go to the text field, special keys are editing commands.
+pub fn resolve_editing(key: KeyEvent) -> Action {
+    if key.kind != KeyEventKind::Press {
+        return Action::None;
+    }
+    match (key.modifiers, key.code) {
+        (KeyModifiers::NONE, KeyCode::Esc) => Action::Cancel, // Exit editing
+        (KeyModifiers::NONE, KeyCode::Enter) => Action::Enter, // Confirm / move to next field
+        (KeyModifiers::CONTROL, KeyCode::Enter) | (KeyModifiers::NONE, KeyCode::F(5)) => {
+            Action::SendRequest
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('q')) => Action::Quit,
+        (KeyModifiers::NONE, KeyCode::Backspace) => Action::Backspace,
+        (KeyModifiers::NONE, KeyCode::Delete) => Action::Delete,
+        (KeyModifiers::NONE, KeyCode::Left) => Action::CursorLeft,
+        (KeyModifiers::NONE, KeyCode::Right) => Action::CursorRight,
+        (KeyModifiers::NONE, KeyCode::Home) => Action::Home,
+        (KeyModifiers::NONE, KeyCode::End) => Action::End,
+        (KeyModifiers::NONE, KeyCode::Tab) => Action::CyclePaneForward,
+        (KeyModifiers::NONE, KeyCode::Char(c)) => Action::CharInput(c),
+        (KeyModifiers::SHIFT, KeyCode::Char(c)) => Action::CharInput(c),
+        _ => Action::None,
+    }
+}

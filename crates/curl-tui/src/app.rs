@@ -7,6 +7,25 @@ use curl_tui_core::types::{
 use curl_tui_core::variable::FileVariableResolver;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub enum InputMode {
+    /// Keybindings are active — keypresses map to actions
+    Normal,
+    /// Text editing — keypresses go to the focused text field
+    Editing,
+}
+
+/// Identifies which text field is currently being edited
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EditField {
+    Url,
+    HeaderKey(usize),
+    HeaderValue(usize),
+    ParamKey(usize),
+    ParamValue(usize),
+    BodyContent,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Pane {
     Collections,
     Request,
@@ -30,6 +49,7 @@ pub enum ResponseTab {
 
 #[derive(Clone)]
 pub enum Action {
+    // Existing actions
     Quit,
     Cancel,
     CyclePaneForward,
@@ -45,6 +65,21 @@ pub enum Action {
     RevealSecrets,
     Help,
     Search,
+    // New actions for interactive features
+    MoveUp,
+    MoveDown,
+    Enter,
+    NextTab,
+    PrevTab,
+    DeleteItem,
+    AddItem,
+    CharInput(char),
+    Backspace,
+    Delete,
+    CursorLeft,
+    CursorRight,
+    Home,
+    End,
     None,
 }
 
@@ -65,6 +100,16 @@ pub struct App {
     pub show_help: bool,
     pub secrets_revealed: bool,
     pub status_message: Option<String>,
+    pub input_mode: InputMode,
+    pub edit_field: Option<EditField>,
+    pub url_input: crate::text_input::TextInput,
+    pub body_input: crate::text_input::TextInput,
+    pub header_key_inputs: Vec<crate::text_input::TextInput>,
+    pub header_value_inputs: Vec<crate::text_input::TextInput>,
+    pub param_key_inputs: Vec<crate::text_input::TextInput>,
+    pub param_value_inputs: Vec<crate::text_input::TextInput>,
+    pub collection_scroll: usize,
+    pub response_scroll: usize,
 }
 
 impl App {
@@ -95,6 +140,16 @@ impl App {
             show_help: false,
             secrets_revealed: false,
             status_message: None,
+            input_mode: InputMode::Normal,
+            edit_field: None,
+            url_input: crate::text_input::TextInput::new(""),
+            body_input: crate::text_input::TextInput::new(""),
+            header_key_inputs: Vec::new(),
+            header_value_inputs: Vec::new(),
+            param_key_inputs: Vec::new(),
+            param_value_inputs: Vec::new(),
+            collection_scroll: 0,
+            response_scroll: 0,
         }
     }
 
