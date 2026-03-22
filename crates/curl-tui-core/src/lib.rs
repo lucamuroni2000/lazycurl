@@ -6,3 +6,4 @@ pub mod collection;
 pub mod environment;
 pub mod command;
 pub mod history;
+pub mod init;
