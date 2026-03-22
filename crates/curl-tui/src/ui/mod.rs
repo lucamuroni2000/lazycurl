@@ -1,4 +1,5 @@
 pub mod collections;
+pub mod help;
 pub mod layout;
 pub mod request;
 pub mod response;
@@ -49,4 +50,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     // Status bar
     statusbar::draw(frame, app, pane_layout.status_bar);
+
+    // Help overlay (on top of everything)
+    if app.show_help {
+        help::draw(frame);
+    }
 }

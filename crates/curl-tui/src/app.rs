@@ -16,6 +16,7 @@ pub enum InputMode {
 
 /// Identifies which text field is currently being edited
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum EditField {
     Url,
     HeaderKey(usize),

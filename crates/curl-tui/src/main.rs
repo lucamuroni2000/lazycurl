@@ -133,8 +133,7 @@ async fn run_loop(
                 Action::SwitchEnvironment => app.cycle_environment(),
                 Action::CopyCurl => {
                     if let Some(req) = &app.current_request {
-                        let cmd =
-                            CurlCommandBuilder::new(&req.url).method(req.method).build();
+                        let cmd = CurlCommandBuilder::new(&req.url).method(req.method).build();
                         let display = cmd.to_display_string(&[]);
                         app.status_message = Some(format!("Copied: {}", display));
                     }
@@ -160,14 +159,15 @@ async fn run_loop(
                     app::Pane::Response => app.prev_response_tab(),
                     _ => {}
                 },
-                Action::AddItem => match app.active_pane {
-                    app::Pane::Request => match app.request_tab {
-                        app::RequestTab::Headers => app.add_header(),
-                        app::RequestTab::Params => app.add_param(),
-                        _ => {}
-                    },
-                    _ => {}
-                },
+                Action::AddItem => {
+                    if app.active_pane == app::Pane::Request {
+                        match app.request_tab {
+                            app::RequestTab::Headers => app.add_header(),
+                            app::RequestTab::Params => app.add_param(),
+                            _ => {}
+                        }
+                    }
+                }
                 Action::DeleteItem => {
                     // TODO: implement delete for headers/params
                 }
