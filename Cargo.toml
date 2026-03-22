@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/curl-tui-core", "crates/curl-tui"]
+resolver = "2"
