@@ -1,5 +1,6 @@
 mod app;
 mod events;
+mod ui;
 
 use std::io;
 use std::time::Duration;
@@ -91,11 +92,3 @@ fn run_loop(
     }
 }
 
-mod ui {
-    use ratatui::Frame;
-    use crate::app::App;
-
-    pub fn draw(_frame: &mut Frame, _app: &App) {
-        // placeholder — replaced in Task 12
-    }
-}
