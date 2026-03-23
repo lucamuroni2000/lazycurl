@@ -201,8 +201,19 @@ async fn run_loop(
                         app.show_variables = true;
                         app.var_cursor = 0;
                         app.var_editing = None;
-                        app.var_collection_idx = app.selected_collection;
-                        app.var_environment_idx = app.active_environment;
+                        // Default to first item if nothing is selected
+                        app.var_collection_idx =
+                            app.selected_collection.or(if app.collections.is_empty() {
+                                None
+                            } else {
+                                Some(0)
+                            });
+                        app.var_environment_idx =
+                            app.active_environment.or(if app.environments.is_empty() {
+                                None
+                            } else {
+                                Some(0)
+                            });
                     }
                     Action::SendRequest => {
                         if app.input_mode == app::InputMode::Editing {
