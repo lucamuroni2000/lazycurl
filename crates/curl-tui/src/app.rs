@@ -142,6 +142,10 @@ pub struct App {
     pub var_editing: Option<VarEditTarget>,
     pub var_key_input: crate::text_input::TextInput,
     pub var_value_input: crate::text_input::TextInput,
+    /// Which collection is being edited in the variables overlay (independent of selected_collection)
+    pub var_collection_idx: Option<usize>,
+    /// Which environment is being edited in the variables overlay (independent of active_environment)
+    pub var_environment_idx: Option<usize>,
     pub collection_scroll: usize,
     pub response_scroll: usize,
 }
@@ -191,6 +195,8 @@ impl App {
             var_editing: None,
             var_key_input: crate::text_input::TextInput::new(""),
             var_value_input: crate::text_input::TextInput::new(""),
+            var_collection_idx: None,
+            var_environment_idx: None,
             collection_scroll: 0,
             response_scroll: 0,
         }
@@ -1173,7 +1179,7 @@ impl App {
             VarTier::Global => &self.config.variables,
             VarTier::Environment => {
                 if let Some(env) = self
-                    .active_environment
+                    .var_environment_idx
                     .and_then(|i| self.environments.get(i))
                 {
                     &env.variables
@@ -1183,7 +1189,7 @@ impl App {
             }
             VarTier::Collection => {
                 if let Some(col) = self
-                    .selected_collection
+                    .var_collection_idx
                     .and_then(|i| self.collections.get(i))
                 {
                     &col.variables
@@ -1202,11 +1208,11 @@ impl App {
         match self.var_tier {
             VarTier::Global => self.config.variables.get(key),
             VarTier::Environment => self
-                .active_environment
+                .var_environment_idx
                 .and_then(|i| self.environments.get(i))
                 .and_then(|e| e.variables.get(key)),
             VarTier::Collection => self
-                .selected_collection
+                .var_collection_idx
                 .and_then(|i| self.collections.get(i))
                 .and_then(|c| c.variables.get(key)),
         }
@@ -1222,6 +1228,70 @@ impl App {
         let count = self.var_keys().len();
         if self.var_cursor + 1 < count {
             self.var_cursor += 1;
+        }
+    }
+
+    /// Cycle to next collection/environment within the current tier
+    pub fn var_cycle_container_forward(&mut self) {
+        match self.var_tier {
+            VarTier::Collection => {
+                if self.collections.is_empty() {
+                    return;
+                }
+                let next = match self.var_collection_idx {
+                    Some(i) => (i + 1) % self.collections.len(),
+                    None => 0,
+                };
+                self.var_collection_idx = Some(next);
+                self.var_cursor = 0;
+                self.var_editing = None;
+            }
+            VarTier::Environment => {
+                if self.environments.is_empty() {
+                    return;
+                }
+                let next = match self.var_environment_idx {
+                    Some(i) => (i + 1) % self.environments.len(),
+                    None => 0,
+                };
+                self.var_environment_idx = Some(next);
+                self.var_cursor = 0;
+                self.var_editing = None;
+            }
+            VarTier::Global => {} // only one global scope
+        }
+    }
+
+    /// Cycle to previous collection/environment within the current tier
+    pub fn var_cycle_container_backward(&mut self) {
+        match self.var_tier {
+            VarTier::Collection => {
+                if self.collections.is_empty() {
+                    return;
+                }
+                let prev = match self.var_collection_idx {
+                    Some(i) if i > 0 => i - 1,
+                    Some(_) => self.collections.len() - 1,
+                    None => 0,
+                };
+                self.var_collection_idx = Some(prev);
+                self.var_cursor = 0;
+                self.var_editing = None;
+            }
+            VarTier::Environment => {
+                if self.environments.is_empty() {
+                    return;
+                }
+                let prev = match self.var_environment_idx {
+                    Some(i) if i > 0 => i - 1,
+                    Some(_) => self.environments.len() - 1,
+                    None => 0,
+                };
+                self.var_environment_idx = Some(prev);
+                self.var_cursor = 0;
+                self.var_editing = None;
+            }
+            VarTier::Global => {}
         }
     }
 
@@ -1351,11 +1421,11 @@ impl App {
         match self.var_tier {
             VarTier::Global => self.config.variables.get_mut(key),
             VarTier::Environment => self
-                .active_environment
+                .var_environment_idx
                 .and_then(|i| self.environments.get_mut(i))
                 .and_then(|e| e.variables.get_mut(key)),
             VarTier::Collection => self
-                .selected_collection
+                .var_collection_idx
                 .and_then(|i| self.collections.get_mut(i))
                 .and_then(|c| c.variables.get_mut(key)),
         }
@@ -1365,11 +1435,11 @@ impl App {
         match self.var_tier {
             VarTier::Global => self.config.variables.remove(key),
             VarTier::Environment => self
-                .active_environment
+                .var_environment_idx
                 .and_then(|i| self.environments.get_mut(i))
                 .and_then(|e| e.variables.remove(key)),
             VarTier::Collection => self
-                .selected_collection
+                .var_collection_idx
                 .and_then(|i| self.collections.get_mut(i))
                 .and_then(|c| c.variables.remove(key)),
         }
@@ -1382,7 +1452,7 @@ impl App {
             }
             VarTier::Environment => {
                 if let Some(env) = self
-                    .active_environment
+                    .var_environment_idx
                     .and_then(|i| self.environments.get_mut(i))
                 {
                     env.variables.insert(key.to_string(), var);
@@ -1390,7 +1460,7 @@ impl App {
             }
             VarTier::Collection => {
                 if let Some(col) = self
-                    .selected_collection
+                    .var_collection_idx
                     .and_then(|i| self.collections.get_mut(i))
                 {
                     col.variables.insert(key.to_string(), var);
@@ -1407,7 +1477,7 @@ impl App {
             }
             VarTier::Environment => {
                 if let Some(env) = self
-                    .active_environment
+                    .var_environment_idx
                     .and_then(|i| self.environments.get(i))
                 {
                     let _ = curl_tui_core::environment::save_environment(
@@ -1418,7 +1488,7 @@ impl App {
             }
             VarTier::Collection => {
                 if let Some(col) = self
-                    .selected_collection
+                    .var_collection_idx
                     .and_then(|i| self.collections.get(i))
                 {
                     let _ = curl_tui_core::collection::save_collection(

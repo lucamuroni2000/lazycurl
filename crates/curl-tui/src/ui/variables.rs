@@ -50,20 +50,37 @@ pub fn draw(frame: &mut Frame, app: &App) {
     let tier_info = match app.var_tier {
         VarTier::Global => " Global variables (apply to all requests)".to_string(),
         VarTier::Environment => {
-            let name = app
-                .active_environment
-                .and_then(|i| app.environments.get(i))
-                .map(|e| e.name.as_str())
-                .unwrap_or("None selected");
-            format!(" Environment: {}  (Ctrl+E: new  d: delete)", name)
+            let (name, idx_info) = match app.var_environment_idx {
+                Some(i) => {
+                    let name = app
+                        .environments
+                        .get(i)
+                        .map(|e| e.name.as_str())
+                        .unwrap_or("?");
+                    let total = app.environments.len();
+                    (name.to_string(), format!("{}/{}", i + 1, total))
+                }
+                None => ("None selected".to_string(), "0/0".to_string()),
+            };
+            format!(
+                " Environment: {} [{}]  ([ ] switch  Ctrl+E: new  d: delete)",
+                name, idx_info
+            )
         }
         VarTier::Collection => {
-            let name = app
-                .selected_collection
-                .and_then(|i| app.collections.get(i))
-                .map(|c| c.name.as_str())
-                .unwrap_or("None selected");
-            format!(" Collection: {}", name)
+            let (name, idx_info) = match app.var_collection_idx {
+                Some(i) => {
+                    let name = app
+                        .collections
+                        .get(i)
+                        .map(|c| c.name.as_str())
+                        .unwrap_or("?");
+                    let total = app.collections.len();
+                    (name.to_string(), format!("{}/{}", i + 1, total))
+                }
+                None => ("None selected".to_string(), "0/0".to_string()),
+            };
+            format!(" Collection: {} [{}]  ([ ] switch)", name, idx_info)
         }
     };
 
@@ -81,9 +98,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     if keys.is_empty() {
         let no_env =
-            matches!(app.var_tier, VarTier::Environment) && app.active_environment.is_none();
+            matches!(app.var_tier, VarTier::Environment) && app.var_environment_idx.is_none();
         let no_col =
-            matches!(app.var_tier, VarTier::Collection) && app.selected_collection.is_none();
+            matches!(app.var_tier, VarTier::Collection) && app.var_collection_idx.is_none();
 
         let msg = if no_env {
             " No environment selected. Press Ctrl+E to create one, or 'a' to add."

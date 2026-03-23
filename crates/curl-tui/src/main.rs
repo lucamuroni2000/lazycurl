@@ -201,6 +201,8 @@ async fn run_loop(
                         app.show_variables = true;
                         app.var_cursor = 0;
                         app.var_editing = None;
+                        app.var_collection_idx = app.selected_collection;
+                        app.var_environment_idx = app.active_environment;
                     }
                     Action::SendRequest => {
                         if app.input_mode == app::InputMode::Editing {
@@ -392,6 +394,17 @@ fn handle_variables_action(app: &mut App, action: &Action) {
         }
         Action::RevealSecrets => {
             app.secrets_revealed = !app.secrets_revealed;
+        }
+        // [ and ] cycle through collections/environments within the current tier
+        Action::CharInput('[') => {
+            if app.input_mode != app::InputMode::Editing {
+                app.var_cycle_container_backward();
+            }
+        }
+        Action::CharInput(']') => {
+            if app.input_mode != app::InputMode::Editing {
+                app.var_cycle_container_forward();
+            }
         }
         _ => {}
     }
