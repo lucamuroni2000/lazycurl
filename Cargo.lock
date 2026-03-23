@@ -141,9 +141,11 @@ dependencies = [
 name = "curl-tui"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "crossterm",
  "curl-tui-core",
  "ratatui",
+ "serde_json",
  "tokio",
  "uuid",
 ]
