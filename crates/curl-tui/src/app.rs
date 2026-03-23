@@ -490,6 +490,95 @@ impl App {
         }
     }
 
+    pub fn create_new_collection(&mut self) {
+        let collection = Collection {
+            id: uuid::Uuid::new_v4(),
+            name: "New Collection".to_string(),
+            variables: std::collections::HashMap::new(),
+            requests: Vec::new(),
+        };
+        let collections_dir = config_dir().join("collections");
+        match curl_tui_core::collection::save_collection(&collections_dir, &collection) {
+            Ok(_) => {
+                self.collections.push(collection);
+                let idx = self.collections.len() - 1;
+                self.selected_collection = Some(idx);
+                self.selected_request = None;
+                self.name_input.set_content("New Collection");
+                self.start_editing(EditField::CollectionName(idx));
+                self.status_message = Some("Name your collection, then press Enter".to_string());
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Error creating collection: {}", e));
+            }
+        }
+    }
+
+    pub fn delete_selected_in_collections(&mut self) {
+        let Some(col_idx) = self.selected_collection else {
+            self.status_message = Some("Nothing selected".to_string());
+            return;
+        };
+
+        if let Some(req_idx) = self.selected_request {
+            // Delete a request from the collection
+            if let Some(collection) = self.collections.get_mut(col_idx) {
+                if req_idx < collection.requests.len() {
+                    let name = collection.requests[req_idx].name.clone();
+                    collection.requests.remove(req_idx);
+
+                    // Save collection to disk
+                    let collections_dir = config_dir().join("collections");
+                    let _ =
+                        curl_tui_core::collection::save_collection(&collections_dir, collection);
+
+                    // Adjust selection
+                    if collection.requests.is_empty() {
+                        self.selected_request = None;
+                    } else if req_idx >= collection.requests.len() {
+                        self.selected_request = Some(collection.requests.len() - 1);
+                    }
+
+                    // Clear current request if it was the deleted one
+                    if self
+                        .current_request
+                        .as_ref()
+                        .is_some_and(|r| r.name == name)
+                    {
+                        self.current_request = None;
+                        self.last_response = None;
+                    }
+
+                    self.status_message = Some(format!("Deleted request '{}'", name));
+                }
+            }
+        } else {
+            // Delete the entire collection
+            if let Some(collection) = self.collections.get(col_idx) {
+                let name = collection.name.clone();
+                let slug = curl_tui_core::collection::slugify(&name);
+                let path = config_dir()
+                    .join("collections")
+                    .join(format!("{}.json", slug));
+                if path.exists() {
+                    let _ = std::fs::remove_file(&path);
+                }
+
+                self.collections.remove(col_idx);
+
+                // Adjust selection
+                if self.collections.is_empty() {
+                    self.selected_collection = None;
+                } else if col_idx >= self.collections.len() {
+                    self.selected_collection = Some(self.collections.len() - 1);
+                }
+                self.selected_request = None;
+
+                self.status_message = Some(format!("Deleted collection '{}'", name));
+            }
+        }
+    }
+
     pub fn new_request(&mut self) {
         self.current_request = Some(Request {
             id: uuid::Uuid::new_v4(),

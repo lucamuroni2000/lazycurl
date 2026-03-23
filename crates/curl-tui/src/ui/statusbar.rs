@@ -105,8 +105,12 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                 hints.push(Span::styled(":navigate ", hint_style));
                 hints.push(Span::styled("Enter", key_style));
                 hints.push(Span::styled(":load ", hint_style));
+                hints.push(Span::styled("Ctrl+N", key_style));
+                hints.push(Span::styled(":new collection ", hint_style));
                 hints.push(Span::styled("r", key_style));
                 hints.push(Span::styled(":rename ", hint_style));
+                hints.push(Span::styled("d", key_style));
+                hints.push(Span::styled(":delete ", hint_style));
             }
             Pane::Request => {
                 hints.push(Span::styled("Left/Right", key_style));
@@ -130,6 +134,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
                 hints.push(Span::styled("r", key_style));
                 hints.push(Span::styled(":rename ", hint_style));
+                hints.push(Span::styled("Ctrl+N", key_style));
+                hints.push(Span::styled(":new request ", hint_style));
             }
             Pane::Response => {
                 hints.push(Span::styled("Left/Right", key_style));

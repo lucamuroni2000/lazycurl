@@ -177,8 +177,12 @@ async fn run_loop(
                     }
                     Action::SaveRequest => app.save_current_request(),
                     Action::NewRequest => {
-                        app.new_request();
-                        app.load_request_into_inputs();
+                        if app.active_pane == app::Pane::Collections {
+                            app.create_new_collection();
+                        } else {
+                            app.new_request();
+                            app.load_request_into_inputs();
+                        }
                     }
                     Action::SwitchEnvironment => app.cycle_environment(),
                     Action::CopyCurl => {
@@ -218,7 +222,10 @@ async fn run_loop(
                         }
                     }
                     Action::DeleteItem => {
-                        // TODO: implement delete for headers/params
+                        if app.active_pane == app::Pane::Collections {
+                            app.delete_selected_in_collections();
+                        }
+                        // TODO: implement delete for headers/params in Request pane
                     }
                     Action::Rename => app.handle_rename(),
                     // Editing actions
