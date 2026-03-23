@@ -93,126 +93,233 @@ async fn run_loop(
                 app::InputMode::Editing => input::resolve_editing(key),
             };
 
-            match action {
-                Action::Quit => app.should_quit = true,
-                Action::Cancel => {
-                    if app.input_mode == app::InputMode::Editing {
-                        app.stop_editing();
-                    } else if app.show_help {
-                        app.show_help = false;
-                    }
-                }
-                Action::CyclePaneForward => {
-                    if app.input_mode == app::InputMode::Editing {
-                        app.stop_editing();
-                    }
-                    app.cycle_pane_forward();
-                }
-                Action::CyclePaneBackward => {
-                    if app.input_mode == app::InputMode::Editing {
-                        app.stop_editing();
-                    }
-                    app.cycle_pane_backward();
-                }
-                Action::ToggleCollections => app.toggle_pane(0),
-                Action::ToggleRequest => app.toggle_pane(1),
-                Action::ToggleResponse => app.toggle_pane(2),
-                Action::RevealSecrets => app.secrets_revealed = !app.secrets_revealed,
-                Action::Help => app.show_help = !app.show_help,
-                Action::SendRequest => {
-                    if app.input_mode == app::InputMode::Editing {
-                        app.stop_editing();
-                    }
-                    app.send_request().await;
-                }
-                Action::SaveRequest => app.save_current_request(),
-                Action::NewRequest => {
-                    app.new_request();
-                    app.load_request_into_inputs();
-                }
-                Action::SwitchEnvironment => app.cycle_environment(),
-                Action::CopyCurl => {
-                    if let Some(req) = &app.current_request {
-                        let cmd = CurlCommandBuilder::new(&req.url).method(req.method).build();
-                        let display = cmd.to_display_string(&[]);
-                        app.status_message = Some(format!("Copied: {}", display));
-                    }
-                }
-                // Navigation actions (Normal mode)
-                Action::MoveUp => app.handle_move_up(),
-                Action::MoveDown => app.handle_move_down(),
-                Action::Enter => {
-                    if app.input_mode == app::InputMode::Editing {
-                        // Confirm current field, move to next or exit editing
-                        app.stop_editing();
-                    } else {
-                        app.handle_enter();
-                    }
-                }
-                Action::NextTab => match app.active_pane {
-                    app::Pane::Request => app.next_request_tab(),
-                    app::Pane::Response => app.next_response_tab(),
-                    _ => {}
-                },
-                Action::PrevTab => match app.active_pane {
-                    app::Pane::Request => app.prev_request_tab(),
-                    app::Pane::Response => app.prev_response_tab(),
-                    _ => {}
-                },
-                Action::AddItem => {
-                    if app.active_pane == app::Pane::Request {
-                        match app.request_tab {
-                            app::RequestTab::Headers => app.add_header(),
-                            app::RequestTab::Params => app.add_param(),
-                            _ => {}
+            // Variables overlay intercepts actions when open
+            if app.show_variables {
+                handle_variables_action(app, &action);
+                // Editing actions for variable inputs
+                match action {
+                    Action::CharInput(c) => {
+                        if let Some(input) = app.var_active_input() {
+                            input.insert_char(c);
                         }
                     }
-                }
-                Action::DeleteItem => {
-                    // TODO: implement delete for headers/params
-                }
-                // Editing actions
-                Action::CharInput(c) => {
-                    if let Some(input) = app.active_text_input() {
-                        input.insert_char(c);
+                    Action::Backspace => {
+                        if let Some(input) = app.var_active_input() {
+                            input.delete_char_before();
+                        }
                     }
-                }
-                Action::Backspace => {
-                    if let Some(input) = app.active_text_input() {
-                        input.delete_char_before();
+                    Action::Delete => {
+                        if let Some(input) = app.var_active_input() {
+                            input.delete_char_after();
+                        }
                     }
-                }
-                Action::Delete => {
-                    if let Some(input) = app.active_text_input() {
-                        input.delete_char_after();
+                    Action::CursorLeft => {
+                        if let Some(input) = app.var_active_input() {
+                            input.move_left();
+                        }
                     }
-                }
-                Action::CursorLeft => {
-                    if let Some(input) = app.active_text_input() {
-                        input.move_left();
+                    Action::CursorRight => {
+                        if let Some(input) = app.var_active_input() {
+                            input.move_right();
+                        }
                     }
-                }
-                Action::CursorRight => {
-                    if let Some(input) = app.active_text_input() {
-                        input.move_right();
+                    Action::Home => {
+                        if let Some(input) = app.var_active_input() {
+                            input.move_home();
+                        }
                     }
-                }
-                Action::Home => {
-                    if let Some(input) = app.active_text_input() {
-                        input.move_home();
+                    Action::End => {
+                        if let Some(input) = app.var_active_input() {
+                            input.move_end();
+                        }
                     }
+                    Action::Quit => app.should_quit = true,
+                    _ => {}
                 }
-                Action::End => {
-                    if let Some(input) = app.active_text_input() {
-                        input.move_end();
+            } else {
+                // Normal dispatch
+                match action {
+                    Action::Quit => app.should_quit = true,
+                    Action::Cancel => {
+                        if app.input_mode == app::InputMode::Editing {
+                            app.stop_editing();
+                        } else if app.show_help {
+                            app.show_help = false;
+                        }
                     }
+                    Action::CyclePaneForward => {
+                        if app.input_mode == app::InputMode::Editing {
+                            app.stop_editing();
+                        }
+                        app.cycle_pane_forward();
+                    }
+                    Action::CyclePaneBackward => {
+                        if app.input_mode == app::InputMode::Editing {
+                            app.stop_editing();
+                        }
+                        app.cycle_pane_backward();
+                    }
+                    Action::ToggleCollections => app.toggle_pane(0),
+                    Action::ToggleRequest => app.toggle_pane(1),
+                    Action::ToggleResponse => app.toggle_pane(2),
+                    Action::RevealSecrets => app.secrets_revealed = !app.secrets_revealed,
+                    Action::Help => app.show_help = !app.show_help,
+                    Action::OpenVariables => {
+                        app.show_variables = true;
+                        app.var_cursor = 0;
+                        app.var_editing = None;
+                    }
+                    Action::SendRequest => {
+                        if app.input_mode == app::InputMode::Editing {
+                            app.stop_editing();
+                        }
+                        app.send_request().await;
+                    }
+                    Action::SaveRequest => app.save_current_request(),
+                    Action::NewRequest => {
+                        app.new_request();
+                        app.load_request_into_inputs();
+                    }
+                    Action::SwitchEnvironment => app.cycle_environment(),
+                    Action::CopyCurl => {
+                        if let Some(req) = &app.current_request {
+                            let cmd = CurlCommandBuilder::new(&req.url).method(req.method).build();
+                            let display = cmd.to_display_string(&[]);
+                            app.status_message = Some(format!("Copied: {}", display));
+                        }
+                    }
+                    // Navigation actions (Normal mode)
+                    Action::MoveUp => app.handle_move_up(),
+                    Action::MoveDown => app.handle_move_down(),
+                    Action::Enter => {
+                        if app.input_mode == app::InputMode::Editing {
+                            app.stop_editing();
+                        } else {
+                            app.handle_enter();
+                        }
+                    }
+                    Action::NextTab => match app.active_pane {
+                        app::Pane::Request => app.next_request_tab(),
+                        app::Pane::Response => app.next_response_tab(),
+                        _ => {}
+                    },
+                    Action::PrevTab => match app.active_pane {
+                        app::Pane::Request => app.prev_request_tab(),
+                        app::Pane::Response => app.prev_response_tab(),
+                        _ => {}
+                    },
+                    Action::AddItem => {
+                        if app.active_pane == app::Pane::Request {
+                            match app.request_tab {
+                                app::RequestTab::Headers => app.add_header(),
+                                app::RequestTab::Params => app.add_param(),
+                                _ => {}
+                            }
+                        }
+                    }
+                    Action::DeleteItem => {
+                        // TODO: implement delete for headers/params
+                    }
+                    Action::Rename => app.handle_rename(),
+                    // Editing actions
+                    Action::CharInput(c) => {
+                        if let Some(input) = app.active_text_input() {
+                            input.insert_char(c);
+                        }
+                    }
+                    Action::Backspace => {
+                        if let Some(input) = app.active_text_input() {
+                            input.delete_char_before();
+                        }
+                    }
+                    Action::Delete => {
+                        if let Some(input) = app.active_text_input() {
+                            input.delete_char_after();
+                        }
+                    }
+                    Action::CursorLeft => {
+                        if let Some(input) = app.active_text_input() {
+                            input.move_left();
+                        }
+                    }
+                    Action::CursorRight => {
+                        if let Some(input) = app.active_text_input() {
+                            input.move_right();
+                        }
+                    }
+                    Action::Home => {
+                        if let Some(input) = app.active_text_input() {
+                            input.move_home();
+                        }
+                    }
+                    Action::End => {
+                        if let Some(input) = app.active_text_input() {
+                            input.move_end();
+                        }
+                    }
+                    _ => {}
                 }
-                _ => {}
-            }
+            } // end else (not show_variables)
         }
 
         if app.should_quit {
             return Ok(());
         }
+    }
+}
+
+fn handle_variables_action(app: &mut App, action: &Action) {
+    match action {
+        Action::Cancel => {
+            if app.input_mode == app::InputMode::Editing {
+                app.var_editing = None;
+                app.input_mode = app::InputMode::Normal;
+            } else {
+                app.show_variables = false;
+            }
+        }
+        Action::MoveUp => app.var_move_up(),
+        Action::MoveDown => app.var_move_down(),
+        Action::NextTab | Action::CyclePaneForward => app.var_next_tier(),
+        Action::PrevTab | Action::CyclePaneBackward => app.var_prev_tier(),
+        Action::Enter => {
+            if app.input_mode == app::InputMode::Editing {
+                // If editing key, move to value; if editing value, confirm
+                if app.var_editing == Some(app::VarEditTarget::Key) {
+                    app.var_stop_editing();
+                    app.var_start_edit_value();
+                } else {
+                    app.var_stop_editing();
+                }
+            } else {
+                // Start editing value of selected variable
+                app.var_start_edit_value();
+            }
+        }
+        Action::Rename => {
+            // Edit key of selected variable
+            if app.input_mode != app::InputMode::Editing {
+                app.var_start_edit_key();
+            }
+        }
+        Action::AddItem => {
+            if app.input_mode != app::InputMode::Editing {
+                app.var_add();
+            }
+        }
+        Action::DeleteItem => {
+            if app.input_mode != app::InputMode::Editing {
+                app.var_delete();
+            }
+        }
+        Action::ToggleSecretFlag => {
+            if app.input_mode != app::InputMode::Editing {
+                app.var_toggle_secret();
+            }
+        }
+        Action::RevealSecrets => {
+            app.secrets_revealed = !app.secrets_revealed;
+        }
+        _ => {}
     }
 }

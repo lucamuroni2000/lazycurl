@@ -16,14 +16,32 @@ pub enum InputMode {
 
 /// Identifies which text field is currently being edited
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 pub enum EditField {
     Url,
     HeaderKey(usize),
+    #[allow(dead_code)]
     HeaderValue(usize),
     ParamKey(usize),
+    #[allow(dead_code)]
     ParamValue(usize),
     BodyContent,
+    RequestName,
+    CollectionName(usize),
+    /// Editing name for a new collection being created (not yet in the list)
+    NewCollectionName,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VarTier {
+    Global,
+    Environment,
+    Collection,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VarEditTarget {
+    Key,
+    Value,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -74,6 +92,9 @@ pub enum Action {
     PrevTab,
     DeleteItem,
     AddItem,
+    Rename,
+    OpenVariables,
+    ToggleSecretFlag,
     CharInput(char),
     Backspace,
     Delete,
@@ -109,6 +130,14 @@ pub struct App {
     pub header_value_inputs: Vec<crate::text_input::TextInput>,
     pub param_key_inputs: Vec<crate::text_input::TextInput>,
     pub param_value_inputs: Vec<crate::text_input::TextInput>,
+    pub name_input: crate::text_input::TextInput,
+    // Variables overlay
+    pub show_variables: bool,
+    pub var_tier: VarTier,
+    pub var_cursor: usize,
+    pub var_editing: Option<VarEditTarget>,
+    pub var_key_input: crate::text_input::TextInput,
+    pub var_value_input: crate::text_input::TextInput,
     pub collection_scroll: usize,
     pub response_scroll: usize,
 }
@@ -149,6 +178,13 @@ impl App {
             header_value_inputs: Vec::new(),
             param_key_inputs: Vec::new(),
             param_value_inputs: Vec::new(),
+            name_input: crate::text_input::TextInput::new(""),
+            show_variables: false,
+            var_tier: VarTier::Global,
+            var_cursor: 0,
+            var_editing: None,
+            var_key_input: crate::text_input::TextInput::new(""),
+            var_value_input: crate::text_input::TextInput::new(""),
             collection_scroll: 0,
             response_scroll: 0,
         }
@@ -445,7 +481,11 @@ impl App {
                 }
             }
         } else {
-            self.status_message = Some("No collection selected. Create one first.".to_string());
+            // No collection selected — prompt for a new collection name
+            self.name_input.set_content("My Collection");
+            self.start_editing(EditField::NewCollectionName);
+            self.status_message =
+                Some("Name your collection, then press Enter to save".to_string());
         }
     }
 
@@ -462,7 +502,11 @@ impl App {
         });
         self.selected_request = None;
         self.last_response = None;
-        self.status_message = Some("New request created".to_string());
+        // Start editing the request name immediately
+        self.name_input.set_content("New Request");
+        self.start_editing(EditField::RequestName);
+        self.active_pane = Pane::Request;
+        self.status_message = Some("Name your request, then press Enter".to_string());
     }
 
     /// Enter editing mode for a specific field
@@ -474,9 +518,46 @@ impl App {
     /// Exit editing mode, syncing text input back to request
     pub fn stop_editing(&mut self) {
         if let Some(field) = self.edit_field.take() {
-            self.sync_field_to_request(field);
+            if field == EditField::NewCollectionName {
+                self.finalize_new_collection();
+            } else {
+                self.sync_field_to_request(field);
+            }
         }
         self.input_mode = InputMode::Normal;
+    }
+
+    /// Create a new collection with the name from name_input and save current request into it
+    fn finalize_new_collection(&mut self) {
+        let name = self.name_input.content().to_string();
+        let name = if name.is_empty() {
+            "My Collection".to_string()
+        } else {
+            name
+        };
+
+        let request = match &self.current_request {
+            Some(r) => r.clone(),
+            None => return,
+        };
+
+        let new_collection = Collection {
+            id: uuid::Uuid::new_v4(),
+            name: name.clone(),
+            variables: std::collections::HashMap::new(),
+            requests: vec![request],
+        };
+        let collections_dir = config_dir().join("collections");
+        match curl_tui_core::collection::save_collection(&collections_dir, &new_collection) {
+            Ok(_) => {
+                self.collections.push(new_collection);
+                let col_idx = self.collections.len() - 1;
+                self.selected_collection = Some(col_idx);
+                self.selected_request = Some(0);
+                self.status_message = Some(format!("Created '{}' and saved!", name));
+            }
+            Err(e) => self.status_message = Some(format!("Save error: {}", e)),
+        }
     }
 
     /// Get a mutable reference to the active TextInput
@@ -488,6 +569,9 @@ impl App {
             EditField::HeaderValue(i) => self.header_value_inputs.get_mut(i),
             EditField::ParamKey(i) => self.param_key_inputs.get_mut(i),
             EditField::ParamValue(i) => self.param_value_inputs.get_mut(i),
+            EditField::RequestName
+            | EditField::CollectionName(_)
+            | EditField::NewCollectionName => Some(&mut self.name_input),
         }
     }
 
@@ -527,6 +611,51 @@ impl App {
                 if let Some(param) = request.params.get_mut(i) {
                     param.value = self.param_value_inputs[i].content().to_string();
                 }
+            }
+            EditField::RequestName => {
+                let name = self.name_input.content().to_string();
+                if !name.is_empty() {
+                    request.name = name.clone();
+                    // Auto-save the renamed request to its collection
+                    if let Some(col_idx) = self.selected_collection {
+                        if let Some(req_idx) = self.selected_request {
+                            if let Some(collection) = self.collections.get_mut(col_idx) {
+                                if let Some(existing) = collection.requests.get_mut(req_idx) {
+                                    existing.name = name;
+                                }
+                                let collections_dir = config_dir().join("collections");
+                                match curl_tui_core::collection::save_collection(
+                                    &collections_dir,
+                                    collection,
+                                ) {
+                                    Ok(_) => {
+                                        self.status_message = Some("Renamed and saved!".to_string())
+                                    }
+                                    Err(e) => {
+                                        self.status_message =
+                                            Some(format!("Rename ok, save error: {}", e))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            EditField::CollectionName(col_idx) => {
+                let name = self.name_input.content().to_string();
+                if !name.is_empty() {
+                    if let Some(collection) = self.collections.get_mut(col_idx) {
+                        collection.name = name;
+                        let collections_dir = config_dir().join("collections");
+                        let _ = curl_tui_core::collection::save_collection(
+                            &collections_dir,
+                            collection,
+                        );
+                    }
+                }
+            }
+            EditField::NewCollectionName => {
+                // Handled separately in save flow — sync is a no-op here
             }
         }
     }
@@ -568,6 +697,49 @@ impl App {
                 .iter()
                 .map(|p| crate::text_input::TextInput::new(&p.value))
                 .collect();
+        }
+    }
+
+    /// Rename the currently selected item in the Collections pane,
+    /// or the current request name if in the Request pane
+    pub fn handle_rename(&mut self) {
+        match self.active_pane {
+            Pane::Collections => {
+                if let Some(col_idx) = self.selected_collection {
+                    if let Some(req_idx) = self.selected_request {
+                        // Rename a request — clone data first to avoid borrow issues
+                        let req_clone = self
+                            .collections
+                            .get(col_idx)
+                            .and_then(|c| c.requests.get(req_idx))
+                            .cloned();
+                        if let Some(req) = req_clone {
+                            self.name_input.set_content(&req.name);
+                            self.current_request = Some(req);
+                            self.load_request_into_inputs();
+                            self.start_editing(EditField::RequestName);
+                            self.status_message = Some("Rename request".to_string());
+                        }
+                    } else {
+                        // Rename a collection
+                        let col_name = self.collections.get(col_idx).map(|c| c.name.clone());
+                        if let Some(name) = col_name {
+                            self.name_input.set_content(&name);
+                            self.start_editing(EditField::CollectionName(col_idx));
+                            self.status_message = Some("Rename collection".to_string());
+                        }
+                    }
+                }
+            }
+            Pane::Request => {
+                // Rename current request
+                if let Some(req) = &self.current_request {
+                    self.name_input.set_content(&req.name);
+                    self.start_editing(EditField::RequestName);
+                    self.status_message = Some("Rename request".to_string());
+                }
+            }
+            _ => {}
         }
     }
 
@@ -796,6 +968,271 @@ impl App {
             .and_then(|i| self.environments.get(i))
         {
             self.status_message = Some(format!("Environment: {}", env.name));
+        }
+    }
+
+    // ── Variables overlay ──────────────────────────────────────
+
+    /// Get the sorted keys for the current variable tier
+    pub fn var_keys(&self) -> Vec<String> {
+        let map = match self.var_tier {
+            VarTier::Global => &self.config.variables,
+            VarTier::Environment => {
+                if let Some(env) = self
+                    .active_environment
+                    .and_then(|i| self.environments.get(i))
+                {
+                    &env.variables
+                } else {
+                    return Vec::new();
+                }
+            }
+            VarTier::Collection => {
+                if let Some(col) = self
+                    .selected_collection
+                    .and_then(|i| self.collections.get(i))
+                {
+                    &col.variables
+                } else {
+                    return Vec::new();
+                }
+            }
+        };
+        let mut keys: Vec<String> = map.keys().cloned().collect();
+        keys.sort();
+        keys
+    }
+
+    /// Get a variable by key from the current tier
+    pub fn var_get(&self, key: &str) -> Option<&curl_tui_core::types::Variable> {
+        match self.var_tier {
+            VarTier::Global => self.config.variables.get(key),
+            VarTier::Environment => self
+                .active_environment
+                .and_then(|i| self.environments.get(i))
+                .and_then(|e| e.variables.get(key)),
+            VarTier::Collection => self
+                .selected_collection
+                .and_then(|i| self.collections.get(i))
+                .and_then(|c| c.variables.get(key)),
+        }
+    }
+
+    pub fn var_move_up(&mut self) {
+        if self.var_cursor > 0 {
+            self.var_cursor -= 1;
+        }
+    }
+
+    pub fn var_move_down(&mut self) {
+        let count = self.var_keys().len();
+        if self.var_cursor + 1 < count {
+            self.var_cursor += 1;
+        }
+    }
+
+    pub fn var_next_tier(&mut self) {
+        self.var_tier = match self.var_tier {
+            VarTier::Global => VarTier::Environment,
+            VarTier::Environment => VarTier::Collection,
+            VarTier::Collection => VarTier::Global,
+        };
+        self.var_cursor = 0;
+        self.var_editing = None;
+    }
+
+    pub fn var_prev_tier(&mut self) {
+        self.var_tier = match self.var_tier {
+            VarTier::Global => VarTier::Collection,
+            VarTier::Environment => VarTier::Global,
+            VarTier::Collection => VarTier::Environment,
+        };
+        self.var_cursor = 0;
+        self.var_editing = None;
+    }
+
+    pub fn var_start_edit_key(&mut self) {
+        let keys = self.var_keys();
+        if let Some(key) = keys.get(self.var_cursor) {
+            self.var_key_input.set_content(key);
+            self.var_editing = Some(VarEditTarget::Key);
+            self.input_mode = InputMode::Editing;
+        }
+    }
+
+    pub fn var_start_edit_value(&mut self) {
+        let keys = self.var_keys();
+        if let Some(key) = keys.get(self.var_cursor) {
+            let value = self.var_get(key).map(|v| v.value.clone());
+            let key = key.clone();
+            if let Some(value) = value {
+                self.var_value_input.set_content(&value);
+                self.var_key_input.set_content(&key);
+                self.var_editing = Some(VarEditTarget::Value);
+                self.input_mode = InputMode::Editing;
+            }
+        }
+    }
+
+    pub fn var_stop_editing(&mut self) {
+        if let Some(target) = self.var_editing.take() {
+            let old_key = {
+                let keys = self.var_keys();
+                keys.get(self.var_cursor).cloned()
+            };
+            if let Some(old_key) = old_key {
+                match target {
+                    VarEditTarget::Key => {
+                        let new_key = self.var_key_input.content().to_string();
+                        if !new_key.is_empty() && new_key != old_key {
+                            // Rename: remove old, insert new with same value
+                            if let Some(var) = self.var_remove_raw(&old_key) {
+                                self.var_insert_raw(&new_key, var);
+                            }
+                        }
+                    }
+                    VarEditTarget::Value => {
+                        let new_value = self.var_value_input.content().to_string();
+                        let key = self.var_key_input.content().to_string();
+                        if let Some(var) = self.var_get_mut(&key) {
+                            var.value = new_value;
+                        }
+                    }
+                }
+                self.var_save_current_tier();
+            }
+        }
+        self.input_mode = InputMode::Normal;
+    }
+
+    pub fn var_add(&mut self) {
+        let new_key = format!("new_var_{}", self.var_keys().len());
+        let var = curl_tui_core::types::Variable {
+            value: String::new(),
+            secret: false,
+        };
+        self.var_insert_raw(&new_key, var);
+        // Move cursor to the new variable
+        let keys = self.var_keys();
+        self.var_cursor = keys.iter().position(|k| k == &new_key).unwrap_or(0);
+        // Start editing the key
+        self.var_key_input.set_content(&new_key);
+        self.var_editing = Some(VarEditTarget::Key);
+        self.input_mode = InputMode::Editing;
+        self.var_save_current_tier();
+    }
+
+    pub fn var_delete(&mut self) {
+        let keys = self.var_keys();
+        if let Some(key) = keys.get(self.var_cursor).cloned() {
+            self.var_remove_raw(&key);
+            if self.var_cursor > 0 && self.var_cursor >= self.var_keys().len() {
+                self.var_cursor -= 1;
+            }
+            self.var_save_current_tier();
+        }
+    }
+
+    pub fn var_toggle_secret(&mut self) {
+        let keys = self.var_keys();
+        if let Some(key) = keys.get(self.var_cursor).cloned() {
+            if let Some(var) = self.var_get_mut(&key) {
+                var.secret = !var.secret;
+                self.var_save_current_tier();
+            }
+        }
+    }
+
+    /// Get active text input for variable editing
+    pub fn var_active_input(&mut self) -> Option<&mut crate::text_input::TextInput> {
+        match self.var_editing? {
+            VarEditTarget::Key => Some(&mut self.var_key_input),
+            VarEditTarget::Value => Some(&mut self.var_value_input),
+        }
+    }
+
+    // ── Private variable helpers ──
+
+    fn var_get_mut(&mut self, key: &str) -> Option<&mut curl_tui_core::types::Variable> {
+        match self.var_tier {
+            VarTier::Global => self.config.variables.get_mut(key),
+            VarTier::Environment => self
+                .active_environment
+                .and_then(|i| self.environments.get_mut(i))
+                .and_then(|e| e.variables.get_mut(key)),
+            VarTier::Collection => self
+                .selected_collection
+                .and_then(|i| self.collections.get_mut(i))
+                .and_then(|c| c.variables.get_mut(key)),
+        }
+    }
+
+    fn var_remove_raw(&mut self, key: &str) -> Option<curl_tui_core::types::Variable> {
+        match self.var_tier {
+            VarTier::Global => self.config.variables.remove(key),
+            VarTier::Environment => self
+                .active_environment
+                .and_then(|i| self.environments.get_mut(i))
+                .and_then(|e| e.variables.remove(key)),
+            VarTier::Collection => self
+                .selected_collection
+                .and_then(|i| self.collections.get_mut(i))
+                .and_then(|c| c.variables.remove(key)),
+        }
+    }
+
+    fn var_insert_raw(&mut self, key: &str, var: curl_tui_core::types::Variable) {
+        match self.var_tier {
+            VarTier::Global => {
+                self.config.variables.insert(key.to_string(), var);
+            }
+            VarTier::Environment => {
+                if let Some(env) = self
+                    .active_environment
+                    .and_then(|i| self.environments.get_mut(i))
+                {
+                    env.variables.insert(key.to_string(), var);
+                }
+            }
+            VarTier::Collection => {
+                if let Some(col) = self
+                    .selected_collection
+                    .and_then(|i| self.collections.get_mut(i))
+                {
+                    col.variables.insert(key.to_string(), var);
+                }
+            }
+        }
+    }
+
+    fn var_save_current_tier(&self) {
+        let config_root = config_dir();
+        match self.var_tier {
+            VarTier::Global => {
+                let _ = self.config.save_to(&config_root.join("config.json"));
+            }
+            VarTier::Environment => {
+                if let Some(env) = self
+                    .active_environment
+                    .and_then(|i| self.environments.get(i))
+                {
+                    let _ = curl_tui_core::environment::save_environment(
+                        &config_root.join("environments"),
+                        env,
+                    );
+                }
+            }
+            VarTier::Collection => {
+                if let Some(col) = self
+                    .selected_collection
+                    .and_then(|i| self.collections.get(i))
+                {
+                    let _ = curl_tui_core::collection::save_collection(
+                        &config_root.join("collections"),
+                        col,
+                    );
+                }
+            }
         }
     }
 }

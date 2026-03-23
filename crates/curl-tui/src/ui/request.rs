@@ -26,15 +26,51 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    // Split inner area: method+url (2 lines) | tabs (1 line) | content (rest)
+    // Split inner area: name (1 line) | method+url (1 line) | tabs (1 line) | content (rest)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(1), // Request name
             Constraint::Length(1), // Method + URL
             Constraint::Length(1), // Tabs
             Constraint::Min(1),    // Tab content
         ])
         .split(inner);
+
+    // Request name
+    if let Some(req) = &app.current_request {
+        let name_editing =
+            app.input_mode == InputMode::Editing && app.edit_field == Some(EditField::RequestName);
+
+        let name_text = if name_editing {
+            app.name_input.content().to_string()
+        } else {
+            req.name.clone()
+        };
+
+        let name_style = if name_editing {
+            Style::default().fg(Color::White).bg(Color::DarkGray)
+        } else {
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
+        };
+
+        let name_line = Line::from(vec![
+            Span::styled(" ", Style::default()),
+            Span::styled(name_text.clone(), name_style),
+            Span::styled("  (r: rename)", Style::default().fg(Color::DarkGray)),
+        ]);
+        frame.render_widget(Paragraph::new(name_line), chunks[0]);
+
+        if name_editing {
+            let cursor_x = chunks[0].x + 1 + app.name_input.cursor() as u16;
+            let cursor_y = chunks[0].y;
+            if cursor_x < chunks[0].x + chunks[0].width {
+                frame.set_cursor_position((cursor_x, cursor_y));
+            }
+        }
+    }
 
     // Method + URL bar
     if let Some(req) = &app.current_request {
@@ -70,23 +106,23 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
         let url_span = Span::styled(url_display, url_style);
         let line = Line::from(vec![method_span, Span::raw(" "), url_span]);
-        frame.render_widget(Paragraph::new(line), chunks[0]);
+        frame.render_widget(Paragraph::new(line), chunks[1]);
 
         // Show cursor when editing URL
         if url_editing {
-            let cursor_x = chunks[0].x
+            let cursor_x = chunks[1].x
                 + req.method.to_string().len() as u16
                 + 3
                 + app.url_input.cursor() as u16;
-            let cursor_y = chunks[0].y;
-            if cursor_x < chunks[0].x + chunks[0].width {
+            let cursor_y = chunks[1].y;
+            if cursor_x < chunks[1].x + chunks[1].width {
                 frame.set_cursor_position((cursor_x, cursor_y));
             }
         }
     } else {
         frame.render_widget(
             Paragraph::new("No request selected").style(Style::default().fg(Color::DarkGray)),
-            chunks[0],
+            chunks[1],
         );
     }
 
@@ -107,14 +143,14 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )
         .divider("|");
-    frame.render_widget(tabs, chunks[1]);
+    frame.render_widget(tabs, chunks[2]);
 
     // Tab content
     match app.request_tab {
-        RequestTab::Headers => draw_headers(frame, app, chunks[2]),
-        RequestTab::Body => draw_body(frame, app, chunks[2]),
-        RequestTab::Auth => draw_auth(frame, app, chunks[2]),
-        RequestTab::Params => draw_params(frame, app, chunks[2]),
+        RequestTab::Headers => draw_headers(frame, app, chunks[3]),
+        RequestTab::Body => draw_body(frame, app, chunks[3]),
+        RequestTab::Auth => draw_auth(frame, app, chunks[3]),
+        RequestTab::Params => draw_params(frame, app, chunks[3]),
     }
 }
 
