@@ -86,9 +86,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
             matches!(app.var_tier, VarTier::Collection) && app.selected_collection.is_none();
 
         let msg = if no_env {
-            " No environment selected. Press Ctrl+E to switch."
+            " No environment selected. Press Ctrl+E to create one, or 'a' to add."
         } else if no_col {
-            " No collection selected."
+            " No collection selected. Save a request first (Ctrl+S)."
         } else {
             " No variables. Press 'a' to add one."
         };

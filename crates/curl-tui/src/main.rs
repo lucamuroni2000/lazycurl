@@ -304,7 +304,34 @@ fn handle_variables_action(app: &mut App, action: &Action) {
         }
         Action::AddItem => {
             if app.input_mode != app::InputMode::Editing {
-                app.var_add();
+                // If on Environment/Collection tier with nothing selected, create one first
+                let needs_container = match app.var_tier {
+                    app::VarTier::Environment => app.active_environment.is_none(),
+                    app::VarTier::Collection => app.selected_collection.is_none(),
+                    app::VarTier::Global => false,
+                };
+                if needs_container {
+                    match app.var_tier {
+                        app::VarTier::Environment => {
+                            app.show_variables = false;
+                            app.create_new_environment();
+                        }
+                        app::VarTier::Collection => {
+                            app.status_message =
+                                Some("Select or create a collection first (Ctrl+S)".to_string());
+                        }
+                        _ => {}
+                    }
+                } else {
+                    app.var_add();
+                }
+            }
+        }
+        Action::SwitchEnvironment | Action::NewRequest => {
+            // Ctrl+E or Ctrl+N in the variables overlay: create a new environment
+            if app.var_tier == app::VarTier::Environment {
+                app.show_variables = false;
+                app.create_new_environment();
             }
         }
         Action::DeleteItem => {
