@@ -4,6 +4,7 @@ pub mod layout;
 pub mod request;
 pub mod response;
 pub mod statusbar;
+pub mod variables;
 
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
@@ -51,7 +52,10 @@ pub fn draw(frame: &mut Frame, app: &App) {
     // Status bar
     statusbar::draw(frame, app, pane_layout.status_bar);
 
-    // Help overlay (on top of everything)
+    // Overlays (on top of everything)
+    if app.show_variables {
+        variables::draw(frame, app);
+    }
     if app.show_help {
         help::draw(frame);
     }
