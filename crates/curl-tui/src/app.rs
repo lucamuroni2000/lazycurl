@@ -595,11 +595,16 @@ impl App {
 
                 self.collections.remove(col_idx);
 
-                // Adjust selection
+                // Adjust all collection indices
                 if self.collections.is_empty() {
                     self.selected_collection = None;
-                } else if col_idx >= self.collections.len() {
-                    self.selected_collection = Some(self.collections.len() - 1);
+                    self.var_collection_idx = None;
+                } else {
+                    let max = self.collections.len() - 1;
+                    if col_idx > max {
+                        self.selected_collection = Some(max);
+                    }
+                    self.var_collection_idx = self.var_collection_idx.map(|i| i.min(max));
                 }
                 self.selected_request = None;
 
@@ -1140,9 +1145,12 @@ impl App {
     }
 
     pub fn delete_active_environment(&mut self) {
-        let Some(idx) = self.active_environment else {
-            self.status_message = Some("No environment selected".to_string());
-            return;
+        let idx = match self.var_environment_idx.or(self.active_environment) {
+            Some(i) => i,
+            None => {
+                self.status_message = Some("No environment selected".to_string());
+                return;
+            }
         };
         let Some(env) = self.environments.get(idx) else {
             return;
@@ -1161,12 +1169,16 @@ impl App {
         let name = env.name.clone();
         self.environments.remove(idx);
 
-        // Adjust active_environment
+        // Adjust all environment indices
         if self.environments.is_empty() {
             self.active_environment = None;
-        } else if idx >= self.environments.len() {
-            self.active_environment = Some(self.environments.len() - 1);
+            self.var_environment_idx = None;
+        } else {
+            let max = self.environments.len() - 1;
+            self.active_environment = self.active_environment.map(|i| i.min(max));
+            self.var_environment_idx = Some(idx.min(max));
         }
+        self.var_cursor = 0;
 
         self.status_message = Some(format!("Deleted environment '{}'", name));
     }
