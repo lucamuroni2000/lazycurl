@@ -6,6 +6,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -q '\\.rs'; then cd /c/Users/lucam/Projects/curl-tui && /c/Users/lucam/.cargo/bin/cargo fmt --all 2>&1 | tail -5; fi",
+            "timeout": 15000
+          },
+          {
+            "type": "command",
             "command": "if echo \"$TOOL_INPUT\" | grep -q '\\.rs'; then cd /c/Users/lucam/Projects/curl-tui && /c/Users/lucam/.cargo/bin/cargo check --workspace 2>&1 | tail -20; fi",
             "timeout": 30000
           }
