@@ -27,6 +27,7 @@ pub enum EditField {
     BodyContent,
     RequestName,
     CollectionName(usize),
+    EnvironmentName(usize),
     /// Editing name for a new collection being created (not yet in the list)
     NewCollectionName,
 }
@@ -571,6 +572,7 @@ impl App {
             EditField::ParamValue(i) => self.param_value_inputs.get_mut(i),
             EditField::RequestName
             | EditField::CollectionName(_)
+            | EditField::EnvironmentName(_)
             | EditField::NewCollectionName => Some(&mut self.name_input),
         }
     }
@@ -651,6 +653,24 @@ impl App {
                             &collections_dir,
                             collection,
                         );
+                    }
+                }
+            }
+            EditField::EnvironmentName(env_idx) => {
+                let name = self.name_input.content().to_string();
+                if !name.is_empty() {
+                    if let Some(env) = self.environments.get_mut(env_idx) {
+                        env.name = name.clone();
+                        let config_root = config_dir();
+                        match curl_tui_core::environment::save_environment(
+                            &config_root.join("environments"),
+                            env,
+                        ) {
+                            Ok(_) => {
+                                self.status_message = Some(format!("Environment '{}' saved!", name))
+                            }
+                            Err(e) => self.status_message = Some(format!("Save error: {}", e)),
+                        }
                     }
                 }
             }
@@ -956,7 +976,8 @@ impl App {
 
     pub fn cycle_environment(&mut self) {
         if self.environments.is_empty() {
-            self.status_message = Some("No environments configured".to_string());
+            // No environments — create one and prompt for name
+            self.create_new_environment();
             return;
         }
         self.active_environment = Some(match self.active_environment {
@@ -968,6 +989,35 @@ impl App {
             .and_then(|i| self.environments.get(i))
         {
             self.status_message = Some(format!("Environment: {}", env.name));
+        }
+    }
+
+    pub fn create_new_environment(&mut self) {
+        let name = if self.environments.is_empty() {
+            "Development"
+        } else {
+            "New Environment"
+        };
+        let env = Environment {
+            id: uuid::Uuid::new_v4(),
+            name: name.to_string(),
+            variables: std::collections::HashMap::new(),
+        };
+        let config_root = config_dir();
+        match curl_tui_core::environment::save_environment(&config_root.join("environments"), &env)
+        {
+            Ok(_) => {
+                self.environments.push(env);
+                let idx = self.environments.len() - 1;
+                self.active_environment = Some(idx);
+                // Prompt to rename it
+                self.name_input.set_content(name);
+                self.start_editing(EditField::EnvironmentName(idx));
+                self.status_message = Some("Name your environment, then press Enter".to_string());
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Error creating environment: {}", e));
+            }
         }
     }
 
