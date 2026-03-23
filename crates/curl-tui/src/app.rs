@@ -1021,6 +1021,38 @@ impl App {
         }
     }
 
+    pub fn delete_active_environment(&mut self) {
+        let Some(idx) = self.active_environment else {
+            self.status_message = Some("No environment selected".to_string());
+            return;
+        };
+        let Some(env) = self.environments.get(idx) else {
+            return;
+        };
+
+        // Delete the file from disk
+        let config_root = config_dir();
+        let slug = curl_tui_core::collection::slugify(&env.name);
+        let path = config_root
+            .join("environments")
+            .join(format!("{}.json", slug));
+        if path.exists() {
+            let _ = std::fs::remove_file(&path);
+        }
+
+        let name = env.name.clone();
+        self.environments.remove(idx);
+
+        // Adjust active_environment
+        if self.environments.is_empty() {
+            self.active_environment = None;
+        } else if idx >= self.environments.len() {
+            self.active_environment = Some(self.environments.len() - 1);
+        }
+
+        self.status_message = Some(format!("Deleted environment '{}'", name));
+    }
+
     // ── Variables overlay ──────────────────────────────────────
 
     /// Get the sorted keys for the current variable tier

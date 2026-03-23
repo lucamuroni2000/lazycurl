@@ -55,7 +55,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
                 .and_then(|i| app.environments.get(i))
                 .map(|e| e.name.as_str())
                 .unwrap_or("None selected");
-            format!(" Environment: {}", name)
+            format!(" Environment: {}  (Ctrl+E: new  d: delete)", name)
         }
         VarTier::Collection => {
             let name = app

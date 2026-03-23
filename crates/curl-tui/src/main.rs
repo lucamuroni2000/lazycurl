@@ -336,7 +336,13 @@ fn handle_variables_action(app: &mut App, action: &Action) {
         }
         Action::DeleteItem => {
             if app.input_mode != app::InputMode::Editing {
-                app.var_delete();
+                let keys = app.var_keys();
+                if keys.is_empty() && app.var_tier == app::VarTier::Environment {
+                    // No variables — delete the environment itself
+                    app.delete_active_environment();
+                } else {
+                    app.var_delete();
+                }
             }
         }
         Action::ToggleSecretFlag => {
