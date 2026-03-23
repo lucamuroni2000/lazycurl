@@ -80,13 +80,38 @@ Contains: `config.json`, `collections/`, `environments/`, `history.jsonl`, `.git
 - Use `[REDACTED]` for secret values in any persisted output.
 - Collections store `{{variable_references}}` only, never resolved secrets.
 
-## Testing
+## TDD Workflow
 
-- Run all tests: `cargo test --workspace` (88 tests: 72 unit + 11 text_input + 5 integration)
-- Run specific crate: `cargo test -p curl-tui-core`
+Every new feature or bugfix follows test-first development:
+
+1. **Write the failing test** in the relevant module's `#[cfg(test)]` block
+2. **Run it** to confirm it fails: `cargo test -p curl-tui-core -- <module>::tests::<test_name>`
+3. **Write the minimal implementation** to make it pass
+4. **Run again** to confirm it passes
+5. **Commit** the test and implementation together
+
+### Where tests live
+
+- **Unit tests:** Inline `#[cfg(test)] mod tests` at the bottom of each source file in `crates/curl-tui-core/src/`
+- **Integration tests:** `crates/curl-tui-core/tests/integration_test.rs` — end-to-end workflows (collection CRUD, variable resolution, secret redaction, command building)
+- **Widget tests:** `crates/curl-tui/src/text_input.rs` — inline tests for the TextInput widget
+- **TUI rendering:** Not tested in CI — the UI layer is kept thin, all logic lives in testable core modules
+
+### Running tests
+
+```bash
+cargo test --workspace                          # All 88 tests
+cargo test -p curl-tui-core                     # Core library only (72 tests)
+cargo test -p curl-tui-core -- secret           # Only secret module tests
+cargo test -p curl-tui-core -- variable::tests  # Only variable module tests
+cargo test -p curl-tui                          # TUI crate tests (11 text_input tests)
+```
+
+### Verification
+
 - Formatting: `cargo fmt --all --check`
 - Linting: `cargo clippy --workspace -- -D warnings`
-- Full verify: `/verify-rust` (runs fmt + clippy + test)
+- Full verify: `/verify-rust` (runs fmt + clippy + test in sequence)
 
 ## Gotchas
 
