@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
-use crate::app::{App, EditField, InputMode};
+use crate::app::{App, EditField, InputMode, Pane, RequestTab};
 
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let mode_indicator = match app.input_mode {
@@ -78,18 +78,86 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         Span::raw("")
     };
 
-    let hints = match app.input_mode {
-        InputMode::Normal => Span::styled(
-            " Tab:pane  Enter:edit  r:rename  ?:help  Ctrl+Q:quit ",
-            Style::default().fg(Color::DarkGray),
-        ),
-        InputMode::Editing => Span::styled(
-            " Esc:done  Ctrl+Enter:send  Tab:next pane ",
-            Style::default().fg(Color::DarkGray),
-        ),
-    };
+    let hint_style = Style::default().fg(Color::DarkGray);
+    let key_style = Style::default().fg(Color::Yellow);
 
-    let line = Line::from(vec![mode_indicator, Span::raw(" "), status_msg, hints]);
+    let mut hints: Vec<Span> = Vec::new();
+
+    if app.input_mode == InputMode::Editing {
+        // Editing mode — show editing-specific hints
+        hints.push(Span::styled(" Esc", key_style));
+        hints.push(Span::styled(":done ", hint_style));
+        hints.push(Span::styled("F5", key_style));
+        hints.push(Span::styled(":send ", hint_style));
+        hints.push(Span::styled("Tab", key_style));
+        hints.push(Span::styled(":pane ", hint_style));
+    } else {
+        // Normal mode — context-sensitive hints
+
+        // Always available
+        hints.push(Span::styled(" Tab", key_style));
+        hints.push(Span::styled(":pane ", hint_style));
+
+        // Pane-specific hints
+        match app.active_pane {
+            Pane::Collections => {
+                hints.push(Span::styled("Up/Down", key_style));
+                hints.push(Span::styled(":navigate ", hint_style));
+                hints.push(Span::styled("Enter", key_style));
+                hints.push(Span::styled(":load ", hint_style));
+                hints.push(Span::styled("r", key_style));
+                hints.push(Span::styled(":rename ", hint_style));
+            }
+            Pane::Request => {
+                hints.push(Span::styled("Left/Right", key_style));
+                hints.push(Span::styled(":tab ", hint_style));
+                hints.push(Span::styled("Enter", key_style));
+                hints.push(Span::styled(":edit ", hint_style));
+
+                // Tab-specific hints
+                match app.request_tab {
+                    RequestTab::Headers => {
+                        hints.push(Span::styled("a", key_style));
+                        hints.push(Span::styled(":add header ", hint_style));
+                    }
+                    RequestTab::Body => {}
+                    RequestTab::Auth => {}
+                    RequestTab::Params => {
+                        hints.push(Span::styled("a", key_style));
+                        hints.push(Span::styled(":add param ", hint_style));
+                    }
+                }
+
+                hints.push(Span::styled("r", key_style));
+                hints.push(Span::styled(":rename ", hint_style));
+            }
+            Pane::Response => {
+                hints.push(Span::styled("Left/Right", key_style));
+                hints.push(Span::styled(":tab ", hint_style));
+                hints.push(Span::styled("Up/Down", key_style));
+                hints.push(Span::styled(":scroll ", hint_style));
+            }
+        }
+
+        // Separator
+        hints.push(Span::styled("| ", hint_style));
+
+        // Global actions (always available)
+        hints.push(Span::styled("F5", key_style));
+        hints.push(Span::styled(":send ", hint_style));
+        hints.push(Span::styled("Ctrl+S", key_style));
+        hints.push(Span::styled(":save ", hint_style));
+        hints.push(Span::styled("v", key_style));
+        hints.push(Span::styled(":vars ", hint_style));
+        hints.push(Span::styled("?", key_style));
+        hints.push(Span::styled(":help ", hint_style));
+        hints.push(Span::styled("Ctrl+Q", key_style));
+        hints.push(Span::styled(":quit", hint_style));
+    }
+
+    let mut line_spans = vec![mode_indicator, Span::raw(" "), status_msg];
+    line_spans.extend(hints);
+    let line = Line::from(line_spans);
 
     let status = Paragraph::new(line).style(Style::default().bg(Color::Black));
     frame.render_widget(status, area);
