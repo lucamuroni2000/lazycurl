@@ -770,8 +770,18 @@ impl App {
                 let name = self.name_input.content().to_string();
                 if !name.is_empty() {
                     if let Some(collection) = self.collections.get_mut(col_idx) {
-                        collection.name = name;
+                        // Delete old file if name changed (slug differs)
+                        let old_slug = curl_tui_core::collection::slugify(&collection.name);
+                        let new_slug = curl_tui_core::collection::slugify(&name);
                         let collections_dir = config_dir().join("collections");
+                        if old_slug != new_slug {
+                            let old_path = collections_dir.join(format!("{}.json", old_slug));
+                            if old_path.exists() {
+                                let _ = std::fs::remove_file(&old_path);
+                            }
+                        }
+
+                        collection.name = name;
                         let _ = curl_tui_core::collection::save_collection(
                             &collections_dir,
                             collection,
@@ -783,12 +793,20 @@ impl App {
                 let name = self.name_input.content().to_string();
                 if !name.is_empty() {
                     if let Some(env) = self.environments.get_mut(env_idx) {
-                        env.name = name.clone();
+                        // Delete old file if name changed (slug differs)
+                        let old_slug = curl_tui_core::collection::slugify(&env.name);
+                        let new_slug = curl_tui_core::collection::slugify(&name);
                         let config_root = config_dir();
-                        match curl_tui_core::environment::save_environment(
-                            &config_root.join("environments"),
-                            env,
-                        ) {
+                        let env_dir = config_root.join("environments");
+                        if old_slug != new_slug {
+                            let old_path = env_dir.join(format!("{}.json", old_slug));
+                            if old_path.exists() {
+                                let _ = std::fs::remove_file(&old_path);
+                            }
+                        }
+
+                        env.name = name.clone();
+                        match curl_tui_core::environment::save_environment(&env_dir, env) {
                             Ok(_) => {
                                 self.status_message = Some(format!("Environment '{}' saved!", name))
                             }
