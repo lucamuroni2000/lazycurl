@@ -5,7 +5,12 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(export PATH=\"/c/Users/lucam/.cargo/bin:$PATH\")",
-      "Bash(cargo test:*)"
+      "Bash(cargo test:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo doc:*)",
+      "Bash(find C:/Users/lucam/Projects/curl-tui/target -path */ratatui/frame.rs -name *.rs)",
+      "Bash(cargo build:*)"
     ]
   }
 }
