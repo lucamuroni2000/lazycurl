@@ -99,14 +99,48 @@ pub fn build_keymap(
 }
 
 /// Look up a key event in the keymap.
+/// Normalizes SHIFT modifier for printable characters since terminals
+/// inconsistently report SHIFT for chars like '?', '/', uppercase letters, etc.
 pub fn resolve_action(key: KeyEvent, keymap: &HashMap<(KeyModifiers, KeyCode), Action>) -> Action {
     if key.kind != KeyEventKind::Press {
         return Action::None;
     }
-    keymap
-        .get(&(key.modifiers, key.code))
-        .cloned()
-        .unwrap_or(Action::None)
+
+    // Try exact match first
+    if let Some(action) = keymap.get(&(key.modifiers, key.code)) {
+        return action.clone();
+    }
+
+    // Terminals differ on modifier reporting for characters.
+    // Try several normalizations:
+    if let KeyCode::Char(c) = key.code {
+        // 1. Strip SHIFT for punctuation (e.g., '?' is Shift+/ on US keyboards)
+        if key.modifiers.contains(KeyModifiers::SHIFT) {
+            let without_shift = key.modifiers - KeyModifiers::SHIFT;
+            if let Some(action) = keymap.get(&(without_shift, KeyCode::Char(c))) {
+                return action.clone();
+            }
+        }
+        // 2. Try lowercase version (some terminals send uppercase with Ctrl)
+        let lower = c.to_ascii_lowercase();
+        if lower != c {
+            if let Some(action) = keymap.get(&(key.modifiers, KeyCode::Char(lower))) {
+                return action.clone();
+            }
+        }
+        // 3. For Ctrl+letter, some terminals add SHIFT; try without
+        if key
+            .modifiers
+            .contains(KeyModifiers::CONTROL | KeyModifiers::SHIFT)
+        {
+            let just_ctrl = KeyModifiers::CONTROL;
+            if let Some(action) = keymap.get(&(just_ctrl, KeyCode::Char(lower))) {
+                return action.clone();
+            }
+        }
+    }
+
+    Action::None
 }
 
 /// Resolve a key event when in Normal mode but not bound in the keymap.
@@ -123,6 +157,9 @@ pub fn resolve_navigation(key: KeyEvent) -> Action {
         (KeyModifiers::NONE, KeyCode::Right) => Action::NextTab,
         (KeyModifiers::NONE, KeyCode::Char('a')) => Action::AddItem,
         (KeyModifiers::NONE, KeyCode::Char('d')) => Action::DeleteItem,
+        (KeyModifiers::NONE, KeyCode::Char('r')) => Action::Rename,
+        (KeyModifiers::NONE, KeyCode::Char('v')) => Action::OpenVariables,
+        (KeyModifiers::NONE, KeyCode::Char('s')) => Action::ToggleSecretFlag,
         (KeyModifiers::NONE, KeyCode::Char('j')) => Action::MoveDown,
         (KeyModifiers::NONE, KeyCode::Char('k')) => Action::MoveUp,
         _ => Action::None,
@@ -149,8 +186,23 @@ pub fn resolve_editing(key: KeyEvent) -> Action {
         (KeyModifiers::NONE, KeyCode::Home) => Action::Home,
         (KeyModifiers::NONE, KeyCode::End) => Action::End,
         (KeyModifiers::NONE, KeyCode::Tab) => Action::CyclePaneForward,
-        (KeyModifiers::NONE, KeyCode::Char(c)) => Action::CharInput(c),
-        (KeyModifiers::SHIFT, KeyCode::Char(c)) => Action::CharInput(c),
+        // Accept any printable character regardless of modifier combo.
+        // On many keyboards, { [ } ] @ ~ etc. require AltGr (reported as ALT|CONTROL)
+        // or other modifier combinations. We only exclude pure Ctrl+letter shortcuts.
+        (mods, KeyCode::Char(c)) => {
+            let is_pure_ctrl = mods.contains(KeyModifiers::CONTROL)
+                && !mods.contains(KeyModifiers::ALT)
+                && c.is_ascii_alphabetic();
+            if is_pure_ctrl {
+                // Ctrl+letter shortcut — don't treat as char input
+                match c {
+                    'q' => Action::Quit,
+                    _ => Action::None,
+                }
+            } else {
+                Action::CharInput(c)
+            }
+        }
         _ => Action::None,
     }
 }
