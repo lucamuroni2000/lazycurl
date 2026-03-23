@@ -1103,15 +1103,21 @@ impl App {
             self.create_new_environment();
             return;
         }
-        self.active_environment = Some(match self.active_environment {
-            Some(i) => (i + 1) % self.environments.len(),
-            None => 0,
-        });
-        if let Some(env) = self
-            .active_environment
-            .and_then(|i| self.environments.get(i))
-        {
-            self.status_message = Some(format!("Environment: {}", env.name));
+        // Cycle: None → 0 → 1 → ... → N-1 → None → 0 → ...
+        self.active_environment = match self.active_environment {
+            None => Some(0),
+            Some(i) if i + 1 < self.environments.len() => Some(i + 1),
+            Some(_) => None, // wrap back to "no environment"
+        };
+        match &self.active_environment {
+            Some(i) => {
+                if let Some(env) = self.environments.get(*i) {
+                    self.status_message = Some(format!("Environment: {}", env.name));
+                }
+            }
+            None => {
+                self.status_message = Some("Environment: None".to_string());
+            }
         }
     }
 
