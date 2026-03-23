@@ -5,7 +5,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
 pub fn draw(frame: &mut Frame) {
-    let area = centered_rect(60, 70, frame.area());
+    let area = centered_rect(70, 80, frame.area());
     frame.render_widget(Clear, area);
 
     let block = Block::default()
@@ -18,32 +18,46 @@ pub fn draw(frame: &mut Frame) {
 
     let lines = vec![
         header("Navigation"),
-        binding("Tab / Shift+Tab", "Cycle panes"),
-        binding("Arrow Up/Down", "Navigate items"),
-        binding("Arrow Left/Right", "Switch tabs"),
-        binding("Enter", "Select / Edit field"),
-        binding("r", "Rename selected item"),
-        binding("a", "Add header/param/var"),
-        binding("v", "Open variables editor"),
-        binding("Esc", "Cancel / Exit edit mode"),
+        binding("Tab / Shift+Tab", "Cycle between panes"),
+        binding("Up / Down  (j/k)", "Navigate items in current pane"),
+        binding("Left / Right", "Switch tabs (Headers/Body/Auth/Params)"),
+        binding("Enter", "Select item or start editing focused field"),
+        binding("Esc", "Stop editing / Close overlay"),
         Line::raw(""),
-        header("Actions"),
-        binding("Ctrl+Enter / F5", "Send request"),
-        binding("Ctrl+S", "Save request"),
-        binding("Ctrl+N", "New request"),
-        binding("Ctrl+E", "Switch environment"),
-        binding("Ctrl+Y", "Copy as curl"),
+        header("Request Actions"),
+        binding("Ctrl+Enter / F5", "Send the current request"),
+        binding("Ctrl+S", "Save request to collection"),
+        binding("Ctrl+N", "Create a new request"),
+        binding("Ctrl+E", "Cycle active environment"),
+        binding("Ctrl+Y", "Copy request as curl command"),
         Line::raw(""),
-        header("View"),
-        binding("Ctrl+1/2/3", "Toggle panes"),
-        binding("F8", "Reveal secrets"),
-        binding("?", "Toggle this help"),
-        binding("Ctrl+Q", "Quit"),
+        header("Item Management"),
+        binding("a  (Add)", "Add new header, param, or variable"),
+        binding("d  (Delete)", "Delete selected header, param, or variable"),
+        binding(
+            "r  (Rename)",
+            "Rename selected collection, request, or variable key",
+        ),
+        binding("s  (Secret)", "Toggle secret flag on selected variable"),
+        binding("v  (Variables)", "Open the variables editor overlay"),
         Line::raw(""),
-        header("Editing"),
-        binding("Type", "Insert characters"),
-        binding("Backspace/Delete", "Remove characters"),
-        binding("Home/End", "Jump to start/end"),
+        header("View & Display"),
+        binding(
+            "Ctrl+1 / 2 / 3",
+            "Toggle Collections / Request / Response pane",
+        ),
+        binding("F8  (Reveal)", "Show or hide secret variable values"),
+        binding("?   (Help)", "Toggle this help overlay"),
+        binding("Ctrl+Q", "Quit curl-tui"),
+        Line::raw(""),
+        header("Text Editing (when a field is focused)"),
+        binding("Any character", "Insert at cursor position"),
+        binding(
+            "Backspace / Delete",
+            "Remove character before / after cursor",
+        ),
+        binding("Home / End", "Jump to start / end of field"),
+        binding("Left / Right", "Move cursor within field"),
     ];
 
     frame.render_widget(Paragraph::new(lines), inner);
@@ -60,7 +74,7 @@ fn header(text: &str) -> Line<'static> {
 
 fn binding(key: &str, desc: &str) -> Line<'static> {
     Line::from(vec![
-        Span::styled(format!("  {:22}", key), Style::default().fg(Color::Yellow)),
+        Span::styled(format!("  {:26}", key), Style::default().fg(Color::Yellow)),
         Span::styled(desc.to_string(), Style::default().fg(Color::White)),
     ])
 }
