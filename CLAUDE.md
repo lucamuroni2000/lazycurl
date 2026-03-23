@@ -13,6 +13,8 @@ cargo install --path crates/curl-tui  # Install to ~/.cargo/bin/
 
 **Windows gotcha:** If `cargo` is not in PATH, use the full path: `/c/Users/<user>/.cargo/bin/cargo`.
 
+**Prerequisite:** `curl` must be installed and in PATH. On Windows, `curl.exe` is used explicitly to avoid the PowerShell alias.
+
 ## Architecture
 
 Cargo workspace with two crates:
@@ -50,6 +52,8 @@ All input goes through a two-mode system:
 
 This is the central dispatch pattern in `main.rs:run_loop`.
 
+When the variables overlay is open (`app.show_variables`), input is routed to `handle_variables_action` instead of the normal dispatch — it's a modal overlay that intercepts all keys.
+
 ## Data Storage
 
 First run creates the config directory:
@@ -83,6 +87,13 @@ Contains: `config.json`, `collections/`, `environments/`, `history.jsonl`, `.git
 - Formatting: `cargo fmt --all --check`
 - Linting: `cargo clippy --workspace -- -D warnings`
 - Full verify: `/verify-rust` (runs fmt + clippy + test)
+
+## Gotchas
+
+- Crossterm reports modifiers inconsistently across terminals. `resolve_action` in `input.rs` normalizes by trying without SHIFT for punctuation and lowercase for Ctrl+letter combos.
+- Characters like `{`, `[`, `@` on non-US keyboards require AltGr (reported as ALT|CONTROL by crossterm). The editing resolver accepts any modifier combo for printable chars, excluding only pure Ctrl+letter shortcuts.
+- `Ctrl+Enter` doesn't work on all terminals. `F5` is always registered as a fallback for Send Request.
+- JSON response detection checks body content first (not Content-Type header) since many APIs return wrong headers.
 
 ## Dependencies
 
