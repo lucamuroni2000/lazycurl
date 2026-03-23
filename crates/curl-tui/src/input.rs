@@ -162,6 +162,8 @@ pub fn resolve_navigation(key: KeyEvent) -> Action {
         (KeyModifiers::NONE, KeyCode::Char('s')) => Action::ToggleSecretFlag,
         (KeyModifiers::NONE, KeyCode::Char('j')) => Action::MoveDown,
         (KeyModifiers::NONE, KeyCode::Char('k')) => Action::MoveUp,
+        // Pass through unrecognized characters so overlays can handle them
+        (_, KeyCode::Char(c)) => Action::CharInput(c),
         _ => Action::None,
     }
 }
