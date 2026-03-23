@@ -1,6 +1,7 @@
 pub mod collections;
 pub mod help;
 pub mod layout;
+pub mod picker;
 pub mod request;
 pub mod response;
 pub mod statusbar;
@@ -53,6 +54,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
     statusbar::draw(frame, app, pane_layout.status_bar);
 
     // Overlays (on top of everything)
+    if app.show_collection_picker {
+        picker::draw_collection_picker(frame, app);
+    }
     if app.show_variables {
         variables::draw(frame, app);
     }

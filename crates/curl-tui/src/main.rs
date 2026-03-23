@@ -16,7 +16,7 @@ use crossterm::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use app::{Action, App};
+use app::{Action, App, EditField};
 use curl_tui_core::command::CurlCommandBuilder;
 use curl_tui_core::config::{config_dir, AppConfig};
 
@@ -93,8 +93,41 @@ async fn run_loop(
                 app::InputMode::Editing => input::resolve_editing(key),
             };
 
+            // Collection picker intercepts when open
+            if app.show_collection_picker {
+                match action {
+                    Action::Cancel => {
+                        app.show_collection_picker = false;
+                        app.status_message = None;
+                    }
+                    Action::MoveUp => {
+                        if app.picker_cursor > 0 {
+                            app.picker_cursor -= 1;
+                        }
+                    }
+                    Action::MoveDown => {
+                        if app.picker_cursor + 1 < app.collections.len() {
+                            app.picker_cursor += 1;
+                        }
+                    }
+                    Action::Enter => {
+                        let idx = app.picker_cursor;
+                        app.show_collection_picker = false;
+                        app.save_request_to_collection(idx);
+                    }
+                    Action::NewRequest | Action::CharInput('n') => {
+                        // 'n' or Ctrl+N — create new collection and save there
+                        app.show_collection_picker = false;
+                        app.name_input.set_content("My Collection");
+                        app.start_editing(EditField::NewCollectionName);
+                        app.status_message =
+                            Some("Name your collection, then press Enter to save".to_string());
+                    }
+                    Action::Quit => app.should_quit = true,
+                    _ => {}
+                }
             // Variables overlay intercepts actions when open
-            if app.show_variables {
+            } else if app.show_variables {
                 handle_variables_action(app, &action);
                 // Editing actions for variable inputs
                 match action {

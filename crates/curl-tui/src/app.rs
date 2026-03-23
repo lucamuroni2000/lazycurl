@@ -132,6 +132,9 @@ pub struct App {
     pub param_key_inputs: Vec<crate::text_input::TextInput>,
     pub param_value_inputs: Vec<crate::text_input::TextInput>,
     pub name_input: crate::text_input::TextInput,
+    // Collection picker (for save)
+    pub show_collection_picker: bool,
+    pub picker_cursor: usize,
     // Variables overlay
     pub show_variables: bool,
     pub var_tier: VarTier,
@@ -180,6 +183,8 @@ impl App {
             param_key_inputs: Vec::new(),
             param_value_inputs: Vec::new(),
             name_input: crate::text_input::TextInput::new(""),
+            show_collection_picker: false,
+            picker_cursor: 0,
             show_variables: false,
             var_tier: VarTier::Global,
             var_cursor: 0,
@@ -459,34 +464,52 @@ impl App {
     }
 
     pub fn save_current_request(&mut self) {
-        let Some(request) = &self.current_request else {
+        if self.current_request.is_none() {
             self.status_message = Some("No request to save".to_string());
             return;
         };
 
-        if let Some(col_idx) = self.selected_collection {
-            if let Some(collection) = self.collections.get_mut(col_idx) {
-                // Update existing or add new
-                if let Some(req_idx) = self.selected_request {
-                    if let Some(existing) = collection.requests.get_mut(req_idx) {
-                        *existing = request.clone();
-                    }
-                } else {
-                    collection.requests.push(request.clone());
-                    self.selected_request = Some(collection.requests.len() - 1);
-                }
-                let collections_dir = config_dir().join("collections");
-                match curl_tui_core::collection::save_collection(&collections_dir, collection) {
-                    Ok(_) => self.status_message = Some("Saved!".to_string()),
-                    Err(e) => self.status_message = Some(format!("Save error: {}", e)),
-                }
-            }
-        } else {
-            // No collection selected — prompt for a new collection name
+        if self.collections.is_empty() {
+            // No collections at all — prompt to create one
             self.name_input.set_content("My Collection");
             self.start_editing(EditField::NewCollectionName);
             self.status_message =
                 Some("Name your collection, then press Enter to save".to_string());
+        } else if self.collections.len() == 1 && self.selected_collection == Some(0) {
+            // Only one collection and it's selected — save directly
+            self.save_request_to_collection(0);
+        } else {
+            // Multiple collections or none selected — show picker
+            self.picker_cursor = self.selected_collection.unwrap_or(0);
+            self.show_collection_picker = true;
+            self.status_message = Some("Choose a collection to save into".to_string());
+        }
+    }
+
+    /// Save the current request into a specific collection by index
+    pub fn save_request_to_collection(&mut self, col_idx: usize) {
+        let Some(request) = &self.current_request else {
+            return;
+        };
+
+        if let Some(collection) = self.collections.get_mut(col_idx) {
+            // If this request already exists in this collection (same id), update it
+            let existing_idx = collection.requests.iter().position(|r| r.id == request.id);
+
+            if let Some(req_idx) = existing_idx {
+                collection.requests[req_idx] = request.clone();
+                self.selected_request = Some(req_idx);
+            } else {
+                collection.requests.push(request.clone());
+                self.selected_request = Some(collection.requests.len() - 1);
+            }
+
+            self.selected_collection = Some(col_idx);
+            let collections_dir = config_dir().join("collections");
+            match curl_tui_core::collection::save_collection(&collections_dir, collection) {
+                Ok(_) => self.status_message = Some(format!("Saved to '{}'!", collection.name)),
+                Err(e) => self.status_message = Some(format!("Save error: {}", e)),
+            }
         }
     }
 
