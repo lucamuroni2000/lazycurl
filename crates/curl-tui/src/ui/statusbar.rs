@@ -31,6 +31,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             | Some(EditField::CollectionName(_))
             | Some(EditField::EnvironmentName(_))
             | Some(EditField::RequestName)
+            | Some(EditField::NewProjectName)
     );
 
     if is_name_edit && app.input_mode == InputMode::Editing {
@@ -39,6 +40,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             Some(EditField::CollectionName(_)) => "Rename collection",
             Some(EditField::EnvironmentName(_)) => "Environment name",
             Some(EditField::RequestName) => "Request name",
+            Some(EditField::NewProjectName) => "Project name",
             _ => "Name",
         };
 
@@ -149,12 +151,18 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         hints.push(Span::styled("| ", hint_style));
 
         // Global actions (always available)
+        hints.push(Span::styled("F6", key_style));
+        hints.push(Span::styled(":project ", hint_style));
+        hints.push(Span::styled("Ctrl+O", key_style));
+        hints.push(Span::styled(":projects ", hint_style));
         hints.push(Span::styled("F5", key_style));
         hints.push(Span::styled(":send ", hint_style));
         hints.push(Span::styled("Ctrl+S", key_style));
         hints.push(Span::styled(":save ", hint_style));
         hints.push(Span::styled("v", key_style));
         hints.push(Span::styled(":vars ", hint_style));
+        hints.push(Span::styled("Ctrl+Shift+E", key_style));
+        hints.push(Span::styled(":new env ", hint_style));
         hints.push(Span::styled("?", key_style));
         hints.push(Span::styled(":help ", hint_style));
         hints.push(Span::styled("Ctrl+Q", key_style));
