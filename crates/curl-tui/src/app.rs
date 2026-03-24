@@ -109,6 +109,7 @@ pub enum Action {
     NextProject,
     PrevProject,
     OpenProjectPicker,
+    #[allow(dead_code)]
     CloseProject,
     None,
 }
@@ -605,8 +606,13 @@ impl App {
             }
         }
 
-        let collections_len = self.active_workspace().map(|ws| ws.data.collections.len()).unwrap_or(0);
-        let selected_collection = self.active_workspace().and_then(|ws| ws.data.selected_collection);
+        let collections_len = self
+            .active_workspace()
+            .map(|ws| ws.data.collections.len())
+            .unwrap_or(0);
+        let selected_collection = self
+            .active_workspace()
+            .and_then(|ws| ws.data.selected_collection);
 
         if collections_len == 0 {
             // No collections at all — prompt to create one
@@ -758,8 +764,7 @@ impl App {
                     if col_idx > max {
                         ws.data.selected_collection = Some(max);
                     }
-                    ws.data.var_collection_idx =
-                        ws.data.var_collection_idx.map(|i| i.min(max));
+                    ws.data.var_collection_idx = ws.data.var_collection_idx.map(|i| i.min(max));
                 }
                 ws.data.selected_request = None;
 
@@ -919,7 +924,10 @@ impl App {
                 }
             }
             EditField::HeaderKey(i) => {
-                let val = self.header_key_inputs.get(i).map(|inp| inp.content().to_string());
+                let val = self
+                    .header_key_inputs
+                    .get(i)
+                    .map(|inp| inp.content().to_string());
                 if let Some(val) = val {
                     if let Some(ws) = self.active_workspace_mut() {
                         if let Some(request) = &mut ws.data.current_request {
@@ -931,7 +939,10 @@ impl App {
                 }
             }
             EditField::HeaderValue(i) => {
-                let val = self.header_value_inputs.get(i).map(|inp| inp.content().to_string());
+                let val = self
+                    .header_value_inputs
+                    .get(i)
+                    .map(|inp| inp.content().to_string());
                 if let Some(val) = val {
                     if let Some(ws) = self.active_workspace_mut() {
                         if let Some(request) = &mut ws.data.current_request {
@@ -943,7 +954,10 @@ impl App {
                 }
             }
             EditField::ParamKey(i) => {
-                let val = self.param_key_inputs.get(i).map(|inp| inp.content().to_string());
+                let val = self
+                    .param_key_inputs
+                    .get(i)
+                    .map(|inp| inp.content().to_string());
                 if let Some(val) = val {
                     if let Some(ws) = self.active_workspace_mut() {
                         if let Some(request) = &mut ws.data.current_request {
@@ -955,7 +969,10 @@ impl App {
                 }
             }
             EditField::ParamValue(i) => {
-                let val = self.param_value_inputs.get(i).map(|inp| inp.content().to_string());
+                let val = self
+                    .param_value_inputs
+                    .get(i)
+                    .map(|inp| inp.content().to_string());
                 if let Some(val) = val {
                     if let Some(ws) = self.active_workspace_mut() {
                         if let Some(request) = &mut ws.data.current_request {
@@ -1016,8 +1033,7 @@ impl App {
                                 .join(&ws.data.slug)
                                 .join("collections");
                             if old_slug != new_slug {
-                                let old_path =
-                                    collections_dir.join(format!("{}.json", old_slug));
+                                let old_path = collections_dir.join(format!("{}.json", old_slug));
                                 if old_path.exists() {
                                     let _ = std::fs::remove_file(&old_path);
                                 }
@@ -1057,9 +1073,7 @@ impl App {
                                     self.status_message =
                                         Some(format!("Environment '{}' saved!", name))
                                 }
-                                Err(e) => {
-                                    self.status_message = Some(format!("Save error: {}", e))
-                                }
+                                Err(e) => self.status_message = Some(format!("Save error: {}", e)),
                             }
                         }
                     }
@@ -1231,7 +1245,12 @@ impl App {
                 let req_clone = self.active_workspace().and_then(|ws| {
                     let col_idx = ws.data.selected_collection?;
                     let req_idx = ws.data.selected_request?;
-                    ws.data.collections.get(col_idx)?.requests.get(req_idx).cloned()
+                    ws.data
+                        .collections
+                        .get(col_idx)?
+                        .requests
+                        .get(req_idx)
+                        .cloned()
                 });
                 if let Some(req) = req_clone {
                     let name = req.name.clone();
@@ -1296,9 +1315,7 @@ impl App {
         };
         let mut idx = 0;
         for (col_idx, col) in ws.data.collections.iter().enumerate() {
-            if Some(col_idx) == ws.data.selected_collection
-                && ws.data.selected_request.is_none()
-            {
+            if Some(col_idx) == ws.data.selected_collection && ws.data.selected_request.is_none() {
                 return idx;
             }
             idx += 1; // collection row
@@ -1431,13 +1448,23 @@ impl App {
         };
     }
 
+    /// Sync the active environment name to project.json after any environment index change.
+    fn persist_active_environment(&mut self) {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        ws.data.sync_active_environment_name();
+        let project_dir = config_dir().join("projects").join(&ws.data.slug);
+        let _ = curl_tui_core::project::save_project(&project_dir, &ws.data.project);
+    }
+
     pub fn cycle_environment(&mut self) {
         let Some(ws) = self.active_workspace_mut() else {
             return;
         };
         if ws.data.environments.is_empty() {
-            // Need to drop ws before calling create_new_environment
-            drop(ws);
+            // Need to release borrow before calling create_new_environment
+            let _ = ws;
             self.create_new_environment();
             return;
         }
@@ -1457,6 +1484,7 @@ impl App {
                 self.status_message = Some("Environment: None".to_string());
             }
         }
+        self.persist_active_environment();
     }
 
     pub fn create_new_environment(&mut self) {
@@ -1486,6 +1514,7 @@ impl App {
                 self.name_input.set_content(name);
                 self.start_editing(EditField::EnvironmentName(idx));
                 self.status_message = Some("Name your environment, then press Enter".to_string());
+                self.persist_active_environment();
             }
             Err(e) => {
                 self.status_message = Some(format!("Error creating environment: {}", e));
@@ -1534,6 +1563,7 @@ impl App {
         self.var_cursor = 0;
 
         self.status_message = Some(format!("Deleted environment '{}'", name));
+        self.persist_active_environment();
     }
 
     // ── Project switching ────────────────────────────────────────
@@ -1591,10 +1621,26 @@ impl App {
         // Collect all input values first to avoid borrow conflicts
         let url = self.url_input.content().to_string();
         let body_content = self.body_input.content().to_string();
-        let header_keys: Vec<String> = self.header_key_inputs.iter().map(|i| i.content().to_string()).collect();
-        let header_values: Vec<String> = self.header_value_inputs.iter().map(|i| i.content().to_string()).collect();
-        let param_keys: Vec<String> = self.param_key_inputs.iter().map(|i| i.content().to_string()).collect();
-        let param_values: Vec<String> = self.param_value_inputs.iter().map(|i| i.content().to_string()).collect();
+        let header_keys: Vec<String> = self
+            .header_key_inputs
+            .iter()
+            .map(|i| i.content().to_string())
+            .collect();
+        let header_values: Vec<String> = self
+            .header_value_inputs
+            .iter()
+            .map(|i| i.content().to_string())
+            .collect();
+        let param_keys: Vec<String> = self
+            .param_key_inputs
+            .iter()
+            .map(|i| i.content().to_string())
+            .collect();
+        let param_values: Vec<String> = self
+            .param_value_inputs
+            .iter()
+            .map(|i| i.content().to_string())
+            .collect();
 
         let Some(ws) = self.active_workspace_mut() else {
             return;
@@ -1738,7 +1784,7 @@ impl App {
 
     /// Cycle to previous collection/environment within the current tier
     pub fn var_cycle_container_backward(&mut self) {
-        let tier = self.var_tier.clone();
+        let tier = self.var_tier;
         let Some(ws) = self.active_workspace_mut() else {
             return;
         };
@@ -2001,8 +2047,7 @@ impl App {
                             .join("projects")
                             .join(&ws.data.slug)
                             .join("collections");
-                        let _ =
-                            curl_tui_core::collection::save_collection(&collections_dir, col);
+                        let _ = curl_tui_core::collection::save_collection(&collections_dir, col);
                     }
                 }
             }
