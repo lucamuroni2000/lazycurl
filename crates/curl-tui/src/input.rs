@@ -64,6 +64,7 @@ pub fn build_keymap(
         ("send_request", Action::SendRequest),
         ("save_request", Action::SaveRequest),
         ("switch_env", Action::SwitchEnvironment),
+        ("create_env", Action::CreateEnvironment),
         ("copy_curl", Action::CopyCurl),
         ("new_request", Action::NewRequest),
         ("cycle_panes", Action::CyclePaneForward),
@@ -90,8 +91,11 @@ pub fn build_keymap(
     // Secondary project switching bindings (Ctrl+Tab may not work on all terminals)
     map.entry((KeyModifiers::CONTROL, KeyCode::Tab))
         .or_insert(Action::NextProject);
-    map.entry((KeyModifiers::CONTROL | KeyModifiers::SHIFT, KeyCode::BackTab))
-        .or_insert(Action::PrevProject);
+    map.entry((
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        KeyCode::BackTab,
+    ))
+    .or_insert(Action::PrevProject);
 
     // Always register Ctrl+Q as quit (not remappable)
     map.insert((KeyModifiers::CONTROL, KeyCode::Char('q')), Action::Quit);
