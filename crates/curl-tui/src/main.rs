@@ -52,17 +52,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 name: "Default".to_string(),
                 active_environment: None,
             };
-            if let Ok(dir) = curl_tui_core::project::create_project(&projects_dir, &default_project) {
+            if let Ok(dir) = curl_tui_core::project::create_project(&projects_dir, &default_project)
+            {
                 let slug = dir.file_name().unwrap().to_string_lossy().to_string();
                 let mut ws = app::ProjectWorkspace::new(default_project, slug.clone());
                 ws.data.collections = curl_tui_core::collection::list_collections(
                     &projects_dir.join(&slug).join("collections"),
-                ).unwrap_or_default();
+                )
+                .unwrap_or_default();
                 ws.data.environments = curl_tui_core::environment::list_environments(
                     &projects_dir.join(&slug).join("environments"),
-                ).unwrap_or_default();
+                )
+                .unwrap_or_default();
                 if let Some(env_name) = app.config.active_environment.clone() {
-                    ws.data.active_environment = ws.data.environments.iter().position(|e| e.name == env_name);
+                    ws.data.active_environment =
+                        ws.data.environments.iter().position(|e| e.name == env_name);
                 }
                 app.open_projects.push(ws);
                 app.active_project_idx = Some(0);
@@ -74,12 +78,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut ws = app::ProjectWorkspace::new(project, slug.clone());
             ws.data.collections = curl_tui_core::collection::list_collections(
                 &projects_dir.join(&slug).join("collections"),
-            ).unwrap_or_default();
+            )
+            .unwrap_or_default();
             ws.data.environments = curl_tui_core::environment::list_environments(
                 &projects_dir.join(&slug).join("environments"),
-            ).unwrap_or_default();
+            )
+            .unwrap_or_default();
             if let Some(env_name) = app.config.active_environment.clone() {
-                ws.data.active_environment = ws.data.environments.iter().position(|e| e.name == env_name);
+                ws.data.active_environment =
+                    ws.data.environments.iter().position(|e| e.name == env_name);
             }
             app.open_projects.push(ws);
             app.active_project_idx = Some(0);
@@ -202,11 +209,10 @@ async fn run_loop(
                                 // Open the project
                                 let path = config_dir().join("projects").join(&slug);
                                 let mut ws = app::ProjectWorkspace::new(project, slug);
-                                ws.data.collections =
-                                    curl_tui_core::collection::list_collections(
-                                        &path.join("collections"),
-                                    )
-                                    .unwrap_or_default();
+                                ws.data.collections = curl_tui_core::collection::list_collections(
+                                    &path.join("collections"),
+                                )
+                                .unwrap_or_default();
                                 ws.data.environments =
                                     curl_tui_core::environment::list_environments(
                                         &path.join("environments"),
@@ -228,11 +234,11 @@ async fn run_loop(
                     }
                     Action::DeleteItem | Action::CharInput('d') => {
                         // Close project (remove from tab bar)
-                        if let Some((_, slug)) =
-                            app.all_projects.get(app.project_picker_cursor)
-                        {
-                            if let Some(idx) =
-                                app.open_projects.iter().position(|ws| ws.data.slug == *slug)
+                        if let Some((_, slug)) = app.all_projects.get(app.project_picker_cursor) {
+                            if let Some(idx) = app
+                                .open_projects
+                                .iter()
+                                .position(|ws| ws.data.slug == *slug)
                             {
                                 app.close_project(idx);
                             }
@@ -317,10 +323,22 @@ async fn run_loop(
                         app.var_cursor = 0;
                         app.var_editing = None;
                         if let Some(ws) = app.active_workspace_mut() {
-                            ws.data.var_collection_idx = ws.data.selected_collection
-                                .or(if ws.data.collections.is_empty() { None } else { Some(0) });
-                            ws.data.var_environment_idx = ws.data.active_environment
-                                .or(if ws.data.environments.is_empty() { None } else { Some(0) });
+                            ws.data.var_collection_idx =
+                                ws.data
+                                    .selected_collection
+                                    .or(if ws.data.collections.is_empty() {
+                                        None
+                                    } else {
+                                        Some(0)
+                                    });
+                            ws.data.var_environment_idx =
+                                ws.data
+                                    .active_environment
+                                    .or(if ws.data.environments.is_empty() {
+                                        None
+                                    } else {
+                                        Some(0)
+                                    });
                         }
                     }
                     Action::SendRequest => {
@@ -339,6 +357,13 @@ async fn run_loop(
                         }
                     }
                     Action::SwitchEnvironment => app.cycle_environment(),
+                    Action::CreateEnvironment => {
+                        app.create_new_environment();
+                        app.show_variables = true;
+                        app.var_cursor = 0;
+                        app.var_editing = None;
+                        app.var_tier = app::VarTier::Environment;
+                    }
                     Action::CopyCurl => {
                         if let Some(req) = app.current_request() {
                             let cmd = CurlCommandBuilder::new(&req.url).method(req.method).build();
@@ -384,8 +409,7 @@ async fn run_loop(
                             .unwrap_or_default()
                             .into_iter()
                             .map(|(p, path)| {
-                                let slug =
-                                    path.file_name().unwrap().to_string_lossy().to_string();
+                                let slug = path.file_name().unwrap().to_string_lossy().to_string();
                                 (p, slug)
                             })
                             .collect();
@@ -516,6 +540,11 @@ fn handle_variables_action(app: &mut App, action: &Action) {
                 app.show_variables = false;
                 app.create_new_environment();
             }
+        }
+        Action::CreateEnvironment => {
+            // Ctrl+Shift+E in the variables overlay: create and stay in overlay
+            app.create_new_environment();
+            app.var_tier = app::VarTier::Environment;
         }
         Action::DeleteItem => {
             if app.input_mode != app::InputMode::Editing {
