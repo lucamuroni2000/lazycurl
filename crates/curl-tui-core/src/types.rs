@@ -227,6 +227,15 @@ impl ProjectWorkspaceData {
             var_environment_idx: None,
         }
     }
+
+    /// Sync the `project.active_environment` name field from the current index.
+    /// Call this after any mutation of `self.active_environment`.
+    pub fn sync_active_environment_name(&mut self) {
+        self.project.active_environment = self
+            .active_environment
+            .and_then(|i| self.environments.get(i))
+            .map(|env| env.name.clone());
+    }
 }
 
 fn default_true() -> bool {
@@ -450,5 +459,54 @@ mod tests {
         let entry: HistoryEntry = serde_json::from_str(json).unwrap();
         assert!(entry.project_id.is_none());
         assert!(entry.project_name.is_none());
+    }
+
+    fn make_workspace_with_envs() -> ProjectWorkspaceData {
+        let project = Project {
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
+            active_environment: None,
+        };
+        let mut ws = ProjectWorkspaceData::new(project, "test".to_string());
+        ws.environments = vec![
+            Environment {
+                id: uuid::Uuid::new_v4(),
+                name: "Development".to_string(),
+                variables: HashMap::new(),
+            },
+            Environment {
+                id: uuid::Uuid::new_v4(),
+                name: "Production".to_string(),
+                variables: HashMap::new(),
+            },
+        ];
+        ws
+    }
+
+    #[test]
+    fn test_sync_sets_name_from_index() {
+        let mut ws = make_workspace_with_envs();
+        ws.active_environment = Some(1);
+        ws.sync_active_environment_name();
+        assert_eq!(
+            ws.project.active_environment,
+            Some("Production".to_string())
+        );
+    }
+
+    #[test]
+    fn test_sync_clears_name_when_none() {
+        let mut ws = make_workspace_with_envs();
+        ws.active_environment = None;
+        ws.sync_active_environment_name();
+        assert_eq!(ws.project.active_environment, None);
+    }
+
+    #[test]
+    fn test_sync_clears_name_when_index_out_of_bounds() {
+        let mut ws = make_workspace_with_envs();
+        ws.active_environment = Some(99);
+        ws.sync_active_environment_name();
+        assert_eq!(ws.project.active_environment, None);
     }
 }
