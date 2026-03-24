@@ -2,14 +2,13 @@ pub mod collections;
 pub mod help;
 pub mod layout;
 pub mod picker;
+pub mod project_picker;
+pub mod project_tabs;
 pub mod request;
 pub mod response;
 pub mod statusbar;
 pub mod variables;
 
-use ratatui::style::{Color, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::app::App;
@@ -17,27 +16,8 @@ use crate::app::App;
 pub fn draw(frame: &mut Frame, app: &App) {
     let pane_layout = layout::compute_layout(frame.area(), app.pane_visible);
 
-    // Title bar
-    let env_name = app
-        .active_environment()
-        .and_then(|i| app.environments().get(i))
-        .map(|e| e.name.as_str())
-        .unwrap_or("None");
-
-    let title = Line::from(vec![
-        Span::styled(" curl-tui", Style::default().fg(Color::Cyan)),
-        Span::raw("  "),
-        Span::styled(
-            format!("[env: {}]", env_name),
-            Style::default().fg(Color::Yellow),
-        ),
-        Span::raw("  "),
-        Span::styled("[v0.1.0]", Style::default().fg(Color::DarkGray)),
-    ]);
-    frame.render_widget(
-        Paragraph::new(title).style(Style::default().bg(Color::Black)),
-        pane_layout.title_bar,
-    );
+    // Title bar — project tabs + env
+    project_tabs::draw(frame, app, pane_layout.title_bar);
 
     // Panes
     if let Some(area) = pane_layout.collections {
@@ -62,5 +42,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
     if app.show_help {
         help::draw(frame);
+    }
+    if app.show_project_picker {
+        project_picker::draw(frame, app);
+    }
+    if app.show_first_launch {
+        project_picker::draw_first_launch(frame, app);
     }
 }

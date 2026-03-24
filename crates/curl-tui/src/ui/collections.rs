@@ -59,8 +59,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
         // Show requests under the collection
         for (req_idx, req) in collection.requests.iter().enumerate() {
-            let is_selected_req =
-                app.selected_collection() == Some(col_idx) && app.selected_request() == Some(req_idx);
+            let is_selected_req = app.selected_collection() == Some(col_idx)
+                && app.selected_request() == Some(req_idx);
 
             let method_style = Style::default().fg(method_color(req.method));
             let name_style = if is_selected_req && is_focused {

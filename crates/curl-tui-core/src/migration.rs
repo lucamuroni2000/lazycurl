@@ -144,7 +144,11 @@ mod tests {
         let root = tmp.path();
         std::fs::create_dir_all(root.join("collections")).unwrap();
         std::fs::create_dir_all(root.join("projects")).unwrap();
-        std::fs::write(root.join("collections/test.json"), r#"{"id":"00000000-0000-0000-0000-000000000001","name":"Test","requests":[]}"#).unwrap();
+        std::fs::write(
+            root.join("collections/test.json"),
+            r#"{"id":"00000000-0000-0000-0000-000000000001","name":"Test","requests":[]}"#,
+        )
+        .unwrap();
         assert!(needs_migration(root));
     }
 
@@ -203,14 +207,11 @@ mod tests {
         assert!(root.join("projects/.migration-complete").exists());
 
         // Old dirs should be empty
-        let col_count = std::fs::read_dir(root.join("collections"))
-            .unwrap()
-            .count();
+        let col_count = std::fs::read_dir(root.join("collections")).unwrap().count();
         assert_eq!(col_count, 0);
 
         // Config should have session state
-        let config =
-            crate::config::AppConfig::load_from(&root.join("config.json")).unwrap();
+        let config = crate::config::AppConfig::load_from(&root.join("config.json")).unwrap();
         assert_eq!(config.open_projects, vec!["default"]);
         assert_eq!(config.active_project, Some("default".to_string()));
     }
