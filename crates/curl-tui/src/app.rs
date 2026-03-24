@@ -458,6 +458,8 @@ impl App {
                         .active_environment
                         .and_then(|i| self.environments.get(i))
                         .map(|e| e.name.clone()),
+                    project_id: None,
+                    project_name: None,
                 };
                 let _ = append_entry_redacted(&history_path, &entry, &secrets);
 

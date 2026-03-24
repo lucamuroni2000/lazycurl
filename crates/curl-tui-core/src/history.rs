@@ -64,6 +64,8 @@ mod tests {
             status_code: Some(200),
             duration_ms: Some(142),
             environment: Some("Dev".to_string()),
+            project_id: None,
+            project_name: None,
         }
     }
 

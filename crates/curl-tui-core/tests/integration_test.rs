@@ -139,6 +139,8 @@ fn test_secrets_redacted_in_history() {
         status_code: Some(200),
         duration_ms: Some(50),
         environment: Some("Production".to_string()),
+        project_id: None,
+        project_name: None,
     };
 
     let secrets = vec!["super-secret-key".to_string()];
