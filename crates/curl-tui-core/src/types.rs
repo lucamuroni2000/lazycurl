@@ -138,6 +138,14 @@ pub struct Environment {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Project {
+    pub id: uuid::Uuid,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_environment: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HistoryEntry {
     pub id: uuid::Uuid,
     pub timestamp: chrono::DateTime<chrono::Utc>,
@@ -325,6 +333,26 @@ mod tests {
         let deserialized: Environment = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.name, "Development");
         assert!(deserialized.variables.contains_key("base_url"));
+    }
+
+    #[test]
+    fn test_project_roundtrip() {
+        let project = Project {
+            id: uuid::Uuid::new_v4(),
+            name: "My API".to_string(),
+            active_environment: Some("dev".to_string()),
+        };
+        let json = serde_json::to_string(&project).unwrap();
+        let deserialized: Project = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.name, "My API");
+        assert_eq!(deserialized.active_environment, Some("dev".to_string()));
+    }
+
+    #[test]
+    fn test_project_without_active_env() {
+        let json = r#"{"id":"00000000-0000-0000-0000-000000000000","name":"Test"}"#;
+        let project: Project = serde_json::from_str(json).unwrap();
+        assert!(project.active_environment.is_none());
     }
 
     #[test]
