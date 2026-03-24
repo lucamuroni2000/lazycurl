@@ -186,6 +186,49 @@ pub struct CurlResponse {
     pub raw_command: String,
 }
 
+/// Core per-project data — business logic fields only (no UI state).
+#[derive(Debug, Clone)]
+pub struct ProjectWorkspaceData {
+    pub project: Project,
+    pub slug: String,
+    pub collections: Vec<Collection>,
+    pub environments: Vec<Environment>,
+    pub active_environment: Option<usize>,
+    pub selected_collection: Option<usize>,
+    pub selected_request: Option<usize>,
+    pub current_request: Option<Request>,
+    pub last_response: Option<CurlResponse>,
+    pub var_collection_idx: Option<usize>,
+    pub var_environment_idx: Option<usize>,
+}
+
+impl ProjectWorkspaceData {
+    pub fn new(project: Project, slug: String) -> Self {
+        Self {
+            project,
+            slug,
+            collections: Vec::new(),
+            environments: Vec::new(),
+            active_environment: None,
+            selected_collection: None,
+            selected_request: None,
+            current_request: Some(Request {
+                id: uuid::Uuid::new_v4(),
+                name: "New Request".to_string(),
+                method: Method::Get,
+                url: String::new(),
+                headers: Vec::new(),
+                params: Vec::new(),
+                body: None,
+                auth: None,
+            }),
+            last_response: None,
+            var_collection_idx: None,
+            var_environment_idx: None,
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }

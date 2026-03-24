@@ -37,7 +37,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         .split(inner);
 
     // Status line
-    if let Some(resp) = &app.last_response {
+    if let Some(resp) = app.last_response() {
         let status_color = match resp.status_code {
             200..=299 => Color::Green,
             300..=399 => Color::Yellow,
@@ -74,7 +74,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     // Tabs
     let tab_titles = vec!["Body", "Headers", "Timing"];
-    let selected_tab = match app.response_tab {
+    let selected_tab = match app.response_tab() {
         ResponseTab::Body => 0,
         ResponseTab::Headers => 1,
         ResponseTab::Timing => 2,
@@ -91,8 +91,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(tabs, chunks[1]);
 
     // Tab content
-    if let Some(resp) = &app.last_response {
-        match app.response_tab {
+    if let Some(resp) = app.last_response() {
+        match app.response_tab() {
             ResponseTab::Body => {
                 let content_type = detect_content_type(resp);
                 let lines = match content_type {
@@ -120,7 +120,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                         format!(
                             "  {} lines  (scroll: {}/{})",
                             total_lines,
-                            app.response_scroll.min(total_lines),
+                            app.response_scroll().min(total_lines),
                             total_lines
                         ),
                         Style::default().fg(Color::DarkGray),
@@ -135,7 +135,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
                 frame.render_widget(Paragraph::new(header_line), body_chunks[0]);
                 frame.render_widget(
-                    Paragraph::new(lines).scroll((app.response_scroll as u16, 0)),
+                    Paragraph::new(lines).scroll((app.response_scroll() as u16, 0)),
                     body_chunks[1],
                 );
             }

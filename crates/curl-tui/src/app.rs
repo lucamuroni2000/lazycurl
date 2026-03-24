@@ -1,6 +1,6 @@
 use curl_tui_core::command::CurlCommandBuilder;
 use curl_tui_core::config::{config_dir, AppConfig};
-use curl_tui_core::history::append_entry_redacted;
+use curl_tui_core::history::append_entry_dual;
 use curl_tui_core::types::{
     Auth, Body, Collection, CurlResponse, Environment, HistoryEntry, Method, Request,
 };
@@ -30,6 +30,8 @@ pub enum EditField {
     EnvironmentName(usize),
     /// Editing name for a new collection being created (not yet in the list)
     NewCollectionName,
+    /// Editing name for a new project being created
+    NewProjectName,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -111,18 +113,35 @@ pub enum Action {
     None,
 }
 
-pub struct App {
-    pub config: AppConfig,
-    pub collections: Vec<Collection>,
-    pub environments: Vec<Environment>,
-    pub active_environment: Option<usize>,
-    pub selected_collection: Option<usize>,
-    pub selected_request: Option<usize>,
-    pub current_request: Option<Request>,
-    pub last_response: Option<CurlResponse>,
-    pub active_pane: Pane,
+/// Per-project workspace — wraps core data with TUI-specific fields.
+pub struct ProjectWorkspace {
+    pub data: curl_tui_core::types::ProjectWorkspaceData,
     pub request_tab: RequestTab,
     pub response_tab: ResponseTab,
+    pub collection_scroll: usize,
+    pub response_scroll: usize,
+}
+
+impl ProjectWorkspace {
+    pub fn new(project: curl_tui_core::types::Project, slug: String) -> Self {
+        Self {
+            data: curl_tui_core::types::ProjectWorkspaceData::new(project, slug),
+            request_tab: RequestTab::Headers,
+            response_tab: ResponseTab::Body,
+            collection_scroll: 0,
+            response_scroll: 0,
+        }
+    }
+}
+
+pub struct App {
+    pub config: AppConfig,
+    // Project management
+    pub open_projects: Vec<ProjectWorkspace>,
+    pub active_project_idx: Option<usize>,
+    pub project_tab_scroll: usize,
+    // UI state (global)
+    pub active_pane: Pane,
     pub pane_visible: [bool; 3], // [collections, request, response]
     pub should_quit: bool,
     pub show_help: bool,
@@ -130,6 +149,7 @@ pub struct App {
     pub status_message: Option<String>,
     pub input_mode: InputMode,
     pub edit_field: Option<EditField>,
+    // Text inputs (shared)
     pub url_input: crate::text_input::TextInput,
     pub body_input: crate::text_input::TextInput,
     pub header_key_inputs: Vec<crate::text_input::TextInput>,
@@ -137,7 +157,7 @@ pub struct App {
     pub param_key_inputs: Vec<crate::text_input::TextInput>,
     pub param_value_inputs: Vec<crate::text_input::TextInput>,
     pub name_input: crate::text_input::TextInput,
-    // Collection picker (for save)
+    // Collection picker
     pub show_collection_picker: bool,
     pub picker_cursor: usize,
     // Variables overlay
@@ -147,37 +167,21 @@ pub struct App {
     pub var_editing: Option<VarEditTarget>,
     pub var_key_input: crate::text_input::TextInput,
     pub var_value_input: crate::text_input::TextInput,
-    /// Which collection is being edited in the variables overlay (independent of selected_collection)
-    pub var_collection_idx: Option<usize>,
-    /// Which environment is being edited in the variables overlay (independent of active_environment)
-    pub var_environment_idx: Option<usize>,
-    pub collection_scroll: usize,
-    pub response_scroll: usize,
+    // Project picker
+    pub show_project_picker: bool,
+    pub project_picker_cursor: usize,
+    pub all_projects: Vec<(curl_tui_core::types::Project, String)>,
+    pub show_first_launch: bool,
 }
 
 impl App {
     pub fn new(config: AppConfig) -> Self {
         Self {
             config,
-            collections: Vec::new(),
-            environments: Vec::new(),
-            active_environment: None,
-            selected_collection: None,
-            selected_request: None,
-            current_request: Some(Request {
-                id: uuid::Uuid::new_v4(),
-                name: "New Request".to_string(),
-                method: Method::Get,
-                url: String::new(),
-                headers: Vec::new(),
-                params: Vec::new(),
-                body: None,
-                auth: None,
-            }),
-            last_response: None,
+            open_projects: Vec::new(),
+            active_project_idx: None,
+            project_tab_scroll: 0,
             active_pane: Pane::Request,
-            request_tab: RequestTab::Headers,
-            response_tab: ResponseTab::Body,
             pane_visible: [true, true, true],
             should_quit: false,
             show_help: false,
@@ -200,12 +204,101 @@ impl App {
             var_editing: None,
             var_key_input: crate::text_input::TextInput::new(""),
             var_value_input: crate::text_input::TextInput::new(""),
-            var_collection_idx: None,
-            var_environment_idx: None,
-            collection_scroll: 0,
-            response_scroll: 0,
+            show_project_picker: false,
+            project_picker_cursor: 0,
+            all_projects: Vec::new(),
+            show_first_launch: false,
         }
     }
+
+    // ── Workspace accessors ──────────────────────────────────────
+
+    pub fn active_workspace(&self) -> Option<&ProjectWorkspace> {
+        self.active_project_idx
+            .and_then(|i| self.open_projects.get(i))
+    }
+
+    pub fn active_workspace_mut(&mut self) -> Option<&mut ProjectWorkspace> {
+        self.active_project_idx
+            .and_then(|i| self.open_projects.get_mut(i))
+    }
+
+    // ── Convenience accessors for backward compatibility ─────────
+    // These delegate to the active workspace so that UI code can
+    // still call app.collections(), etc.
+
+    pub fn collections(&self) -> &[Collection] {
+        self.active_workspace()
+            .map(|ws| ws.data.collections.as_slice())
+            .unwrap_or(&[])
+    }
+
+    pub fn environments(&self) -> &[Environment] {
+        self.active_workspace()
+            .map(|ws| ws.data.environments.as_slice())
+            .unwrap_or(&[])
+    }
+
+    pub fn active_environment(&self) -> Option<usize> {
+        self.active_workspace()
+            .and_then(|ws| ws.data.active_environment)
+    }
+
+    pub fn selected_collection(&self) -> Option<usize> {
+        self.active_workspace()
+            .and_then(|ws| ws.data.selected_collection)
+    }
+
+    pub fn selected_request(&self) -> Option<usize> {
+        self.active_workspace()
+            .and_then(|ws| ws.data.selected_request)
+    }
+
+    pub fn current_request(&self) -> Option<&Request> {
+        self.active_workspace()
+            .and_then(|ws| ws.data.current_request.as_ref())
+    }
+
+    pub fn last_response(&self) -> Option<&CurlResponse> {
+        self.active_workspace()
+            .and_then(|ws| ws.data.last_response.as_ref())
+    }
+
+    pub fn request_tab(&self) -> RequestTab {
+        self.active_workspace()
+            .map(|ws| ws.request_tab)
+            .unwrap_or(RequestTab::Headers)
+    }
+
+    pub fn response_tab(&self) -> ResponseTab {
+        self.active_workspace()
+            .map(|ws| ws.response_tab)
+            .unwrap_or(ResponseTab::Body)
+    }
+
+    pub fn collection_scroll(&self) -> usize {
+        self.active_workspace()
+            .map(|ws| ws.collection_scroll)
+            .unwrap_or(0)
+    }
+
+    pub fn response_scroll(&self) -> usize {
+        self.active_workspace()
+            .map(|ws| ws.response_scroll)
+            .unwrap_or(0)
+    }
+
+    pub fn var_collection_idx(&self) -> Option<usize> {
+        self.active_workspace()
+            .and_then(|ws| ws.data.var_collection_idx)
+    }
+
+    pub fn var_environment_idx(&self) -> Option<usize> {
+        self.active_workspace()
+            .and_then(|ws| ws.data.var_environment_idx)
+    }
+
+    // ── Pane management ──────────────────────────────────────────
 
     /// Toggle a pane's visibility. Ensures at least one pane stays visible.
     pub fn toggle_pane(&mut self, index: usize) {
@@ -250,8 +343,15 @@ impl App {
         }
     }
 
+    // ── Request execution ────────────────────────────────────────
+
     pub async fn send_request(&mut self) {
-        let Some(request) = &self.current_request else {
+        let Some(ws) = self.active_workspace() else {
+            self.status_message = Some("No project open".to_string());
+            return;
+        };
+
+        let Some(request) = &ws.data.current_request else {
             self.status_message = Some("No request to send".to_string());
             return;
         };
@@ -261,16 +361,34 @@ impl App {
             return;
         }
 
-        // Build variable resolver
+        // Extract data before the async call to avoid borrow issues
         let global_vars = self.config.variables.clone();
-        let env_vars = self
+        let env_vars = ws
+            .data
             .active_environment
-            .and_then(|i| self.environments.get(i))
+            .and_then(|i| ws.data.environments.get(i))
             .map(|e| e.variables.clone());
-        let col_vars = self
+        let col_vars = ws
+            .data
             .selected_collection
-            .and_then(|i| self.collections.get(i))
+            .and_then(|i| ws.data.collections.get(i))
             .map(|c| c.variables.clone());
+        let request = request.clone();
+        let collection_id = ws
+            .data
+            .selected_collection
+            .and_then(|i| ws.data.collections.get(i))
+            .map(|c| c.id);
+        let env_name = ws
+            .data
+            .active_environment
+            .and_then(|i| ws.data.environments.get(i))
+            .map(|e| e.name.clone());
+        let project_id = Some(ws.data.project.id);
+        let project_name = Some(ws.data.project.name.clone());
+        let slug = ws.data.slug.clone();
+        let default_timeout = self.config.default_timeout;
+        let max_size = self.config.max_response_body_size_bytes as usize;
 
         let resolver = FileVariableResolver::new(global_vars, env_vars, col_vars);
 
@@ -286,7 +404,7 @@ impl App {
         // Build command
         let mut builder = CurlCommandBuilder::new(&resolved_url)
             .method(request.method)
-            .timeout(self.config.default_timeout);
+            .timeout(default_timeout);
 
         // Add headers
         for header in &request.headers {
@@ -427,8 +545,6 @@ impl App {
 
         match cmd.execute().await {
             Ok(response) => {
-                // Truncate body if needed
-                let max_size = self.config.max_response_body_size_bytes as usize;
                 let mut resp = response;
                 if resp.body.len() > max_size {
                     resp.body.truncate(max_size);
@@ -443,32 +559,31 @@ impl App {
                     resp.status_code, request.method, resp.timing.total_ms
                 ));
 
-                // Log to history
-                let history_path = config_dir().join("history.jsonl");
-                let method = request.method;
-                let request_name = request.name.clone();
+                // Log to history (dual: global + project)
+                let global_history = config_dir().join("history.jsonl");
+                let project_history = config_dir()
+                    .join("projects")
+                    .join(&slug)
+                    .join("history.jsonl");
                 let entry = HistoryEntry {
                     id: uuid::Uuid::new_v4(),
                     timestamp: chrono::Utc::now(),
-                    collection_id: self
-                        .selected_collection
-                        .and_then(|i| self.collections.get(i))
-                        .map(|c| c.id),
-                    request_name,
-                    method,
+                    collection_id,
+                    request_name: request.name.clone(),
+                    method: request.method,
                     url: resolved_url,
                     status_code: Some(resp.status_code),
                     duration_ms: Some(resp.timing.total_ms as u64),
-                    environment: self
-                        .active_environment
-                        .and_then(|i| self.environments.get(i))
-                        .map(|e| e.name.clone()),
-                    project_id: None,
-                    project_name: None,
+                    environment: env_name,
+                    project_id,
+                    project_name,
                 };
-                let _ = append_entry_redacted(&history_path, &entry, &secrets);
+                let _ = append_entry_dual(&global_history, &project_history, &entry, &secrets);
 
-                self.last_response = Some(resp);
+                // Write response back to workspace
+                if let Some(ws) = self.active_workspace_mut() {
+                    ws.data.last_response = Some(resp);
+                }
             }
             Err(e) => {
                 self.status_message = Some(format!("Error: {}", e));
@@ -476,24 +591,35 @@ impl App {
         }
     }
 
-    pub fn save_current_request(&mut self) {
-        if self.current_request.is_none() {
-            self.status_message = Some("No request to save".to_string());
-            return;
-        };
+    // ── Save / collection management ─────────────────────────────
 
-        if self.collections.is_empty() {
+    pub fn save_current_request(&mut self) {
+        {
+            let Some(ws) = self.active_workspace() else {
+                self.status_message = Some("No project open".to_string());
+                return;
+            };
+            if ws.data.current_request.is_none() {
+                self.status_message = Some("No request to save".to_string());
+                return;
+            }
+        }
+
+        let collections_len = self.active_workspace().map(|ws| ws.data.collections.len()).unwrap_or(0);
+        let selected_collection = self.active_workspace().and_then(|ws| ws.data.selected_collection);
+
+        if collections_len == 0 {
             // No collections at all — prompt to create one
             self.name_input.set_content("My Collection");
             self.start_editing(EditField::NewCollectionName);
             self.status_message =
                 Some("Name your collection, then press Enter to save".to_string());
-        } else if self.collections.len() == 1 && self.selected_collection == Some(0) {
+        } else if collections_len == 1 && selected_collection == Some(0) {
             // Only one collection and it's selected — save directly
             self.save_request_to_collection(0);
         } else {
             // Multiple collections or none selected — show picker
-            self.picker_cursor = self.selected_collection.unwrap_or(0);
+            self.picker_cursor = selected_collection.unwrap_or(0);
             self.show_collection_picker = true;
             self.status_message = Some("Choose a collection to save into".to_string());
         }
@@ -501,24 +627,30 @@ impl App {
 
     /// Save the current request into a specific collection by index
     pub fn save_request_to_collection(&mut self, col_idx: usize) {
-        let Some(request) = &self.current_request else {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        let Some(request) = &ws.data.current_request else {
             return;
         };
 
-        if let Some(collection) = self.collections.get_mut(col_idx) {
+        if let Some(collection) = ws.data.collections.get_mut(col_idx) {
             // If this request already exists in this collection (same id), update it
             let existing_idx = collection.requests.iter().position(|r| r.id == request.id);
 
             if let Some(req_idx) = existing_idx {
                 collection.requests[req_idx] = request.clone();
-                self.selected_request = Some(req_idx);
+                ws.data.selected_request = Some(req_idx);
             } else {
                 collection.requests.push(request.clone());
-                self.selected_request = Some(collection.requests.len() - 1);
+                ws.data.selected_request = Some(collection.requests.len() - 1);
             }
 
-            self.selected_collection = Some(col_idx);
-            let collections_dir = config_dir().join("collections");
+            ws.data.selected_collection = Some(col_idx);
+            let collections_dir = config_dir()
+                .join("projects")
+                .join(&ws.data.slug)
+                .join("collections");
             match curl_tui_core::collection::save_collection(&collections_dir, collection) {
                 Ok(_) => self.status_message = Some(format!("Saved to '{}'!", collection.name)),
                 Err(e) => self.status_message = Some(format!("Save error: {}", e)),
@@ -527,19 +659,25 @@ impl App {
     }
 
     pub fn create_new_collection(&mut self) {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
         let collection = Collection {
             id: uuid::Uuid::new_v4(),
             name: "New Collection".to_string(),
             variables: std::collections::HashMap::new(),
             requests: Vec::new(),
         };
-        let collections_dir = config_dir().join("collections");
+        let collections_dir = config_dir()
+            .join("projects")
+            .join(&ws.data.slug)
+            .join("collections");
         match curl_tui_core::collection::save_collection(&collections_dir, &collection) {
             Ok(_) => {
-                self.collections.push(collection);
-                let idx = self.collections.len() - 1;
-                self.selected_collection = Some(idx);
-                self.selected_request = None;
+                ws.data.collections.push(collection);
+                let idx = ws.data.collections.len() - 1;
+                ws.data.selected_collection = Some(idx);
+                ws.data.selected_request = None;
                 self.name_input.set_content("New Collection");
                 self.start_editing(EditField::CollectionName(idx));
                 self.status_message = Some("Name your collection, then press Enter".to_string());
@@ -551,38 +689,45 @@ impl App {
     }
 
     pub fn delete_selected_in_collections(&mut self) {
-        let Some(col_idx) = self.selected_collection else {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        let Some(col_idx) = ws.data.selected_collection else {
             self.status_message = Some("Nothing selected".to_string());
             return;
         };
 
-        if let Some(req_idx) = self.selected_request {
+        if let Some(req_idx) = ws.data.selected_request {
             // Delete a request from the collection
-            if let Some(collection) = self.collections.get_mut(col_idx) {
+            if let Some(collection) = ws.data.collections.get_mut(col_idx) {
                 if req_idx < collection.requests.len() {
                     let name = collection.requests[req_idx].name.clone();
                     collection.requests.remove(req_idx);
 
                     // Save collection to disk
-                    let collections_dir = config_dir().join("collections");
+                    let collections_dir = config_dir()
+                        .join("projects")
+                        .join(&ws.data.slug)
+                        .join("collections");
                     let _ =
                         curl_tui_core::collection::save_collection(&collections_dir, collection);
 
                     // Adjust selection
                     if collection.requests.is_empty() {
-                        self.selected_request = None;
+                        ws.data.selected_request = None;
                     } else if req_idx >= collection.requests.len() {
-                        self.selected_request = Some(collection.requests.len() - 1);
+                        ws.data.selected_request = Some(collection.requests.len() - 1);
                     }
 
                     // Clear current request if it was the deleted one
-                    if self
+                    if ws
+                        .data
                         .current_request
                         .as_ref()
                         .is_some_and(|r| r.name == name)
                     {
-                        self.current_request = None;
-                        self.last_response = None;
+                        ws.data.current_request = None;
+                        ws.data.last_response = None;
                     }
 
                     self.status_message = Some(format!("Deleted request '{}'", name));
@@ -590,30 +735,33 @@ impl App {
             }
         } else {
             // Delete the entire collection
-            if let Some(collection) = self.collections.get(col_idx) {
+            if let Some(collection) = ws.data.collections.get(col_idx) {
                 let name = collection.name.clone();
-                let slug = curl_tui_core::collection::slugify(&name);
+                let slug_str = curl_tui_core::collection::slugify(&name);
                 let path = config_dir()
+                    .join("projects")
+                    .join(&ws.data.slug)
                     .join("collections")
-                    .join(format!("{}.json", slug));
+                    .join(format!("{}.json", slug_str));
                 if path.exists() {
                     let _ = std::fs::remove_file(&path);
                 }
 
-                self.collections.remove(col_idx);
+                ws.data.collections.remove(col_idx);
 
                 // Adjust all collection indices
-                if self.collections.is_empty() {
-                    self.selected_collection = None;
-                    self.var_collection_idx = None;
+                if ws.data.collections.is_empty() {
+                    ws.data.selected_collection = None;
+                    ws.data.var_collection_idx = None;
                 } else {
-                    let max = self.collections.len() - 1;
+                    let max = ws.data.collections.len() - 1;
                     if col_idx > max {
-                        self.selected_collection = Some(max);
+                        ws.data.selected_collection = Some(max);
                     }
-                    self.var_collection_idx = self.var_collection_idx.map(|i| i.min(max));
+                    ws.data.var_collection_idx =
+                        ws.data.var_collection_idx.map(|i| i.min(max));
                 }
-                self.selected_request = None;
+                ws.data.selected_request = None;
 
                 self.status_message = Some(format!("Deleted collection '{}'", name));
             }
@@ -621,7 +769,10 @@ impl App {
     }
 
     pub fn new_request(&mut self) {
-        self.current_request = Some(Request {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        ws.data.current_request = Some(Request {
             id: uuid::Uuid::new_v4(),
             name: "New Request".to_string(),
             method: Method::Get,
@@ -631,8 +782,8 @@ impl App {
             body: None,
             auth: None,
         });
-        self.selected_request = None;
-        self.last_response = None;
+        ws.data.selected_request = None;
+        ws.data.last_response = None;
         // Start editing the request name immediately
         self.name_input.set_content("New Request");
         self.start_editing(EditField::RequestName);
@@ -651,6 +802,8 @@ impl App {
         if let Some(field) = self.edit_field.take() {
             if field == EditField::NewCollectionName {
                 self.finalize_new_collection();
+            } else if field == EditField::NewProjectName {
+                self.finalize_new_project();
             } else {
                 self.sync_field_to_request(field);
             }
@@ -667,7 +820,11 @@ impl App {
             name
         };
 
-        let request = match &self.current_request {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+
+        let request = match &ws.data.current_request {
             Some(r) => r.clone(),
             None => return,
         };
@@ -678,16 +835,45 @@ impl App {
             variables: std::collections::HashMap::new(),
             requests: vec![request],
         };
-        let collections_dir = config_dir().join("collections");
+        let collections_dir = config_dir()
+            .join("projects")
+            .join(&ws.data.slug)
+            .join("collections");
         match curl_tui_core::collection::save_collection(&collections_dir, &new_collection) {
             Ok(_) => {
-                self.collections.push(new_collection);
-                let col_idx = self.collections.len() - 1;
-                self.selected_collection = Some(col_idx);
-                self.selected_request = Some(0);
+                ws.data.collections.push(new_collection);
+                let col_idx = ws.data.collections.len() - 1;
+                ws.data.selected_collection = Some(col_idx);
+                ws.data.selected_request = Some(0);
                 self.status_message = Some(format!("Created '{}' and saved!", name));
             }
             Err(e) => self.status_message = Some(format!("Save error: {}", e)),
+        }
+    }
+
+    fn finalize_new_project(&mut self) {
+        let name = self.name_input.content().to_string();
+        let name = if name.is_empty() {
+            "New Project".to_string()
+        } else {
+            name
+        };
+        let project = curl_tui_core::types::Project {
+            id: uuid::Uuid::new_v4(),
+            name: name.clone(),
+            active_environment: None,
+        };
+        let projects_dir = config_dir().join("projects");
+        match curl_tui_core::project::create_project(&projects_dir, &project) {
+            Ok(dir) => {
+                let slug = dir.file_name().unwrap().to_string_lossy().to_string();
+                let ws = ProjectWorkspace::new(project, slug);
+                self.open_projects.push(ws);
+                let idx = self.open_projects.len() - 1;
+                self.switch_project(idx);
+                self.status_message = Some(format!("Created project '{}'", name));
+            }
+            Err(e) => self.status_message = Some(format!("Error: {}", e)),
         }
     }
 
@@ -703,69 +889,113 @@ impl App {
             EditField::RequestName
             | EditField::CollectionName(_)
             | EditField::EnvironmentName(_)
-            | EditField::NewCollectionName => Some(&mut self.name_input),
+            | EditField::NewCollectionName
+            | EditField::NewProjectName => Some(&mut self.name_input),
         }
     }
 
     /// Sync the text input content back to the current request
     fn sync_field_to_request(&mut self, field: EditField) {
-        let Some(request) = &mut self.current_request else {
-            return;
-        };
+        // For fields that need workspace access, handle them with workspace
         match field {
             EditField::Url => {
-                request.url = self.url_input.content().to_string();
+                let url = self.url_input.content().to_string();
+                if let Some(ws) = self.active_workspace_mut() {
+                    if let Some(request) = &mut ws.data.current_request {
+                        request.url = url;
+                    }
+                }
             }
             EditField::BodyContent => {
                 let content = self.body_input.content().to_string();
-                if content.is_empty() {
-                    request.body = Option::None;
-                } else {
-                    request.body = Some(curl_tui_core::types::Body::Json { content });
+                if let Some(ws) = self.active_workspace_mut() {
+                    if let Some(request) = &mut ws.data.current_request {
+                        if content.is_empty() {
+                            request.body = Option::None;
+                        } else {
+                            request.body = Some(curl_tui_core::types::Body::Json { content });
+                        }
+                    }
                 }
             }
             EditField::HeaderKey(i) => {
-                if let Some(header) = request.headers.get_mut(i) {
-                    header.key = self.header_key_inputs[i].content().to_string();
+                let val = self.header_key_inputs.get(i).map(|inp| inp.content().to_string());
+                if let Some(val) = val {
+                    if let Some(ws) = self.active_workspace_mut() {
+                        if let Some(request) = &mut ws.data.current_request {
+                            if let Some(header) = request.headers.get_mut(i) {
+                                header.key = val;
+                            }
+                        }
+                    }
                 }
             }
             EditField::HeaderValue(i) => {
-                if let Some(header) = request.headers.get_mut(i) {
-                    header.value = self.header_value_inputs[i].content().to_string();
+                let val = self.header_value_inputs.get(i).map(|inp| inp.content().to_string());
+                if let Some(val) = val {
+                    if let Some(ws) = self.active_workspace_mut() {
+                        if let Some(request) = &mut ws.data.current_request {
+                            if let Some(header) = request.headers.get_mut(i) {
+                                header.value = val;
+                            }
+                        }
+                    }
                 }
             }
             EditField::ParamKey(i) => {
-                if let Some(param) = request.params.get_mut(i) {
-                    param.key = self.param_key_inputs[i].content().to_string();
+                let val = self.param_key_inputs.get(i).map(|inp| inp.content().to_string());
+                if let Some(val) = val {
+                    if let Some(ws) = self.active_workspace_mut() {
+                        if let Some(request) = &mut ws.data.current_request {
+                            if let Some(param) = request.params.get_mut(i) {
+                                param.key = val;
+                            }
+                        }
+                    }
                 }
             }
             EditField::ParamValue(i) => {
-                if let Some(param) = request.params.get_mut(i) {
-                    param.value = self.param_value_inputs[i].content().to_string();
+                let val = self.param_value_inputs.get(i).map(|inp| inp.content().to_string());
+                if let Some(val) = val {
+                    if let Some(ws) = self.active_workspace_mut() {
+                        if let Some(request) = &mut ws.data.current_request {
+                            if let Some(param) = request.params.get_mut(i) {
+                                param.value = val;
+                            }
+                        }
+                    }
                 }
             }
             EditField::RequestName => {
                 let name = self.name_input.content().to_string();
                 if !name.is_empty() {
-                    request.name = name.clone();
-                    // Auto-save the renamed request to its collection
-                    if let Some(col_idx) = self.selected_collection {
-                        if let Some(req_idx) = self.selected_request {
-                            if let Some(collection) = self.collections.get_mut(col_idx) {
-                                if let Some(existing) = collection.requests.get_mut(req_idx) {
-                                    existing.name = name;
-                                }
-                                let collections_dir = config_dir().join("collections");
-                                match curl_tui_core::collection::save_collection(
-                                    &collections_dir,
-                                    collection,
-                                ) {
-                                    Ok(_) => {
-                                        self.status_message = Some("Renamed and saved!".to_string())
+                    if let Some(ws) = self.active_workspace_mut() {
+                        if let Some(request) = &mut ws.data.current_request {
+                            request.name = name.clone();
+                        }
+                        // Auto-save the renamed request to its collection
+                        if let Some(col_idx) = ws.data.selected_collection {
+                            if let Some(req_idx) = ws.data.selected_request {
+                                if let Some(collection) = ws.data.collections.get_mut(col_idx) {
+                                    if let Some(existing) = collection.requests.get_mut(req_idx) {
+                                        existing.name = name;
                                     }
-                                    Err(e) => {
-                                        self.status_message =
-                                            Some(format!("Rename ok, save error: {}", e))
+                                    let collections_dir = config_dir()
+                                        .join("projects")
+                                        .join(&ws.data.slug)
+                                        .join("collections");
+                                    match curl_tui_core::collection::save_collection(
+                                        &collections_dir,
+                                        collection,
+                                    ) {
+                                        Ok(_) => {
+                                            self.status_message =
+                                                Some("Renamed and saved!".to_string())
+                                        }
+                                        Err(e) => {
+                                            self.status_message =
+                                                Some(format!("Rename ok, save error: {}", e))
+                                        }
                                     }
                                 }
                             }
@@ -776,61 +1006,77 @@ impl App {
             EditField::CollectionName(col_idx) => {
                 let name = self.name_input.content().to_string();
                 if !name.is_empty() {
-                    if let Some(collection) = self.collections.get_mut(col_idx) {
-                        // Delete old file if name changed (slug differs)
-                        let old_slug = curl_tui_core::collection::slugify(&collection.name);
-                        let new_slug = curl_tui_core::collection::slugify(&name);
-                        let collections_dir = config_dir().join("collections");
-                        if old_slug != new_slug {
-                            let old_path = collections_dir.join(format!("{}.json", old_slug));
-                            if old_path.exists() {
-                                let _ = std::fs::remove_file(&old_path);
+                    if let Some(ws) = self.active_workspace_mut() {
+                        if let Some(collection) = ws.data.collections.get_mut(col_idx) {
+                            // Delete old file if name changed (slug differs)
+                            let old_slug = curl_tui_core::collection::slugify(&collection.name);
+                            let new_slug = curl_tui_core::collection::slugify(&name);
+                            let collections_dir = config_dir()
+                                .join("projects")
+                                .join(&ws.data.slug)
+                                .join("collections");
+                            if old_slug != new_slug {
+                                let old_path =
+                                    collections_dir.join(format!("{}.json", old_slug));
+                                if old_path.exists() {
+                                    let _ = std::fs::remove_file(&old_path);
+                                }
                             }
-                        }
 
-                        collection.name = name;
-                        let _ = curl_tui_core::collection::save_collection(
-                            &collections_dir,
-                            collection,
-                        );
+                            collection.name = name;
+                            let _ = curl_tui_core::collection::save_collection(
+                                &collections_dir,
+                                collection,
+                            );
+                        }
                     }
                 }
             }
             EditField::EnvironmentName(env_idx) => {
                 let name = self.name_input.content().to_string();
                 if !name.is_empty() {
-                    if let Some(env) = self.environments.get_mut(env_idx) {
-                        // Delete old file if name changed (slug differs)
-                        let old_slug = curl_tui_core::collection::slugify(&env.name);
-                        let new_slug = curl_tui_core::collection::slugify(&name);
-                        let config_root = config_dir();
-                        let env_dir = config_root.join("environments");
-                        if old_slug != new_slug {
-                            let old_path = env_dir.join(format!("{}.json", old_slug));
-                            if old_path.exists() {
-                                let _ = std::fs::remove_file(&old_path);
+                    if let Some(ws) = self.active_workspace_mut() {
+                        if let Some(env) = ws.data.environments.get_mut(env_idx) {
+                            // Delete old file if name changed (slug differs)
+                            let old_slug = curl_tui_core::collection::slugify(&env.name);
+                            let new_slug = curl_tui_core::collection::slugify(&name);
+                            let env_dir = config_dir()
+                                .join("projects")
+                                .join(&ws.data.slug)
+                                .join("environments");
+                            if old_slug != new_slug {
+                                let old_path = env_dir.join(format!("{}.json", old_slug));
+                                if old_path.exists() {
+                                    let _ = std::fs::remove_file(&old_path);
+                                }
                             }
-                        }
 
-                        env.name = name.clone();
-                        match curl_tui_core::environment::save_environment(&env_dir, env) {
-                            Ok(_) => {
-                                self.status_message = Some(format!("Environment '{}' saved!", name))
+                            env.name = name.clone();
+                            match curl_tui_core::environment::save_environment(&env_dir, env) {
+                                Ok(_) => {
+                                    self.status_message =
+                                        Some(format!("Environment '{}' saved!", name))
+                                }
+                                Err(e) => {
+                                    self.status_message = Some(format!("Save error: {}", e))
+                                }
                             }
-                            Err(e) => self.status_message = Some(format!("Save error: {}", e)),
                         }
                     }
                 }
             }
-            EditField::NewCollectionName => {
-                // Handled separately in save flow — sync is a no-op here
+            EditField::NewCollectionName | EditField::NewProjectName => {
+                // Handled separately — sync is a no-op here
             }
         }
     }
 
     /// Load a request's fields into the text inputs
     pub fn load_request_into_inputs(&mut self) {
-        if let Some(request) = &self.current_request {
+        let request = self
+            .active_workspace()
+            .and_then(|ws| ws.data.current_request.clone());
+        if let Some(request) = &request {
             self.url_input.set_content(&request.url);
             match &request.body {
                 Some(curl_tui_core::types::Body::Json { content }) => {
@@ -873,24 +1119,40 @@ impl App {
     pub fn handle_rename(&mut self) {
         match self.active_pane {
             Pane::Collections => {
-                if let Some(col_idx) = self.selected_collection {
-                    if let Some(req_idx) = self.selected_request {
-                        // Rename a request — clone data first to avoid borrow issues
-                        let req_clone = self
+                // Clone out the data we need to avoid borrow issues
+                let rename_info = self.active_workspace().and_then(|ws| {
+                    let col_idx = ws.data.selected_collection?;
+                    if let Some(req_idx) = ws.data.selected_request {
+                        let req = ws
+                            .data
                             .collections
-                            .get(col_idx)
-                            .and_then(|c| c.requests.get(req_idx))
-                            .cloned();
-                        if let Some(req) = req_clone {
-                            self.name_input.set_content(&req.name);
-                            self.current_request = Some(req);
-                            self.load_request_into_inputs();
-                            self.start_editing(EditField::RequestName);
-                            self.status_message = Some("Rename request".to_string());
+                            .get(col_idx)?
+                            .requests
+                            .get(req_idx)?
+                            .clone();
+                        Some((col_idx, Some((req_idx, req))))
+                    } else {
+                        let _col_name = ws.data.collections.get(col_idx)?.name.clone();
+                        Some((col_idx, Option::<(usize, Request)>::None))
+                    }
+                });
+
+                if let Some((col_idx, req_info)) = rename_info {
+                    if let Some((_req_idx, req)) = req_info {
+                        // Rename a request
+                        self.name_input.set_content(&req.name);
+                        if let Some(ws) = self.active_workspace_mut() {
+                            ws.data.current_request = Some(req);
                         }
+                        self.load_request_into_inputs();
+                        self.start_editing(EditField::RequestName);
+                        self.status_message = Some("Rename request".to_string());
                     } else {
                         // Rename a collection
-                        let col_name = self.collections.get(col_idx).map(|c| c.name.clone());
+                        let col_name = self
+                            .active_workspace()
+                            .and_then(|ws| ws.data.collections.get(col_idx))
+                            .map(|c| c.name.clone());
                         if let Some(name) = col_name {
                             self.name_input.set_content(&name);
                             self.start_editing(EditField::CollectionName(col_idx));
@@ -901,8 +1163,12 @@ impl App {
             }
             Pane::Request => {
                 // Rename current request
-                if let Some(req) = &self.current_request {
-                    self.name_input.set_content(&req.name);
+                let req_name = self
+                    .active_workspace()
+                    .and_then(|ws| ws.data.current_request.as_ref())
+                    .map(|r| r.name.clone());
+                if let Some(name) = req_name {
+                    self.name_input.set_content(&name);
                     self.start_editing(EditField::RequestName);
                     self.status_message = Some("Rename request".to_string());
                 }
@@ -913,36 +1179,48 @@ impl App {
 
     /// Add a new empty header to the current request
     pub fn add_header(&mut self) {
-        if let Some(request) = &mut self.current_request {
+        let header_idx = {
+            let Some(ws) = self.active_workspace_mut() else {
+                return;
+            };
+            let Some(request) = &mut ws.data.current_request else {
+                return;
+            };
             request.headers.push(curl_tui_core::types::Header {
                 key: String::new(),
                 value: String::new(),
                 enabled: true,
             });
-            self.header_key_inputs
-                .push(crate::text_input::TextInput::default());
-            self.header_value_inputs
-                .push(crate::text_input::TextInput::default());
-            let idx = request.headers.len() - 1;
-            self.start_editing(EditField::HeaderKey(idx));
-        }
+            request.headers.len() - 1
+        };
+        self.header_key_inputs
+            .push(crate::text_input::TextInput::default());
+        self.header_value_inputs
+            .push(crate::text_input::TextInput::default());
+        self.start_editing(EditField::HeaderKey(header_idx));
     }
 
     /// Add a new empty param to the current request
     pub fn add_param(&mut self) {
-        if let Some(request) = &mut self.current_request {
+        let param_idx = {
+            let Some(ws) = self.active_workspace_mut() else {
+                return;
+            };
+            let Some(request) = &mut ws.data.current_request else {
+                return;
+            };
             request.params.push(curl_tui_core::types::Param {
                 key: String::new(),
                 value: String::new(),
                 enabled: true,
             });
-            self.param_key_inputs
-                .push(crate::text_input::TextInput::default());
-            self.param_value_inputs
-                .push(crate::text_input::TextInput::default());
-            let idx = request.params.len() - 1;
-            self.start_editing(EditField::ParamKey(idx));
-        }
+            request.params.len() - 1
+        };
+        self.param_key_inputs
+            .push(crate::text_input::TextInput::default());
+        self.param_value_inputs
+            .push(crate::text_input::TextInput::default());
+        self.start_editing(EditField::ParamKey(param_idx));
     }
 
     /// Handle Enter in Normal mode based on active pane
@@ -950,19 +1228,19 @@ impl App {
         match self.active_pane {
             Pane::Collections => {
                 // Load the selected request
-                if let Some(col_idx) = self.selected_collection {
-                    if let Some(collection) = self.collections.get(col_idx) {
-                        if let Some(req_idx) = self.selected_request {
-                            if let Some(req) = collection.requests.get(req_idx) {
-                                let cloned = req.clone();
-                                let name = cloned.name.clone();
-                                self.current_request = Some(cloned);
-                                self.load_request_into_inputs();
-                                self.active_pane = Pane::Request;
-                                self.status_message = Some(format!("Loaded: {}", name));
-                            }
-                        }
+                let req_clone = self.active_workspace().and_then(|ws| {
+                    let col_idx = ws.data.selected_collection?;
+                    let req_idx = ws.data.selected_request?;
+                    ws.data.collections.get(col_idx)?.requests.get(req_idx).cloned()
+                });
+                if let Some(req) = req_clone {
+                    let name = req.name.clone();
+                    if let Some(ws) = self.active_workspace_mut() {
+                        ws.data.current_request = Some(req);
                     }
+                    self.load_request_into_inputs();
+                    self.active_pane = Pane::Request;
+                    self.status_message = Some(format!("Loaded: {}", name));
                 }
             }
             Pane::Request => {
@@ -984,8 +1262,10 @@ impl App {
                 // Could move between header rows in future
             }
             Pane::Response => {
-                if self.response_scroll > 0 {
-                    self.response_scroll -= 1;
+                if let Some(ws) = self.active_workspace_mut() {
+                    if ws.response_scroll > 0 {
+                        ws.response_scroll -= 1;
+                    }
                 }
             }
         }
@@ -1002,22 +1282,29 @@ impl App {
                 // Could move between header rows in future
             }
             Pane::Response => {
-                self.response_scroll = self.response_scroll.saturating_add(1);
+                if let Some(ws) = self.active_workspace_mut() {
+                    ws.response_scroll = ws.response_scroll.saturating_add(1);
+                }
             }
         }
     }
 
     /// Calculate the flat index of the current collection cursor position
     fn collection_cursor_flat_index(&self) -> usize {
+        let Some(ws) = self.active_workspace() else {
+            return 0;
+        };
         let mut idx = 0;
-        for (col_idx, col) in self.collections.iter().enumerate() {
-            if Some(col_idx) == self.selected_collection && self.selected_request.is_none() {
+        for (col_idx, col) in ws.data.collections.iter().enumerate() {
+            if Some(col_idx) == ws.data.selected_collection
+                && ws.data.selected_request.is_none()
+            {
                 return idx;
             }
             idx += 1; // collection row
             for (req_idx, _) in col.requests.iter().enumerate() {
-                if Some(col_idx) == self.selected_collection
-                    && Some(req_idx) == self.selected_request
+                if Some(col_idx) == ws.data.selected_collection
+                    && Some(req_idx) == ws.data.selected_request
                 {
                     return idx;
                 }
@@ -1030,63 +1317,76 @@ impl App {
     /// Adjust collection_scroll to keep the cursor visible
     fn adjust_collection_scroll(&mut self, visible_height: usize) {
         let cursor = self.collection_cursor_flat_index();
-        if cursor < self.collection_scroll {
-            self.collection_scroll = cursor;
-        } else if cursor >= self.collection_scroll + visible_height {
-            self.collection_scroll = cursor - visible_height + 1;
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        if cursor < ws.collection_scroll {
+            ws.collection_scroll = cursor;
+        } else if cursor >= ws.collection_scroll + visible_height {
+            ws.collection_scroll = cursor - visible_height + 1;
         }
     }
 
     /// Move collection cursor up through the flat list of collections and their requests
     fn move_collection_cursor_up(&mut self) {
-        if let Some(req_idx) = self.selected_request {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        if let Some(req_idx) = ws.data.selected_request {
             if req_idx > 0 {
-                self.selected_request = Some(req_idx - 1);
+                ws.data.selected_request = Some(req_idx - 1);
             } else {
                 // Move back to collection level
-                self.selected_request = Option::None;
+                ws.data.selected_request = Option::None;
             }
-        } else if let Some(col_idx) = self.selected_collection {
+        } else if let Some(col_idx) = ws.data.selected_collection {
             if col_idx > 0 {
-                self.selected_collection = Some(col_idx - 1);
+                ws.data.selected_collection = Some(col_idx - 1);
                 // Select last request of previous collection
-                if let Some(col) = self.collections.get(col_idx - 1) {
+                if let Some(col) = ws.data.collections.get(col_idx - 1) {
                     if !col.requests.is_empty() {
-                        self.selected_request = Some(col.requests.len() - 1);
+                        ws.data.selected_request = Some(col.requests.len() - 1);
                     }
                 }
             }
-        } else if !self.collections.is_empty() {
-            self.selected_collection = Some(0);
+        } else if !ws.data.collections.is_empty() {
+            ws.data.selected_collection = Some(0);
         }
     }
 
     /// Move collection cursor down through the flat list
     fn move_collection_cursor_down(&mut self) {
-        if let Some(col_idx) = self.selected_collection {
-            if let Some(collection) = self.collections.get(col_idx) {
-                if let Some(req_idx) = self.selected_request {
-                    if req_idx + 1 < collection.requests.len() {
-                        self.selected_request = Some(req_idx + 1);
-                    } else if col_idx + 1 < self.collections.len() {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        if let Some(col_idx) = ws.data.selected_collection {
+            if let Some(collection) = ws.data.collections.get(col_idx) {
+                let requests_len = collection.requests.len();
+                if let Some(req_idx) = ws.data.selected_request {
+                    if req_idx + 1 < requests_len {
+                        ws.data.selected_request = Some(req_idx + 1);
+                    } else if col_idx + 1 < ws.data.collections.len() {
                         // Move to next collection
-                        self.selected_collection = Some(col_idx + 1);
-                        self.selected_request = Option::None;
+                        ws.data.selected_collection = Some(col_idx + 1);
+                        ws.data.selected_request = Option::None;
                     }
                 } else if !collection.requests.is_empty() {
-                    self.selected_request = Some(0);
-                } else if col_idx + 1 < self.collections.len() {
-                    self.selected_collection = Some(col_idx + 1);
+                    ws.data.selected_request = Some(0);
+                } else if col_idx + 1 < ws.data.collections.len() {
+                    ws.data.selected_collection = Some(col_idx + 1);
                 }
             }
-        } else if !self.collections.is_empty() {
-            self.selected_collection = Some(0);
+        } else if !ws.data.collections.is_empty() {
+            ws.data.selected_collection = Some(0);
         }
     }
 
     /// Switch to next request tab
     pub fn next_request_tab(&mut self) {
-        self.request_tab = match self.request_tab {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        ws.request_tab = match ws.request_tab {
             RequestTab::Headers => RequestTab::Body,
             RequestTab::Body => RequestTab::Auth,
             RequestTab::Auth => RequestTab::Params,
@@ -1096,7 +1396,10 @@ impl App {
 
     /// Switch to previous request tab
     pub fn prev_request_tab(&mut self) {
-        self.request_tab = match self.request_tab {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        ws.request_tab = match ws.request_tab {
             RequestTab::Headers => RequestTab::Params,
             RequestTab::Body => RequestTab::Headers,
             RequestTab::Auth => RequestTab::Body,
@@ -1106,7 +1409,10 @@ impl App {
 
     /// Switch to next response tab
     pub fn next_response_tab(&mut self) {
-        self.response_tab = match self.response_tab {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        ws.response_tab = match ws.response_tab {
             ResponseTab::Body => ResponseTab::Headers,
             ResponseTab::Headers => ResponseTab::Timing,
             ResponseTab::Timing => ResponseTab::Body,
@@ -1115,7 +1421,10 @@ impl App {
 
     /// Switch to previous response tab
     pub fn prev_response_tab(&mut self) {
-        self.response_tab = match self.response_tab {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        ws.response_tab = match ws.response_tab {
             ResponseTab::Body => ResponseTab::Timing,
             ResponseTab::Headers => ResponseTab::Body,
             ResponseTab::Timing => ResponseTab::Headers,
@@ -1123,20 +1432,24 @@ impl App {
     }
 
     pub fn cycle_environment(&mut self) {
-        if self.environments.is_empty() {
-            // No environments — create one and prompt for name
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        if ws.data.environments.is_empty() {
+            // Need to drop ws before calling create_new_environment
+            drop(ws);
             self.create_new_environment();
             return;
         }
-        // Cycle: None → 0 → 1 → ... → N-1 → None → 0 → ...
-        self.active_environment = match self.active_environment {
+        // Cycle: None -> 0 -> 1 -> ... -> N-1 -> None -> 0 -> ...
+        ws.data.active_environment = match ws.data.active_environment {
             None => Some(0),
-            Some(i) if i + 1 < self.environments.len() => Some(i + 1),
+            Some(i) if i + 1 < ws.data.environments.len() => Some(i + 1),
             Some(_) => None, // wrap back to "no environment"
         };
-        match &self.active_environment {
+        match &ws.data.active_environment {
             Some(i) => {
-                if let Some(env) = self.environments.get(*i) {
+                if let Some(env) = ws.data.environments.get(*i) {
                     self.status_message = Some(format!("Environment: {}", env.name));
                 }
             }
@@ -1147,7 +1460,10 @@ impl App {
     }
 
     pub fn create_new_environment(&mut self) {
-        let name = if self.environments.is_empty() {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        let name = if ws.data.environments.is_empty() {
             "Development"
         } else {
             "New Environment"
@@ -1157,13 +1473,15 @@ impl App {
             name: name.to_string(),
             variables: std::collections::HashMap::new(),
         };
-        let config_root = config_dir();
-        match curl_tui_core::environment::save_environment(&config_root.join("environments"), &env)
-        {
+        let env_dir = config_dir()
+            .join("projects")
+            .join(&ws.data.slug)
+            .join("environments");
+        match curl_tui_core::environment::save_environment(&env_dir, &env) {
             Ok(_) => {
-                self.environments.push(env);
-                let idx = self.environments.len() - 1;
-                self.active_environment = Some(idx);
+                ws.data.environments.push(env);
+                let idx = ws.data.environments.len() - 1;
+                ws.data.active_environment = Some(idx);
                 // Prompt to rename it
                 self.name_input.set_content(name);
                 self.start_editing(EditField::EnvironmentName(idx));
@@ -1176,42 +1494,137 @@ impl App {
     }
 
     pub fn delete_active_environment(&mut self) {
-        let idx = match self.var_environment_idx.or(self.active_environment) {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        let idx = match ws.data.var_environment_idx.or(ws.data.active_environment) {
             Some(i) => i,
             None => {
                 self.status_message = Some("No environment selected".to_string());
                 return;
             }
         };
-        let Some(env) = self.environments.get(idx) else {
+        let Some(env) = ws.data.environments.get(idx) else {
             return;
         };
 
         // Delete the file from disk
-        let config_root = config_dir();
-        let slug = curl_tui_core::collection::slugify(&env.name);
-        let path = config_root
+        let slug_str = curl_tui_core::collection::slugify(&env.name);
+        let path = config_dir()
+            .join("projects")
+            .join(&ws.data.slug)
             .join("environments")
-            .join(format!("{}.json", slug));
+            .join(format!("{}.json", slug_str));
         if path.exists() {
             let _ = std::fs::remove_file(&path);
         }
 
         let name = env.name.clone();
-        self.environments.remove(idx);
+        ws.data.environments.remove(idx);
 
         // Adjust all environment indices
-        if self.environments.is_empty() {
-            self.active_environment = None;
-            self.var_environment_idx = None;
+        if ws.data.environments.is_empty() {
+            ws.data.active_environment = None;
+            ws.data.var_environment_idx = None;
         } else {
-            let max = self.environments.len() - 1;
-            self.active_environment = self.active_environment.map(|i| i.min(max));
-            self.var_environment_idx = Some(idx.min(max));
+            let max = ws.data.environments.len() - 1;
+            ws.data.active_environment = ws.data.active_environment.map(|i| i.min(max));
+            ws.data.var_environment_idx = Some(idx.min(max));
         }
         self.var_cursor = 0;
 
         self.status_message = Some(format!("Deleted environment '{}'", name));
+    }
+
+    // ── Project switching ────────────────────────────────────────
+
+    pub fn switch_project(&mut self, idx: usize) {
+        if idx >= self.open_projects.len() {
+            return;
+        }
+        self.flush_inputs_to_workspace();
+        self.active_project_idx = Some(idx);
+        self.load_request_into_inputs();
+    }
+
+    pub fn next_project(&mut self) {
+        if self.open_projects.is_empty() {
+            return;
+        }
+        let current = self.active_project_idx.unwrap_or(0);
+        let next = (current + 1) % self.open_projects.len();
+        self.switch_project(next);
+    }
+
+    pub fn prev_project(&mut self) {
+        if self.open_projects.is_empty() {
+            return;
+        }
+        let current = self.active_project_idx.unwrap_or(0);
+        let prev = if current == 0 {
+            self.open_projects.len() - 1
+        } else {
+            current - 1
+        };
+        self.switch_project(prev);
+    }
+
+    pub fn close_project(&mut self, idx: usize) {
+        if idx >= self.open_projects.len() {
+            return;
+        }
+        self.open_projects.remove(idx);
+        if self.open_projects.is_empty() {
+            self.active_project_idx = None;
+            self.show_project_picker = true;
+        } else if let Some(active) = self.active_project_idx {
+            if active >= self.open_projects.len() {
+                self.active_project_idx = Some(self.open_projects.len() - 1);
+            } else if active > idx {
+                self.active_project_idx = Some(active - 1);
+            }
+            self.load_request_into_inputs();
+        }
+    }
+
+    fn flush_inputs_to_workspace(&mut self) {
+        // Collect all input values first to avoid borrow conflicts
+        let url = self.url_input.content().to_string();
+        let body_content = self.body_input.content().to_string();
+        let header_keys: Vec<String> = self.header_key_inputs.iter().map(|i| i.content().to_string()).collect();
+        let header_values: Vec<String> = self.header_value_inputs.iter().map(|i| i.content().to_string()).collect();
+        let param_keys: Vec<String> = self.param_key_inputs.iter().map(|i| i.content().to_string()).collect();
+        let param_values: Vec<String> = self.param_value_inputs.iter().map(|i| i.content().to_string()).collect();
+
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        if let Some(request) = &mut ws.data.current_request {
+            request.url = url;
+            if body_content.is_empty() {
+                request.body = None;
+            } else {
+                request.body = Some(curl_tui_core::types::Body::Json {
+                    content: body_content,
+                });
+            }
+            for (i, header) in request.headers.iter_mut().enumerate() {
+                if let Some(k) = header_keys.get(i) {
+                    header.key = k.clone();
+                }
+                if let Some(v) = header_values.get(i) {
+                    header.value = v.clone();
+                }
+            }
+            for (i, param) in request.params.iter_mut().enumerate() {
+                if let Some(k) = param_keys.get(i) {
+                    param.key = k.clone();
+                }
+                if let Some(v) = param_values.get(i) {
+                    param.value = v.clone();
+                }
+            }
+        }
     }
 
     // ── Variables overlay ──────────────────────────────────────
@@ -1221,9 +1634,13 @@ impl App {
         let map = match self.var_tier {
             VarTier::Global => &self.config.variables,
             VarTier::Environment => {
-                if let Some(env) = self
+                let Some(ws) = self.active_workspace() else {
+                    return Vec::new();
+                };
+                if let Some(env) = ws
+                    .data
                     .var_environment_idx
-                    .and_then(|i| self.environments.get(i))
+                    .and_then(|i| ws.data.environments.get(i))
                 {
                     &env.variables
                 } else {
@@ -1231,9 +1648,13 @@ impl App {
                 }
             }
             VarTier::Collection => {
-                if let Some(col) = self
+                let Some(ws) = self.active_workspace() else {
+                    return Vec::new();
+                };
+                if let Some(col) = ws
+                    .data
                     .var_collection_idx
-                    .and_then(|i| self.collections.get(i))
+                    .and_then(|i| ws.data.collections.get(i))
                 {
                     &col.variables
                 } else {
@@ -1251,12 +1672,20 @@ impl App {
         match self.var_tier {
             VarTier::Global => self.config.variables.get(key),
             VarTier::Environment => self
-                .var_environment_idx
-                .and_then(|i| self.environments.get(i))
+                .active_workspace()
+                .and_then(|ws| {
+                    ws.data
+                        .var_environment_idx
+                        .and_then(|i| ws.data.environments.get(i))
+                })
                 .and_then(|e| e.variables.get(key)),
             VarTier::Collection => self
-                .var_collection_idx
-                .and_then(|i| self.collections.get(i))
+                .active_workspace()
+                .and_then(|ws| {
+                    ws.data
+                        .var_collection_idx
+                        .and_then(|i| ws.data.collections.get(i))
+                })
                 .and_then(|c| c.variables.get(key)),
         }
     }
@@ -1276,61 +1705,67 @@ impl App {
 
     /// Cycle to next collection/environment within the current tier
     pub fn var_cycle_container_forward(&mut self) {
-        match self.var_tier {
+        let tier = self.var_tier;
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        match tier {
             VarTier::Collection => {
-                if self.collections.is_empty() {
+                if ws.data.collections.is_empty() {
                     return;
                 }
-                let next = match self.var_collection_idx {
-                    Some(i) => (i + 1) % self.collections.len(),
+                let next = match ws.data.var_collection_idx {
+                    Some(i) => (i + 1) % ws.data.collections.len(),
                     None => 0,
                 };
-                self.var_collection_idx = Some(next);
-                self.var_cursor = 0;
-                self.var_editing = None;
+                ws.data.var_collection_idx = Some(next);
             }
             VarTier::Environment => {
-                if self.environments.is_empty() {
+                if ws.data.environments.is_empty() {
                     return;
                 }
-                let next = match self.var_environment_idx {
-                    Some(i) => (i + 1) % self.environments.len(),
+                let next = match ws.data.var_environment_idx {
+                    Some(i) => (i + 1) % ws.data.environments.len(),
                     None => 0,
                 };
-                self.var_environment_idx = Some(next);
-                self.var_cursor = 0;
-                self.var_editing = None;
+                ws.data.var_environment_idx = Some(next);
             }
-            VarTier::Global => {} // only one global scope
+            VarTier::Global => return,
         }
+        self.var_cursor = 0;
+        self.var_editing = None;
     }
 
     /// Cycle to previous collection/environment within the current tier
     pub fn var_cycle_container_backward(&mut self) {
-        match self.var_tier {
+        let tier = self.var_tier.clone();
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        match tier {
             VarTier::Collection => {
-                if self.collections.is_empty() {
+                if ws.data.collections.is_empty() {
                     return;
                 }
-                let prev = match self.var_collection_idx {
+                let prev = match ws.data.var_collection_idx {
                     Some(i) if i > 0 => i - 1,
-                    Some(_) => self.collections.len() - 1,
+                    Some(_) => ws.data.collections.len() - 1,
                     None => 0,
                 };
-                self.var_collection_idx = Some(prev);
+                ws.data.var_collection_idx = Some(prev);
                 self.var_cursor = 0;
                 self.var_editing = None;
             }
             VarTier::Environment => {
-                if self.environments.is_empty() {
+                if ws.data.environments.is_empty() {
                     return;
                 }
-                let prev = match self.var_environment_idx {
+                let prev = match ws.data.var_environment_idx {
                     Some(i) if i > 0 => i - 1,
-                    Some(_) => self.environments.len() - 1,
+                    Some(_) => ws.data.environments.len() - 1,
                     None => 0,
                 };
-                self.var_environment_idx = Some(prev);
+                ws.data.var_environment_idx = Some(prev);
                 self.var_cursor = 0;
                 self.var_editing = None;
             }
@@ -1464,12 +1899,20 @@ impl App {
         match self.var_tier {
             VarTier::Global => self.config.variables.get_mut(key),
             VarTier::Environment => self
-                .var_environment_idx
-                .and_then(|i| self.environments.get_mut(i))
+                .active_workspace_mut()
+                .and_then(|ws| {
+                    ws.data
+                        .var_environment_idx
+                        .and_then(|i| ws.data.environments.get_mut(i))
+                })
                 .and_then(|e| e.variables.get_mut(key)),
             VarTier::Collection => self
-                .var_collection_idx
-                .and_then(|i| self.collections.get_mut(i))
+                .active_workspace_mut()
+                .and_then(|ws| {
+                    ws.data
+                        .var_collection_idx
+                        .and_then(|i| ws.data.collections.get_mut(i))
+                })
                 .and_then(|c| c.variables.get_mut(key)),
         }
     }
@@ -1478,12 +1921,20 @@ impl App {
         match self.var_tier {
             VarTier::Global => self.config.variables.remove(key),
             VarTier::Environment => self
-                .var_environment_idx
-                .and_then(|i| self.environments.get_mut(i))
+                .active_workspace_mut()
+                .and_then(|ws| {
+                    ws.data
+                        .var_environment_idx
+                        .and_then(|i| ws.data.environments.get_mut(i))
+                })
                 .and_then(|e| e.variables.remove(key)),
             VarTier::Collection => self
-                .var_collection_idx
-                .and_then(|i| self.collections.get_mut(i))
+                .active_workspace_mut()
+                .and_then(|ws| {
+                    ws.data
+                        .var_collection_idx
+                        .and_then(|i| ws.data.collections.get_mut(i))
+                })
                 .and_then(|c| c.variables.remove(key)),
         }
     }
@@ -1494,19 +1945,25 @@ impl App {
                 self.config.variables.insert(key.to_string(), var);
             }
             VarTier::Environment => {
-                if let Some(env) = self
-                    .var_environment_idx
-                    .and_then(|i| self.environments.get_mut(i))
-                {
-                    env.variables.insert(key.to_string(), var);
+                if let Some(ws) = self.active_workspace_mut() {
+                    if let Some(env) = ws
+                        .data
+                        .var_environment_idx
+                        .and_then(|i| ws.data.environments.get_mut(i))
+                    {
+                        env.variables.insert(key.to_string(), var);
+                    }
                 }
             }
             VarTier::Collection => {
-                if let Some(col) = self
-                    .var_collection_idx
-                    .and_then(|i| self.collections.get_mut(i))
-                {
-                    col.variables.insert(key.to_string(), var);
+                if let Some(ws) = self.active_workspace_mut() {
+                    if let Some(col) = ws
+                        .data
+                        .var_collection_idx
+                        .and_then(|i| ws.data.collections.get_mut(i))
+                    {
+                        col.variables.insert(key.to_string(), var);
+                    }
                 }
             }
         }
@@ -1519,25 +1976,34 @@ impl App {
                 let _ = self.config.save_to(&config_root.join("config.json"));
             }
             VarTier::Environment => {
-                if let Some(env) = self
-                    .var_environment_idx
-                    .and_then(|i| self.environments.get(i))
-                {
-                    let _ = curl_tui_core::environment::save_environment(
-                        &config_root.join("environments"),
-                        env,
-                    );
+                if let Some(ws) = self.active_workspace() {
+                    if let Some(env) = ws
+                        .data
+                        .var_environment_idx
+                        .and_then(|i| ws.data.environments.get(i))
+                    {
+                        let env_dir = config_root
+                            .join("projects")
+                            .join(&ws.data.slug)
+                            .join("environments");
+                        let _ = curl_tui_core::environment::save_environment(&env_dir, env);
+                    }
                 }
             }
             VarTier::Collection => {
-                if let Some(col) = self
-                    .var_collection_idx
-                    .and_then(|i| self.collections.get(i))
-                {
-                    let _ = curl_tui_core::collection::save_collection(
-                        &config_root.join("collections"),
-                        col,
-                    );
+                if let Some(ws) = self.active_workspace() {
+                    if let Some(col) = ws
+                        .data
+                        .var_collection_idx
+                        .and_then(|i| ws.data.collections.get(i))
+                    {
+                        let collections_dir = config_root
+                            .join("projects")
+                            .join(&ws.data.slug)
+                            .join("collections");
+                        let _ =
+                            curl_tui_core::collection::save_collection(&collections_dir, col);
+                    }
                 }
             }
         }

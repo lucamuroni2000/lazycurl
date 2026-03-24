@@ -119,7 +119,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                 hints.push(Span::styled(":edit ", hint_style));
 
                 // Tab-specific hints
-                match app.request_tab {
+                match app.request_tab() {
                     RequestTab::Headers => {
                         hints.push(Span::styled("a", key_style));
                         hints.push(Span::styled(":add header ", hint_style));

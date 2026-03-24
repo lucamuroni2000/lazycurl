@@ -38,7 +38,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         .split(inner);
 
     // Request name
-    if let Some(req) = &app.current_request {
+    if let Some(req) = app.current_request() {
         let name_editing =
             app.input_mode == InputMode::Editing && app.edit_field == Some(EditField::RequestName);
 
@@ -73,7 +73,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     // Method + URL bar
-    if let Some(req) = &app.current_request {
+    if let Some(req) = app.current_request() {
         let url_editing =
             app.input_mode == InputMode::Editing && app.edit_field == Some(EditField::Url);
 
@@ -128,7 +128,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     // Tabs
     let tab_titles = vec!["Headers", "Body", "Auth", "Params"];
-    let selected_tab = match app.request_tab {
+    let selected_tab = match app.request_tab() {
         RequestTab::Headers => 0,
         RequestTab::Body => 1,
         RequestTab::Auth => 2,
@@ -146,7 +146,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(tabs, chunks[2]);
 
     // Tab content
-    match app.request_tab {
+    match app.request_tab() {
         RequestTab::Headers => draw_headers(frame, app, chunks[3]),
         RequestTab::Body => draw_body(frame, app, chunks[3]),
         RequestTab::Auth => draw_auth(frame, app, chunks[3]),
@@ -155,7 +155,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_headers(frame: &mut Frame, app: &App, area: Rect) {
-    let Some(req) = &app.current_request else {
+    let Some(req) = app.current_request() else {
         return;
     };
 
@@ -195,7 +195,7 @@ fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
 
     let content = if body_editing {
         app.body_input.content().to_string()
-    } else if let Some(req) = &app.current_request {
+    } else if let Some(req) = app.current_request() {
         match &req.body {
             Some(curl_tui_core::types::Body::Json { content }) => content.clone(),
             Some(curl_tui_core::types::Body::Text { content }) => content.clone(),
@@ -229,7 +229,7 @@ fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_auth(frame: &mut Frame, app: &App, area: Rect) {
-    let Some(req) = &app.current_request else {
+    let Some(req) = app.current_request() else {
         return;
     };
 
@@ -263,7 +263,7 @@ fn draw_auth(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_params(frame: &mut Frame, app: &App, area: Rect) {
-    let Some(req) = &app.current_request else {
+    let Some(req) = app.current_request() else {
         return;
     };
 

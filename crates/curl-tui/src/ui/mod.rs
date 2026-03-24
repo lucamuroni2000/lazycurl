@@ -19,8 +19,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     // Title bar
     let env_name = app
-        .active_environment
-        .and_then(|i| app.environments.get(i))
+        .active_environment()
+        .and_then(|i| app.environments().get(i))
         .map(|e| e.name.as_str())
         .unwrap_or("None");
 

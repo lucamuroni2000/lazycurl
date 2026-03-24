@@ -22,7 +22,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if app.collections.is_empty() {
+    if app.collections().is_empty() {
         let text = Paragraph::new(" No collections.\n Press Ctrl+N to create a request.")
             .style(Style::default().fg(Color::DarkGray));
         frame.render_widget(text, inner);
@@ -30,9 +30,9 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let mut lines = Vec::new();
-    for (col_idx, collection) in app.collections.iter().enumerate() {
+    for (col_idx, collection) in app.collections().iter().enumerate() {
         let is_selected_col =
-            app.selected_collection == Some(col_idx) && app.selected_request.is_none();
+            app.selected_collection() == Some(col_idx) && app.selected_request().is_none();
 
         let style = if is_selected_col && is_focused {
             Style::default()
@@ -60,7 +60,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         // Show requests under the collection
         for (req_idx, req) in collection.requests.iter().enumerate() {
             let is_selected_req =
-                app.selected_collection == Some(col_idx) && app.selected_request == Some(req_idx);
+                app.selected_collection() == Some(col_idx) && app.selected_request() == Some(req_idx);
 
             let method_style = Style::default().fg(method_color(req.method));
             let name_style = if is_selected_req && is_focused {
@@ -81,7 +81,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     // Handle scrolling
     let visible_height = inner.height as usize;
-    let start = app.collection_scroll;
+    let start = app.collection_scroll();
     let end = (start + visible_height).min(lines.len());
     let visible_lines: Vec<Line> = lines[start..end].to_vec();
 

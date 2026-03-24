@@ -7,7 +7,7 @@ use ratatui::Frame;
 use crate::app::App;
 
 pub fn draw_collection_picker(frame: &mut Frame, app: &App) {
-    let height = (app.collections.len() + 4).min(20) as u16;
+    let height = (app.collections().len() + 4).min(20) as u16;
     let area = centered_rect(50, height, frame.area());
     frame.render_widget(Clear, area);
 
@@ -21,7 +21,7 @@ pub fn draw_collection_picker(frame: &mut Frame, app: &App) {
 
     let mut lines = Vec::new();
 
-    for (i, collection) in app.collections.iter().enumerate() {
+    for (i, collection) in app.collections().iter().enumerate() {
         let is_selected = i == app.picker_cursor;
         let req_count = collection.requests.len();
 
