@@ -29,6 +29,18 @@ pub fn append_entry_redacted(
     append_entry(path, &redacted)
 }
 
+/// Append a redacted history entry to both the global and project-scoped history files.
+pub fn append_entry_dual(
+    global_path: &Path,
+    project_path: &Path,
+    entry: &HistoryEntry,
+    secrets: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
+    append_entry_redacted(global_path, entry, secrets)?;
+    append_entry_redacted(project_path, entry, secrets)?;
+    Ok(())
+}
+
 /// Prune history file to keep only the most recent `max_entries` entries.
 pub fn prune_history(path: &Path, max_entries: usize) -> Result<(), Box<dyn std::error::Error>> {
     if !path.exists() {
@@ -124,5 +136,23 @@ mod tests {
 
         append_entry(&path, &make_entry("First")).unwrap();
         assert!(path.exists());
+    }
+
+    #[test]
+    fn test_append_entry_dual() {
+        let tmp = tempfile::tempdir().unwrap();
+        let global_path = tmp.path().join("history.jsonl");
+        let project_path = tmp.path().join("project").join("history.jsonl");
+
+        let entry = make_entry("Dual Write");
+        let secrets = vec![];
+        append_entry_dual(&global_path, &project_path, &entry, &secrets).unwrap();
+
+        assert!(global_path.exists());
+        assert!(project_path.exists());
+        let global = std::fs::read_to_string(&global_path).unwrap();
+        let project = std::fs::read_to_string(&project_path).unwrap();
+        assert!(global.contains("Dual Write"));
+        assert!(project.contains("Dual Write"));
     }
 }
