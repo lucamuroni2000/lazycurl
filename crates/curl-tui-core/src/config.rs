@@ -29,6 +29,19 @@ fn default_keybindings() -> HashMap<String, String> {
     map
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionRestore {
+    Auto,
+    Prompt,
+}
+
+impl Default for SessionRestore {
+    fn default() -> Self {
+        SessionRestore::Auto
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
@@ -43,6 +56,12 @@ pub struct AppConfig {
     pub max_response_body_size_bytes: u64,
     #[serde(default)]
     pub debug_logging: bool,
+    #[serde(default)]
+    pub open_projects: Vec<String>,
+    #[serde(default)]
+    pub active_project: Option<String>,
+    #[serde(default)]
+    pub restore_session: SessionRestore,
 }
 
 impl Default for AppConfig {
@@ -54,6 +73,9 @@ impl Default for AppConfig {
             default_timeout: default_timeout(),
             max_response_body_size_bytes: default_max_body_size(),
             debug_logging: false,
+            open_projects: Vec::new(),
+            active_project: None,
+            restore_session: SessionRestore::default(),
         }
     }
 }
@@ -170,5 +192,31 @@ mod tests {
         let loaded = AppConfig::load_from(&path).unwrap();
         assert_eq!(loaded.default_timeout, config.default_timeout);
         assert_eq!(loaded.keybindings, config.keybindings);
+    }
+
+    #[test]
+    fn test_config_session_fields_default() {
+        let config = AppConfig::default();
+        assert!(config.open_projects.is_empty());
+        assert!(config.active_project.is_none());
+        assert_eq!(config.restore_session, SessionRestore::Auto);
+    }
+
+    #[test]
+    fn test_config_session_fields_roundtrip() {
+        let json = r#"{"open_projects":["my-api","other"],"active_project":"my-api","restore_session":"prompt"}"#;
+        let config = AppConfig::load_from_str(json).unwrap();
+        assert_eq!(config.open_projects, vec!["my-api", "other"]);
+        assert_eq!(config.active_project, Some("my-api".to_string()));
+        assert_eq!(config.restore_session, SessionRestore::Prompt);
+    }
+
+    #[test]
+    fn test_config_backward_compat_no_session_fields() {
+        let json = r#"{"default_timeout": 30}"#;
+        let config = AppConfig::load_from_str(json).unwrap();
+        assert!(config.open_projects.is_empty());
+        assert!(config.active_project.is_none());
+        assert_eq!(config.restore_session, SessionRestore::Auto);
     }
 }
