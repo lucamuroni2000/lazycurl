@@ -26,6 +26,9 @@ fn default_keybindings() -> HashMap<String, String> {
     map.insert("toggle_request".into(), "ctrl+2".into());
     map.insert("toggle_response".into(), "ctrl+3".into());
     map.insert("reveal_secrets".into(), "f8".into());
+    map.insert("next_project".into(), "f6".into());
+    map.insert("prev_project".into(), "f7".into());
+    map.insert("open_project".into(), "ctrl+o".into());
     map
 }
 

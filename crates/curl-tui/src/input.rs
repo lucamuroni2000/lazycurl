@@ -74,6 +74,9 @@ pub fn build_keymap(
         ("toggle_request", Action::ToggleRequest),
         ("toggle_response", Action::ToggleResponse),
         ("reveal_secrets", Action::RevealSecrets),
+        ("next_project", Action::NextProject),
+        ("prev_project", Action::PrevProject),
+        ("open_project", Action::OpenProjectPicker),
     ];
 
     for (key, action) in action_map {
@@ -83,6 +86,12 @@ pub fn build_keymap(
             }
         }
     }
+
+    // Secondary project switching bindings (Ctrl+Tab may not work on all terminals)
+    map.entry((KeyModifiers::CONTROL, KeyCode::Tab))
+        .or_insert(Action::NextProject);
+    map.entry((KeyModifiers::CONTROL | KeyModifiers::SHIFT, KeyCode::BackTab))
+        .or_insert(Action::PrevProject);
 
     // Always register Ctrl+Q as quit (not remappable)
     map.insert((KeyModifiers::CONTROL, KeyCode::Char('q')), Action::Quit);

@@ -103,6 +103,11 @@ pub enum Action {
     CursorRight,
     Home,
     End,
+    // Project actions
+    NextProject,
+    PrevProject,
+    OpenProjectPicker,
+    CloseProject,
     None,
 }
 
