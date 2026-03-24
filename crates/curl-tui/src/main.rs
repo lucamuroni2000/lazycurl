@@ -40,16 +40,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create app
     let mut app = App::new(config);
 
-    // Load existing data
-    app.collections = curl_tui_core::collection::list_collections(&config_root.join("collections"))
-        .unwrap_or_default();
-    app.environments =
-        curl_tui_core::environment::list_environments(&config_root.join("environments"))
-            .unwrap_or_default();
-
-    // Set active environment from config
-    if let Some(env_name) = app.config.active_environment.clone() {
-        app.active_environment = app.environments.iter().position(|e| e.name == env_name);
+    // Load existing data into default project workspace
+    // (For now, create a default project if none exists)
+    {
+        let projects_dir = config_root.join("projects");
+        let projects = curl_tui_core::project::list_projects(&projects_dir).unwrap_or_default();
+        if projects.is_empty() {
+            // Create a default project
+            let default_project = curl_tui_core::types::Project {
+                id: uuid::Uuid::new_v4(),
+                name: "Default".to_string(),
+                active_environment: None,
+            };
+            if let Ok(dir) = curl_tui_core::project::create_project(&projects_dir, &default_project) {
+                let slug = dir.file_name().unwrap().to_string_lossy().to_string();
+                let mut ws = app::ProjectWorkspace::new(default_project, slug.clone());
+                ws.data.collections = curl_tui_core::collection::list_collections(
+                    &projects_dir.join(&slug).join("collections"),
+                ).unwrap_or_default();
+                ws.data.environments = curl_tui_core::environment::list_environments(
+                    &projects_dir.join(&slug).join("environments"),
+                ).unwrap_or_default();
+                if let Some(env_name) = app.config.active_environment.clone() {
+                    ws.data.active_environment = ws.data.environments.iter().position(|e| e.name == env_name);
+                }
+                app.open_projects.push(ws);
+                app.active_project_idx = Some(0);
+            }
+        } else {
+            // Open the first project
+            let (project, path) = projects.into_iter().next().unwrap();
+            let slug = path.file_name().unwrap().to_string_lossy().to_string();
+            let mut ws = app::ProjectWorkspace::new(project, slug.clone());
+            ws.data.collections = curl_tui_core::collection::list_collections(
+                &projects_dir.join(&slug).join("collections"),
+            ).unwrap_or_default();
+            ws.data.environments = curl_tui_core::environment::list_environments(
+                &projects_dir.join(&slug).join("environments"),
+            ).unwrap_or_default();
+            if let Some(env_name) = app.config.active_environment.clone() {
+                ws.data.active_environment = ws.data.environments.iter().position(|e| e.name == env_name);
+            }
+            app.open_projects.push(ws);
+            app.active_project_idx = Some(0);
+        }
     }
 
     // Build keymap from config
@@ -60,6 +94,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Main loop
     let result = run_loop(&mut terminal, &mut app, &keymap).await;
+
+    // Save session state
+    app.config.open_projects = app
+        .open_projects
+        .iter()
+        .map(|ws| ws.data.slug.clone())
+        .collect();
+    app.config.active_project = app
+        .active_project_idx
+        .and_then(|i| app.open_projects.get(i))
+        .map(|ws| ws.data.slug.clone());
+    let config_path = config_dir().join("config.json");
+    let _ = app.config.save_to(&config_path);
 
     // Restore terminal
     disable_raw_mode()?;
@@ -106,7 +153,7 @@ async fn run_loop(
                         }
                     }
                     Action::MoveDown => {
-                        if app.picker_cursor + 1 < app.collections.len() {
+                        if app.picker_cursor + 1 < app.collections().len() {
                             app.picker_cursor += 1;
                         }
                     }
@@ -122,6 +169,74 @@ async fn run_loop(
                         app.start_editing(EditField::NewCollectionName);
                         app.status_message =
                             Some("Name your collection, then press Enter to save".to_string());
+                    }
+                    Action::Quit => app.should_quit = true,
+                    _ => {}
+                }
+            // Project picker overlay intercepts when open
+            } else if app.show_project_picker {
+                match action {
+                    Action::Cancel => {
+                        app.show_project_picker = false;
+                    }
+                    Action::MoveUp => {
+                        if app.project_picker_cursor > 0 {
+                            app.project_picker_cursor -= 1;
+                        }
+                    }
+                    Action::MoveDown => {
+                        if app.project_picker_cursor + 1 < app.all_projects.len() {
+                            app.project_picker_cursor += 1;
+                        }
+                    }
+                    Action::Enter => {
+                        if let Some((project, slug)) =
+                            app.all_projects.get(app.project_picker_cursor).cloned()
+                        {
+                            // Check if already open
+                            if let Some(idx) =
+                                app.open_projects.iter().position(|ws| ws.data.slug == slug)
+                            {
+                                app.switch_project(idx);
+                            } else {
+                                // Open the project
+                                let path = config_dir().join("projects").join(&slug);
+                                let mut ws = app::ProjectWorkspace::new(project, slug);
+                                ws.data.collections =
+                                    curl_tui_core::collection::list_collections(
+                                        &path.join("collections"),
+                                    )
+                                    .unwrap_or_default();
+                                ws.data.environments =
+                                    curl_tui_core::environment::list_environments(
+                                        &path.join("environments"),
+                                    )
+                                    .unwrap_or_default();
+                                app.open_projects.push(ws);
+                                let idx = app.open_projects.len() - 1;
+                                app.switch_project(idx);
+                            }
+                            app.show_project_picker = false;
+                        }
+                    }
+                    Action::NewRequest | Action::CharInput('n') => {
+                        // Create new project
+                        app.show_project_picker = false;
+                        app.name_input.set_content("New Project");
+                        app.start_editing(EditField::NewProjectName);
+                        app.status_message = Some("Name your project".to_string());
+                    }
+                    Action::DeleteItem | Action::CharInput('d') => {
+                        // Close project (remove from tab bar)
+                        if let Some((_, slug)) =
+                            app.all_projects.get(app.project_picker_cursor)
+                        {
+                            if let Some(idx) =
+                                app.open_projects.iter().position(|ws| ws.data.slug == *slug)
+                            {
+                                app.close_project(idx);
+                            }
+                        }
                     }
                     Action::Quit => app.should_quit = true,
                     _ => {}
@@ -201,19 +316,12 @@ async fn run_loop(
                         app.show_variables = true;
                         app.var_cursor = 0;
                         app.var_editing = None;
-                        // Default to first item if nothing is selected
-                        app.var_collection_idx =
-                            app.selected_collection.or(if app.collections.is_empty() {
-                                None
-                            } else {
-                                Some(0)
-                            });
-                        app.var_environment_idx =
-                            app.active_environment.or(if app.environments.is_empty() {
-                                None
-                            } else {
-                                Some(0)
-                            });
+                        if let Some(ws) = app.active_workspace_mut() {
+                            ws.data.var_collection_idx = ws.data.selected_collection
+                                .or(if ws.data.collections.is_empty() { None } else { Some(0) });
+                            ws.data.var_environment_idx = ws.data.active_environment
+                                .or(if ws.data.environments.is_empty() { None } else { Some(0) });
+                        }
                     }
                     Action::SendRequest => {
                         if app.input_mode == app::InputMode::Editing {
@@ -232,7 +340,7 @@ async fn run_loop(
                     }
                     Action::SwitchEnvironment => app.cycle_environment(),
                     Action::CopyCurl => {
-                        if let Some(req) = &app.current_request {
+                        if let Some(req) = app.current_request() {
                             let cmd = CurlCommandBuilder::new(&req.url).method(req.method).build();
                             let display = cmd.to_display_string(&[]);
                             app.status_message = Some(format!("Copied: {}", display));
@@ -260,11 +368,33 @@ async fn run_loop(
                     },
                     Action::AddItem => {
                         if app.active_pane == app::Pane::Request {
-                            match app.request_tab {
+                            match app.request_tab() {
                                 app::RequestTab::Headers => app.add_header(),
                                 app::RequestTab::Params => app.add_param(),
                                 _ => {}
                             }
+                        }
+                    }
+                    Action::NextProject => app.next_project(),
+                    Action::PrevProject => app.prev_project(),
+                    Action::OpenProjectPicker => {
+                        // Refresh the project list from disk
+                        let projects_dir = config_dir().join("projects");
+                        app.all_projects = curl_tui_core::project::list_projects(&projects_dir)
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|(p, path)| {
+                                let slug =
+                                    path.file_name().unwrap().to_string_lossy().to_string();
+                                (p, slug)
+                            })
+                            .collect();
+                        app.project_picker_cursor = 0;
+                        app.show_project_picker = true;
+                    }
+                    Action::CloseProject => {
+                        if let Some(idx) = app.active_project_idx {
+                            app.close_project(idx);
                         }
                     }
                     Action::DeleteItem => {
@@ -359,8 +489,8 @@ fn handle_variables_action(app: &mut App, action: &Action) {
             if app.input_mode != app::InputMode::Editing {
                 // If on Environment/Collection tier with nothing selected, create one first
                 let needs_container = match app.var_tier {
-                    app::VarTier::Environment => app.active_environment.is_none(),
-                    app::VarTier::Collection => app.selected_collection.is_none(),
+                    app::VarTier::Environment => app.active_environment().is_none(),
+                    app::VarTier::Collection => app.selected_collection().is_none(),
                     app::VarTier::Global => false,
                 };
                 if needs_container {

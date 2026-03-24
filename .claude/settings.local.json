@@ -10,7 +10,8 @@
       "Bash(cargo clippy:*)",
       "Bash(cargo doc:*)",
       "Bash(find C:/Users/lucam/Projects/curl-tui/target -path */ratatui/frame.rs -name *.rs)",
-      "Bash(cargo build:*)"
+      "Bash(cargo build:*)",
+      "Bash(git diff:*)"
     ]
   }
 }
