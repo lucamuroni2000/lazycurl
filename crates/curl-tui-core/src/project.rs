@@ -80,6 +80,16 @@ pub fn load_project(project_dir: &Path) -> Result<Project, Box<dyn std::error::E
     Ok(project)
 }
 
+/// Persist a `Project` struct back to its `project.json` in the given project directory.
+pub fn save_project(
+    project_dir: &Path,
+    project: &Project,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let content = serde_json::to_string_pretty(project)?;
+    std::fs::write(project_dir.join("project.json"), content)?;
+    Ok(())
+}
+
 /// List all projects found in `projects_dir`.
 /// Returns a vec of `(Project, PathBuf)` where PathBuf is the project directory.
 pub fn list_projects(
@@ -258,6 +268,23 @@ mod tests {
         let project = make_project("Hello World");
         let dir = project_dir(projects_dir, &project);
         assert_eq!(dir, projects_dir.join("hello-world"));
+    }
+
+    #[test]
+    fn test_save_project_persists_active_environment() {
+        let tmp = tempfile::tempdir().unwrap();
+        let projects_dir = tmp.path().join("projects");
+
+        let mut project = make_project("Save Test");
+        let dir = create_project(&projects_dir, &project).unwrap();
+
+        // Set active_environment and save
+        project.active_environment = Some("Production".to_string());
+        save_project(&dir, &project).unwrap();
+
+        // Reload and verify
+        let loaded = load_project(&dir).unwrap();
+        assert_eq!(loaded.active_environment, Some("Production".to_string()));
     }
 
     #[test]
