@@ -4,6 +4,7 @@ pub mod config;
 pub mod environment;
 pub mod history;
 pub mod init;
+pub mod project;
 pub mod secret;
 pub mod types;
 pub mod variable;
