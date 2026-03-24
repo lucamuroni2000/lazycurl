@@ -189,3 +189,128 @@ fn test_config_defaults() {
     assert!(config.keybindings.contains_key("send_request"));
     assert!(config.keybindings.contains_key("reveal_secrets"));
 }
+
+#[test]
+fn test_project_lifecycle() {
+    let tmp = tempfile::tempdir().unwrap();
+    let projects_dir = tmp.path().join("projects");
+
+    // Create project
+    let project = curl_tui_core::types::Project {
+        id: uuid::Uuid::new_v4(),
+        name: "Test Project".to_string(),
+        active_environment: None,
+    };
+    let dir = curl_tui_core::project::create_project(&projects_dir, &project).unwrap();
+
+    // Add a collection to the project
+    let collection = curl_tui_core::types::Collection {
+        id: uuid::Uuid::new_v4(),
+        name: "API".to_string(),
+        variables: std::collections::HashMap::new(),
+        requests: vec![],
+    };
+    curl_tui_core::collection::save_collection(&dir.join("collections"), &collection).unwrap();
+
+    // Add an environment
+    let env = curl_tui_core::types::Environment {
+        id: uuid::Uuid::new_v4(),
+        name: "Dev".to_string(),
+        variables: std::collections::HashMap::new(),
+    };
+    curl_tui_core::environment::save_environment(&dir.join("environments"), &env).unwrap();
+
+    // List should show 1 collection, 1 environment
+    let cols = curl_tui_core::collection::list_collections(&dir.join("collections")).unwrap();
+    assert_eq!(cols.len(), 1);
+    let envs = curl_tui_core::environment::list_environments(&dir.join("environments")).unwrap();
+    assert_eq!(envs.len(), 1);
+
+    // Delete project
+    curl_tui_core::project::delete_project(&dir).unwrap();
+    assert!(!dir.exists());
+}
+
+#[test]
+fn test_migration_then_project_load() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    // Set up flat structure
+    curl_tui_core::init::initialize(root).unwrap();
+    let col = curl_tui_core::types::Collection {
+        id: uuid::Uuid::new_v4(),
+        name: "Legacy".to_string(),
+        variables: std::collections::HashMap::new(),
+        requests: vec![],
+    };
+    curl_tui_core::collection::save_collection(&root.join("collections"), &col).unwrap();
+
+    // Migration should have run during init if needed, but let's trigger manually
+    if curl_tui_core::migration::needs_migration(root) {
+        curl_tui_core::migration::migrate_flat_to_project(root).unwrap();
+    }
+
+    // Now load the migrated project
+    let projects = curl_tui_core::project::list_projects(&root.join("projects")).unwrap();
+    assert_eq!(projects.len(), 1);
+    let (project, path) = &projects[0];
+    assert_eq!(project.name, "Default");
+
+    let cols = curl_tui_core::collection::list_collections(&path.join("collections")).unwrap();
+    assert_eq!(cols.len(), 1);
+    assert_eq!(cols[0].name, "Legacy");
+}
+
+#[test]
+fn test_environment_sync_round_trip() {
+    let tmp = tempfile::tempdir().unwrap();
+    let projects_dir = tmp.path().join("projects");
+
+    // Create project with two environments
+    let project = curl_tui_core::types::Project {
+        id: uuid::Uuid::new_v4(),
+        name: "Env Sync Test".to_string(),
+        active_environment: None,
+    };
+    let dir = curl_tui_core::project::create_project(&projects_dir, &project).unwrap();
+
+    let env1 = curl_tui_core::types::Environment {
+        id: uuid::Uuid::new_v4(),
+        name: "Development".to_string(),
+        variables: std::collections::HashMap::new(),
+    };
+    let env2 = curl_tui_core::types::Environment {
+        id: uuid::Uuid::new_v4(),
+        name: "Production".to_string(),
+        variables: std::collections::HashMap::new(),
+    };
+    curl_tui_core::environment::save_environment(&dir.join("environments"), &env1).unwrap();
+    curl_tui_core::environment::save_environment(&dir.join("environments"), &env2).unwrap();
+
+    // Build workspace, select Production (index 1), sync
+    let mut ws =
+        curl_tui_core::types::ProjectWorkspaceData::new(project, "env-sync-test".to_string());
+    ws.environments = vec![env1, env2];
+    ws.active_environment = Some(1);
+    ws.sync_active_environment_name();
+
+    assert_eq!(
+        ws.project.active_environment,
+        Some("Production".to_string())
+    );
+
+    // Persist and reload
+    curl_tui_core::project::save_project(&dir, &ws.project).unwrap();
+    let reloaded = curl_tui_core::project::load_project(&dir).unwrap();
+    assert_eq!(reloaded.active_environment, Some("Production".to_string()));
+
+    // Simulate restoring index from name (what switch_project does at load time)
+    let envs = curl_tui_core::environment::list_environments(&dir.join("environments")).unwrap();
+    let restored_idx = reloaded
+        .active_environment
+        .as_ref()
+        .and_then(|name| envs.iter().position(|e| &e.name == name));
+    assert!(restored_idx.is_some());
+    assert_eq!(envs[restored_idx.unwrap()].name, "Production");
+}
