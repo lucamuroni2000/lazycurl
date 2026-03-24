@@ -9,6 +9,7 @@ pub fn initialize(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(root)?;
     std::fs::create_dir_all(root.join("collections"))?;
     std::fs::create_dir_all(root.join("environments"))?;
+    std::fs::create_dir_all(root.join("projects"))?;
 
     // config.json — only create if missing
     let config_path = root.join("config.json");
@@ -21,6 +22,11 @@ pub fn initialize(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let gitignore_path = root.join(".gitignore");
     if !gitignore_path.exists() {
         std::fs::write(&gitignore_path, secret::generate_gitignore())?;
+    }
+
+    // Migrate flat structure to project-based layout if needed
+    if crate::migration::needs_migration(root) {
+        crate::migration::migrate_flat_to_project(root)?;
     }
 
     Ok(())
