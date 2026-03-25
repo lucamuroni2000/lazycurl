@@ -2,3 +2,5 @@
 **/*.rs.bk
 *.pdb
 .env
+.claude/*
+!.claude/commands/
