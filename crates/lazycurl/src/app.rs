@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use lazycurl_core::command::CurlCommandBuilder;
 use lazycurl_core::config::{config_dir, AppConfig};
 use lazycurl_core::history::append_entry_dual;
@@ -170,6 +172,7 @@ pub struct App {
     pub var_key_input: crate::text_input::TextInput,
     pub var_value_input: crate::text_input::TextInput,
     pub var_confirm_delete: bool,
+    pub var_delete_message: Option<String>,
     // Project picker
     pub show_project_picker: bool,
     pub project_picker_cursor: usize,
@@ -237,6 +240,16 @@ impl App {
             env_manager_renaming: None,
             env_manager_confirm_delete: None,
             env_manager_name_input: crate::text_input::TextInput::new(""),
+        }
+    }
+
+    /// Clear the status message if it has been visible for longer than the given duration.
+    pub fn expire_status_message(&mut self, ttl: std::time::Duration) {
+        if let Some(at) = self.status_message_at {
+            if at.elapsed() >= ttl {
+                self.status_message = None;
+                self.status_message_at = None;
+            }
         }
     }
 
@@ -2149,11 +2162,11 @@ impl App {
         self.var_save_current_tier();
     }
 
-    /// Show delete confirmation for the selected variable.
+    /// Show delete confirmation for the selected variable (inside the overlay).
     pub fn var_request_delete(&mut self) {
         let keys = self.var_keys();
         if let Some(key) = keys.get(self.var_cursor) {
-            self.status_message = Some(format!(
+            self.var_delete_message = Some(format!(
                 "Delete variable '{}'? y to confirm, Esc to cancel",
                 key
             ));

@@ -94,6 +94,30 @@ pub fn draw(frame: &mut Frame, app: &App) {
         content_chunks[0],
     );
 
+    // Show delete confirmation message inside the overlay
+    if let Some(ref msg) = app.var_delete_message {
+        let msg_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(1)])
+            .split(content_chunks[1]);
+
+        frame.render_widget(
+            Paragraph::new(format!(" {}", msg))
+                .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            msg_chunks[1],
+        );
+
+        // Shrink the content area for the variable list
+        let narrowed = msg_chunks[0];
+        // Render the variable list in `narrowed` instead of `content_chunks[1]`
+        draw_var_list(frame, app, narrowed);
+        return;
+    }
+
+    draw_var_list(frame, app, content_chunks[1]);
+}
+
+fn draw_var_list(frame: &mut Frame, app: &App, area: Rect) {
     let keys = app.var_keys();
 
     if keys.is_empty() {
@@ -112,7 +136,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
         frame.render_widget(
             Paragraph::new(msg).style(Style::default().fg(Color::DarkGray)),
-            content_chunks[1],
+            area,
         );
         return;
     }
@@ -218,25 +242,21 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
         // Show cursor position when editing
         if is_editing_key {
-            let cursor_x = content_chunks[1].x + 3 + app.var_key_input.cursor() as u16;
-            let cursor_y = content_chunks[1].y + (i + 1) as u16; // +1 for header
-            if cursor_y < content_chunks[1].y + content_chunks[1].height
-                && cursor_x < content_chunks[1].x + content_chunks[1].width
-            {
+            let cursor_x = area.x + 3 + app.var_key_input.cursor() as u16;
+            let cursor_y = area.y + (i + 1) as u16; // +1 for header
+            if cursor_y < area.y + area.height && cursor_x < area.x + area.width {
                 frame.set_cursor_position((cursor_x, cursor_y));
             }
         } else if is_editing_value {
-            let cursor_x = content_chunks[1].x + 3 + 25 + app.var_value_input.cursor() as u16;
-            let cursor_y = content_chunks[1].y + (i + 1) as u16;
-            if cursor_y < content_chunks[1].y + content_chunks[1].height
-                && cursor_x < content_chunks[1].x + content_chunks[1].width
-            {
+            let cursor_x = area.x + 3 + 25 + app.var_value_input.cursor() as u16;
+            let cursor_y = area.y + (i + 1) as u16;
+            if cursor_y < area.y + area.height && cursor_x < area.x + area.width {
                 frame.set_cursor_position((cursor_x, cursor_y));
             }
         }
     }
 
-    frame.render_widget(Paragraph::new(lines), content_chunks[1]);
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {

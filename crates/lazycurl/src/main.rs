@@ -129,6 +129,13 @@ async fn run_loop(
     keymap: &HashMap<(KeyModifiers, KeyCode), Action>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
+        // Auto-dismiss status bar messages after 10 seconds
+        app.expire_status_message(Duration::from_secs(10));
+        // Track timestamp for newly set messages
+        if app.status_message.is_some() && app.status_message_at.is_none() {
+            app.status_message_at = Some(std::time::Instant::now());
+        }
+
         terminal.draw(|frame| {
             ui::draw(frame, app);
         })?;
@@ -346,9 +353,6 @@ async fn run_loop(
                         }
                     }
                     Action::SwitchEnvironment => app.cycle_environment(),
-                    Action::ManageEnvironments => {
-                        app.open_env_manager();
-                    }
                     Action::CopyCurl => {
                         if let Some(req) = app.current_request() {
                             let cmd = CurlCommandBuilder::new(&req.url).method(req.method).build();
