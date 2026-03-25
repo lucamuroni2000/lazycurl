@@ -17,7 +17,8 @@
       "Bash(git -C /c/Users/lucam/Projects/curl-tui add crates/curl-tui/src/app.rs crates/curl-tui-core/src/config.rs crates/curl-tui/src/input.rs)",
       "Bash(git -C:*)",
       "Bash(/c/Users/lucam/.cargo/bin/cargo check:*)",
-      "Bash(/c/Users/lucam/.cargo/bin/cargo fmt:*)"
+      "Bash(/c/Users/lucam/.cargo/bin/cargo fmt:*)",
+      "Bash(/c/Users/lucam/.cargo/bin/cargo test:*)"
     ]
   }
 }
