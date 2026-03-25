@@ -13,6 +13,18 @@ pub enum Method {
     Options,
 }
 
+impl Method {
+    pub const ALL: [Method; 7] = [
+        Method::Get,
+        Method::Post,
+        Method::Put,
+        Method::Delete,
+        Method::Patch,
+        Method::Head,
+        Method::Options,
+    ];
+}
+
 impl std::fmt::Display for Method {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

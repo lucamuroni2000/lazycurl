@@ -132,6 +132,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                     }
                 }
 
+                hints.push(Span::styled("m", key_style));
+                hints.push(Span::styled(":method ", hint_style));
                 hints.push(Span::styled("r", key_style));
                 hints.push(Span::styled(":rename ", hint_style));
                 hints.push(Span::styled("Ctrl+N", key_style));

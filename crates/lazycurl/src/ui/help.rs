@@ -39,6 +39,7 @@ pub fn draw(frame: &mut Frame) {
             "r  (Rename)",
             "Rename selected collection, request, or variable key",
         ),
+        binding("m  (Method)", "Open HTTP method picker (in Request pane)"),
         binding("s  (Secret)", "Toggle secret flag on selected variable"),
         binding("v  (Variables)", "Open the variables editor overlay"),
         Line::raw(""),

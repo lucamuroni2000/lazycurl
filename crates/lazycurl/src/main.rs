@@ -158,8 +158,34 @@ async fn run_loop(
                 }
             };
 
+            // Method picker intercepts when open
+            if app.show_method_picker {
+                match action {
+                    Action::Cancel => {
+                        app.show_method_picker = false;
+                    }
+                    Action::MoveUp => {
+                        if app.method_picker_cursor > 0 {
+                            app.method_picker_cursor -= 1;
+                        }
+                    }
+                    Action::MoveDown => {
+                        if app.method_picker_cursor + 1
+                            < lazycurl_core::types::Method::ALL.len()
+                        {
+                            app.method_picker_cursor += 1;
+                        }
+                    }
+                    Action::Enter => {
+                        let method =
+                            lazycurl_core::types::Method::ALL[app.method_picker_cursor];
+                        app.select_method(method);
+                    }
+                    Action::Quit => app.should_quit = true,
+                    _ => {}
+                }
             // Collection picker intercepts when open
-            if app.show_collection_picker {
+            } else if app.show_collection_picker {
                 match action {
                     Action::Cancel => {
                         app.show_collection_picker = false;
@@ -385,6 +411,11 @@ async fn run_loop(
                             app.request_collection_delete();
                         }
                         // TODO: implement delete for headers/params in Request pane
+                    }
+                    Action::CycleMethod => {
+                        if app.active_pane == app::Pane::Request {
+                            app.open_method_picker();
+                        }
                     }
                     Action::Rename => app.handle_rename(),
                     // Editing actions

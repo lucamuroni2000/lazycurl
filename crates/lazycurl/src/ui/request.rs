@@ -296,6 +296,49 @@ fn draw_params(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(lines), area);
 }
 
+pub fn draw_method_picker(frame: &mut Frame, app: &App, request_area: Rect) {
+    use lazycurl_core::types::Method;
+    use ratatui::widgets::{Clear, List, ListItem};
+
+    let methods = Method::ALL;
+    let items: Vec<ListItem> = methods
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            let style = if i == app.method_picker_cursor {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(method_color(*m))
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(method_color(*m))
+            };
+            ListItem::new(format!(" {} ", m)).style(style)
+        })
+        .collect();
+
+    let width = 12u16;
+    let height = methods.len() as u16 + 2; // +2 for border
+    // Position dropdown below the method+URL bar (row 2 in the request pane inner area)
+    let x = request_area.x + 1;
+    let y = request_area.y + 3; // after name line + method/url line + border
+    let area = Rect::new(
+        x,
+        y,
+        width.min(request_area.width),
+        height.min(request_area.height.saturating_sub(3)),
+    );
+
+    frame.render_widget(Clear, area);
+    let list = List::new(items).block(
+        Block::default()
+            .title(" Method ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
+    frame.render_widget(list, area);
+}
+
 fn method_color(method: lazycurl_core::types::Method) -> Color {
     match method {
         lazycurl_core::types::Method::Get => Color::Green,

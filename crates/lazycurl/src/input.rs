@@ -172,6 +172,7 @@ pub fn resolve_navigation(key: KeyEvent) -> Action {
         (KeyModifiers::NONE, KeyCode::Char('d')) => Action::DeleteItem,
         (KeyModifiers::NONE, KeyCode::Char('r')) => Action::Rename,
         (KeyModifiers::NONE, KeyCode::Char('v')) => Action::OpenVariables,
+        (KeyModifiers::NONE, KeyCode::Char('m')) => Action::CycleMethod,
         (KeyModifiers::NONE, KeyCode::Char('s')) => Action::ToggleSecretFlag,
         (KeyModifiers::NONE, KeyCode::Char('j')) => Action::MoveDown,
         (KeyModifiers::NONE, KeyCode::Char('k')) => Action::MoveUp,

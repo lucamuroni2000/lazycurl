@@ -34,6 +34,13 @@ pub fn draw(frame: &mut Frame, app: &App) {
     // Status bar
     statusbar::draw(frame, app, pane_layout.status_bar);
 
+    // Method picker (rendered relative to request pane)
+    if app.show_method_picker {
+        if let Some(area) = pane_layout.request {
+            request::draw_method_picker(frame, app, area);
+        }
+    }
+
     // Overlays (on top of everything)
     if app.show_collection_picker {
         picker::draw_collection_picker(frame, app);

@@ -97,6 +97,7 @@ pub enum Action {
     AddItem,
     Rename,
     OpenVariables,
+    CycleMethod,
     ToggleSecretFlag,
     CharInput(char),
     Backspace,
@@ -177,6 +178,9 @@ pub struct App {
     pub project_picker_renaming: bool,
     pub project_picker_confirm_delete: Option<usize>,
     pub project_picker_name_input: crate::text_input::TextInput,
+    // Method picker
+    pub show_method_picker: bool,
+    pub method_picker_cursor: usize,
     // Delete confirmation for collections pane
     pub confirm_delete: bool,
     // Environment Manager state
@@ -225,6 +229,8 @@ impl App {
             project_picker_renaming: false,
             project_picker_confirm_delete: None,
             project_picker_name_input: crate::text_input::TextInput::new(""),
+            show_method_picker: false,
+            method_picker_cursor: 0,
             confirm_delete: false,
             show_env_manager: false,
             env_manager_cursor: 0,
@@ -1286,6 +1292,28 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// Open the method picker dropdown
+    pub fn open_method_picker(&mut self) {
+        if let Some(req) = self.current_request() {
+            let current = req.method;
+            self.method_picker_cursor = Method::ALL
+                .iter()
+                .position(|&m| m == current)
+                .unwrap_or(0);
+            self.show_method_picker = true;
+        }
+    }
+
+    /// Set the current request's method from the picker
+    pub fn select_method(&mut self, method: Method) {
+        if let Some(ws) = self.active_workspace_mut() {
+            if let Some(ref mut req) = ws.data.current_request {
+                req.method = method;
+            }
+        }
+        self.show_method_picker = false;
     }
 
     /// Handle MoveUp in Normal mode based on active pane
