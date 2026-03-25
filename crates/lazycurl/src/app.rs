@@ -151,6 +151,7 @@ pub struct App {
     pub show_help: bool,
     pub secrets_revealed: bool,
     pub status_message: Option<String>,
+    pub status_message_at: Option<Instant>,
     pub input_mode: InputMode,
     pub edit_field: Option<EditField>,
     // Text inputs (shared)
@@ -207,6 +208,7 @@ impl App {
             show_help: false,
             secrets_revealed: false,
             status_message: None,
+            status_message_at: None,
             input_mode: InputMode::Normal,
             edit_field: None,
             url_input: crate::text_input::TextInput::new(""),
@@ -225,6 +227,7 @@ impl App {
             var_key_input: crate::text_input::TextInput::new(""),
             var_value_input: crate::text_input::TextInput::new(""),
             var_confirm_delete: false,
+            var_delete_message: None,
             show_project_picker: false,
             project_picker_cursor: 0,
             all_projects: Vec::new(),

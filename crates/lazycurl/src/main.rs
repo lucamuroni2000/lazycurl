@@ -475,11 +475,12 @@ fn handle_variables_action(app: &mut App, action: &Action) {
         match action {
             Action::CharInput('y') => {
                 app.var_confirm_delete = false;
+                app.var_delete_message = None;
                 app.var_delete();
             }
             Action::Cancel | Action::CharInput(_) => {
                 app.var_confirm_delete = false;
-                app.status_message = None;
+                app.var_delete_message = None;
             }
             _ => {}
         }
@@ -547,8 +548,7 @@ fn handle_variables_action(app: &mut App, action: &Action) {
             }
         }
         Action::ManageEnvironments => {
-            // Ctrl+Shift+E: close variables overlay, open env manager
-            app.show_variables = false;
+            // Ctrl+Shift+E: open env manager on top of variables overlay
             app.open_env_manager();
         }
         Action::SwitchEnvironment => {
@@ -647,6 +647,7 @@ fn handle_env_manager_action(app: &mut App, action: &Action) {
 
     match action {
         Action::Cancel => {
+            // Return to variables overlay if it was open underneath
             app.show_env_manager = false;
         }
         Action::MoveUp => {
