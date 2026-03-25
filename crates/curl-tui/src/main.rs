@@ -134,17 +134,28 @@ async fn run_loop(
         })?;
 
         if let Some(Event::Key(key)) = events::poll_event(Duration::from_millis(50))? {
-            let action = match app.input_mode {
-                app::InputMode::Normal => {
-                    // First try keymap, then navigation fallback
-                    let mapped = input::resolve_action(key, keymap);
-                    if matches!(mapped, Action::None) {
-                        input::resolve_navigation(key)
-                    } else {
-                        mapped
+            let action = if app.show_env_manager && app.env_manager_renaming.is_some() {
+                // Env manager rename uses editing resolver so letters aren't
+                // swallowed by navigation bindings (e.g. 'd' → DeleteItem).
+                input::resolve_editing(key)
+            } else if app.show_project_picker
+                && (app.project_picker_renaming || app.project_picker_confirm_delete.is_some())
+            {
+                // Project picker rename/delete confirmation uses editing resolver.
+                input::resolve_editing(key)
+            } else {
+                match app.input_mode {
+                    app::InputMode::Normal => {
+                        // First try keymap, then navigation fallback
+                        let mapped = input::resolve_action(key, keymap);
+                        if matches!(mapped, Action::None) {
+                            input::resolve_navigation(key)
+                        } else {
+                            mapped
+                        }
                     }
+                    app::InputMode::Editing => input::resolve_editing(key),
                 }
-                app::InputMode::Editing => input::resolve_editing(key),
             };
 
             // Collection picker intercepts when open
@@ -182,71 +193,7 @@ async fn run_loop(
                 }
             // Project picker overlay intercepts when open
             } else if app.show_project_picker {
-                match action {
-                    Action::Cancel => {
-                        app.show_project_picker = false;
-                    }
-                    Action::MoveUp => {
-                        if app.project_picker_cursor > 0 {
-                            app.project_picker_cursor -= 1;
-                        }
-                    }
-                    Action::MoveDown => {
-                        if app.project_picker_cursor + 1 < app.all_projects.len() {
-                            app.project_picker_cursor += 1;
-                        }
-                    }
-                    Action::Enter => {
-                        if let Some((project, slug)) =
-                            app.all_projects.get(app.project_picker_cursor).cloned()
-                        {
-                            // Check if already open
-                            if let Some(idx) =
-                                app.open_projects.iter().position(|ws| ws.data.slug == slug)
-                            {
-                                app.switch_project(idx);
-                            } else {
-                                // Open the project
-                                let path = config_dir().join("projects").join(&slug);
-                                let mut ws = app::ProjectWorkspace::new(project, slug);
-                                ws.data.collections = curl_tui_core::collection::list_collections(
-                                    &path.join("collections"),
-                                )
-                                .unwrap_or_default();
-                                ws.data.environments =
-                                    curl_tui_core::environment::list_environments(
-                                        &path.join("environments"),
-                                    )
-                                    .unwrap_or_default();
-                                app.open_projects.push(ws);
-                                let idx = app.open_projects.len() - 1;
-                                app.switch_project(idx);
-                            }
-                            app.show_project_picker = false;
-                        }
-                    }
-                    Action::NewRequest | Action::CharInput('n') => {
-                        // Create new project
-                        app.show_project_picker = false;
-                        app.name_input.set_content("New Project");
-                        app.start_editing(EditField::NewProjectName);
-                        app.status_message = Some("Name your project".to_string());
-                    }
-                    Action::DeleteItem | Action::CharInput('d') => {
-                        // Close project (remove from tab bar)
-                        if let Some((_, slug)) = app.all_projects.get(app.project_picker_cursor) {
-                            if let Some(idx) = app
-                                .open_projects
-                                .iter()
-                                .position(|ws| ws.data.slug == *slug)
-                            {
-                                app.close_project(idx);
-                            }
-                        }
-                    }
-                    Action::Quit => app.should_quit = true,
-                    _ => {}
-                }
+                handle_project_picker_action(app, &action);
             // Environment manager modal intercepts actions when open
             } else if app.show_env_manager {
                 handle_env_manager_action(app, &action);
@@ -291,6 +238,19 @@ async fn run_loop(
                         }
                     }
                     Action::Quit => app.should_quit = true,
+                    _ => {}
+                }
+            } else if app.confirm_delete {
+                // Collection/request delete confirmation
+                match action {
+                    Action::CharInput('y') => {
+                        app.confirm_delete = false;
+                        app.delete_selected_in_collections();
+                    }
+                    Action::Cancel | Action::CharInput(_) => {
+                        app.confirm_delete = false;
+                        app.status_message = None;
+                    }
                     _ => {}
                 }
             } else {
@@ -422,7 +382,7 @@ async fn run_loop(
                     }
                     Action::DeleteItem => {
                         if app.active_pane == app::Pane::Collections {
-                            app.delete_selected_in_collections();
+                            app.request_collection_delete();
                         }
                         // TODO: implement delete for headers/params in Request pane
                     }
@@ -475,6 +435,22 @@ async fn run_loop(
 }
 
 fn handle_variables_action(app: &mut App, action: &Action) {
+    // Variable delete confirmation
+    if app.var_confirm_delete {
+        match action {
+            Action::CharInput('y') => {
+                app.var_confirm_delete = false;
+                app.var_delete();
+            }
+            Action::Cancel | Action::CharInput(_) => {
+                app.var_confirm_delete = false;
+                app.status_message = None;
+            }
+            _ => {}
+        }
+        return;
+    }
+
     match action {
         Action::Cancel => {
             if app.input_mode == app::InputMode::Editing {
@@ -550,7 +526,7 @@ fn handle_variables_action(app: &mut App, action: &Action) {
         }
         Action::DeleteItem => {
             if app.input_mode != app::InputMode::Editing {
-                app.var_delete();
+                app.var_request_delete();
             }
         }
         Action::ToggleSecretFlag => {
@@ -656,7 +632,7 @@ fn handle_env_manager_action(app: &mut App, action: &Action) {
         Action::CharInput('n') => {
             app.env_manager_create();
         }
-        Action::CharInput('r') => {
+        Action::CharInput('r') | Action::Rename => {
             if env_count > 0 {
                 app.env_manager_start_rename();
             }
@@ -664,6 +640,129 @@ fn handle_env_manager_action(app: &mut App, action: &Action) {
         Action::CharInput('d') | Action::DeleteItem => {
             if env_count > 0 {
                 app.env_manager_request_delete();
+            }
+        }
+        Action::Quit => app.should_quit = true,
+        _ => {}
+    }
+}
+
+fn handle_project_picker_action(app: &mut App, action: &Action) {
+    // Delete confirmation state takes priority
+    if app.project_picker_confirm_delete.is_some() {
+        match action {
+            Action::CharInput('y') => {
+                app.project_picker_execute_delete();
+            }
+            Action::Cancel => {
+                app.project_picker_confirm_delete = None;
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    // Renaming state
+    if app.project_picker_renaming {
+        match action {
+            Action::Enter => {
+                app.project_picker_confirm_rename();
+            }
+            Action::Cancel => {
+                app.project_picker_renaming = false;
+            }
+            Action::CharInput(c) => {
+                app.project_picker_name_input.insert_char(*c);
+            }
+            Action::Backspace => {
+                app.project_picker_name_input.delete_char_before();
+            }
+            Action::Delete => {
+                app.project_picker_name_input.delete_char_after();
+            }
+            Action::CursorLeft => {
+                app.project_picker_name_input.move_left();
+            }
+            Action::CursorRight => {
+                app.project_picker_name_input.move_right();
+            }
+            Action::Home => {
+                app.project_picker_name_input.move_home();
+            }
+            Action::End => {
+                app.project_picker_name_input.move_end();
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    // Normal modal state
+    match action {
+        Action::Cancel => {
+            app.show_project_picker = false;
+        }
+        Action::MoveUp => {
+            if app.project_picker_cursor > 0 {
+                app.project_picker_cursor -= 1;
+            }
+        }
+        Action::MoveDown => {
+            if app.project_picker_cursor + 1 < app.all_projects.len() {
+                app.project_picker_cursor += 1;
+            }
+        }
+        Action::Enter => {
+            if let Some((project, slug)) =
+                app.all_projects.get(app.project_picker_cursor).cloned()
+            {
+                // Check if already open
+                if let Some(idx) = app.open_projects.iter().position(|ws| ws.data.slug == slug) {
+                    app.switch_project(idx);
+                } else {
+                    // Open the project
+                    let path = config_dir().join("projects").join(&slug);
+                    let mut ws = app::ProjectWorkspace::new(project, slug);
+                    ws.data.collections =
+                        curl_tui_core::collection::list_collections(&path.join("collections"))
+                            .unwrap_or_default();
+                    ws.data.environments =
+                        curl_tui_core::environment::list_environments(&path.join("environments"))
+                            .unwrap_or_default();
+                    app.open_projects.push(ws);
+                    let idx = app.open_projects.len() - 1;
+                    app.switch_project(idx);
+                }
+                app.show_project_picker = false;
+            }
+        }
+        Action::NewRequest | Action::CharInput('n') => {
+            // Create new project
+            app.show_project_picker = false;
+            app.name_input.set_content("New Project");
+            app.start_editing(EditField::NewProjectName);
+            app.status_message = Some("Name your project".to_string());
+        }
+        Action::CharInput('r') | Action::Rename => {
+            if !app.all_projects.is_empty() {
+                app.project_picker_start_rename();
+            }
+        }
+        Action::CharInput('c') => {
+            // Close project (remove from tab bar)
+            if let Some((_, slug)) = app.all_projects.get(app.project_picker_cursor) {
+                if let Some(idx) = app
+                    .open_projects
+                    .iter()
+                    .position(|ws| ws.data.slug == *slug)
+                {
+                    app.close_project(idx);
+                }
+            }
+        }
+        Action::CharInput('d') | Action::DeleteItem => {
+            if !app.all_projects.is_empty() {
+                app.project_picker_request_delete();
             }
         }
         Action::Quit => app.should_quit = true,

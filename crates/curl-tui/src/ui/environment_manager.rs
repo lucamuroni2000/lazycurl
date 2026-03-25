@@ -36,7 +36,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .unwrap_or("No project");
 
     let title = format!(
-        " Environments ({}) — n:new  r:rename  d:delete  Enter:activate  Esc:close ",
+        " {} — Environments — n:new  r:rename  d:delete  Enter:activate  Esc:close ",
         project_name
     );
 
@@ -112,7 +112,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     let list = List::new(items);
     frame.render_widget(list, list_area);
 
-    // Show cursor position when renaming
+    // Show cursor position when renaming environment
     if let Some(rename_idx) = app.env_manager_renaming {
         if rename_idx < environments.len() {
             // cursor_marker (2) + active_marker (4) + input cursor

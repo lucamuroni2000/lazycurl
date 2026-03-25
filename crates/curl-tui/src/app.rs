@@ -168,11 +168,17 @@ pub struct App {
     pub var_editing: Option<VarEditTarget>,
     pub var_key_input: crate::text_input::TextInput,
     pub var_value_input: crate::text_input::TextInput,
+    pub var_confirm_delete: bool,
     // Project picker
     pub show_project_picker: bool,
     pub project_picker_cursor: usize,
     pub all_projects: Vec<(curl_tui_core::types::Project, String)>,
     pub show_first_launch: bool,
+    pub project_picker_renaming: bool,
+    pub project_picker_confirm_delete: Option<usize>,
+    pub project_picker_name_input: crate::text_input::TextInput,
+    // Delete confirmation for collections pane
+    pub confirm_delete: bool,
     // Environment Manager state
     pub show_env_manager: bool,
     pub env_manager_cursor: usize,
@@ -211,10 +217,15 @@ impl App {
             var_editing: None,
             var_key_input: crate::text_input::TextInput::new(""),
             var_value_input: crate::text_input::TextInput::new(""),
+            var_confirm_delete: false,
             show_project_picker: false,
             project_picker_cursor: 0,
             all_projects: Vec::new(),
             show_first_launch: false,
+            project_picker_renaming: false,
+            project_picker_confirm_delete: None,
+            project_picker_name_input: crate::text_input::TextInput::new(""),
+            confirm_delete: false,
             show_env_manager: false,
             env_manager_cursor: 0,
             env_manager_renaming: None,
@@ -702,6 +713,30 @@ impl App {
             Err(e) => {
                 self.status_message = Some(format!("Error creating collection: {}", e));
             }
+        }
+    }
+
+    /// Show delete confirmation for the selected collection or request.
+    pub fn request_collection_delete(&mut self) {
+        let Some(ws) = self.active_workspace() else {
+            return;
+        };
+        let Some(col_idx) = ws.data.selected_collection else {
+            self.status_message = Some("Nothing selected".to_string());
+            return;
+        };
+        if let Some(req_idx) = ws.data.selected_request {
+            if let Some(col) = ws.data.collections.get(col_idx) {
+                if let Some(req) = col.requests.get(req_idx) {
+                    self.status_message =
+                        Some(format!("Delete request '{}'? y to confirm, Esc to cancel", req.name));
+                    self.confirm_delete = true;
+                }
+            }
+        } else if let Some(col) = ws.data.collections.get(col_idx) {
+            self.status_message =
+                Some(format!("Delete collection '{}'? y to confirm, Esc to cancel", col.name));
+            self.confirm_delete = true;
         }
     }
 
@@ -1613,6 +1648,95 @@ impl App {
         self.status_message = Some(format!("Deleted environment '{}'", name));
     }
 
+    /// Enter project rename mode in the project picker modal.
+    pub fn project_picker_start_rename(&mut self) {
+        if let Some((project, _)) = self.all_projects.get(self.project_picker_cursor) {
+            self.project_picker_name_input.set_content(&project.name);
+            self.project_picker_renaming = true;
+        }
+    }
+
+    /// Commit the project rename: update project.json (and directory if slug changed).
+    pub fn project_picker_confirm_rename(&mut self) {
+        self.project_picker_renaming = false;
+        let new_name = self.project_picker_name_input.content().to_string();
+        if new_name.is_empty() {
+            return;
+        }
+        let Some((project, old_slug)) = self.all_projects.get(self.project_picker_cursor).cloned()
+        else {
+            return;
+        };
+        let mut updated_project = project;
+        updated_project.name = new_name.clone();
+
+        let projects_dir = config_dir().join("projects");
+        match curl_tui_core::project::rename_project(&projects_dir, &updated_project, &old_slug) {
+            Ok((new_slug, _)) => {
+                // Update the all_projects cache
+                if let Some((p, slug)) = self.all_projects.get_mut(self.project_picker_cursor) {
+                    p.name = new_name.clone();
+                    *slug = new_slug.clone();
+                }
+                // Update the open workspace if this project is open
+                for ws in &mut self.open_projects {
+                    if ws.data.slug == old_slug {
+                        ws.data.project.name = new_name.clone();
+                        ws.data.slug = new_slug.clone();
+                        break;
+                    }
+                }
+                self.status_message = Some(format!("Project renamed to '{}'", new_name));
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Error renaming project: {}", e));
+            }
+        }
+    }
+
+    /// Show delete confirmation for the project at the cursor.
+    pub fn project_picker_request_delete(&mut self) {
+        if self.project_picker_cursor < self.all_projects.len() {
+            self.project_picker_confirm_delete = Some(self.project_picker_cursor);
+        }
+    }
+
+    /// Execute the confirmed project deletion.
+    pub fn project_picker_execute_delete(&mut self) {
+        let Some(delete_idx) = self.project_picker_confirm_delete.take() else {
+            return;
+        };
+        let Some((_, slug)) = self.all_projects.get(delete_idx).cloned() else {
+            return;
+        };
+
+        // Close the project if it's open
+        if let Some(open_idx) = self.open_projects.iter().position(|ws| ws.data.slug == slug) {
+            self.close_project(open_idx);
+        }
+
+        // Delete from disk
+        let project_dir = config_dir().join("projects").join(&slug);
+        if let Err(e) = curl_tui_core::project::delete_project(&project_dir) {
+            self.status_message = Some(format!("Error deleting project: {}", e));
+            return;
+        }
+
+        // Remove from all_projects list
+        let name = self.all_projects[delete_idx].0.name.clone();
+        self.all_projects.remove(delete_idx);
+
+        // Adjust cursor
+        if !self.all_projects.is_empty() {
+            let max = self.all_projects.len() - 1;
+            self.project_picker_cursor = self.project_picker_cursor.min(max);
+        } else {
+            self.project_picker_cursor = 0;
+        }
+
+        self.status_message = Some(format!("Deleted project '{}'", name));
+    }
+
     pub fn cycle_environment(&mut self) {
         let Some(ws) = self.active_workspace_mut() else {
             return;
@@ -1983,6 +2107,16 @@ impl App {
         self.var_editing = Some(VarEditTarget::Key);
         self.input_mode = InputMode::Editing;
         self.var_save_current_tier();
+    }
+
+    /// Show delete confirmation for the selected variable.
+    pub fn var_request_delete(&mut self) {
+        let keys = self.var_keys();
+        if let Some(key) = keys.get(self.var_cursor) {
+            self.status_message =
+                Some(format!("Delete variable '{}'? y to confirm, Esc to cancel", key));
+            self.var_confirm_delete = true;
+        }
     }
 
     pub fn var_delete(&mut self) {
