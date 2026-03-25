@@ -1,7 +1,14 @@
 [package]
 name = "lazycurl"
-version = "0.1.0"
-edition = "2021"
+description = "Terminal-native API client — a lightweight alternative to Postman"
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 lazycurl-core = { path = "../lazycurl-core" }
