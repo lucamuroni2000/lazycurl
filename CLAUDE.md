@@ -1,4 +1,4 @@
-# curl-tui
+# lazycurl
 
 Terminal-native Postman replacement built in Rust.
 
@@ -6,9 +6,9 @@ Terminal-native Postman replacement built in Rust.
 
 ```bash
 cargo build --workspace          # Build everything
-cargo run -p curl-tui            # Launch the TUI
+cargo run -p lazycurl            # Launch the TUI
 cargo test --workspace           # Run all 88 tests
-cargo install --path crates/curl-tui  # Install to ~/.cargo/bin/
+cargo install --path crates/lazycurl  # Install to ~/.cargo/bin/
 ```
 
 **Windows gotcha:** If `cargo` is not in PATH, use the full path: `/c/Users/<user>/.cargo/bin/cargo`.
@@ -18,10 +18,10 @@ cargo install --path crates/curl-tui  # Install to ~/.cargo/bin/
 ## Architecture
 
 Cargo workspace with two crates:
-- `curl-tui-core` (library) — all business logic, fully testable without a terminal
-- `curl-tui` (binary) — thin Ratatui + crossterm TUI layer
+- `lazycurl-core` (library) — all business logic, fully testable without a terminal
+- `lazycurl` (binary) — thin Ratatui + crossterm TUI layer
 
-### Core modules (`crates/curl-tui-core/src/`)
+### Core modules (`crates/lazycurl-core/src/`)
 
 | Module | Purpose |
 |---|---|
@@ -35,7 +35,7 @@ Cargo workspace with two crates:
 | `history.rs` | Append-only JSONL history with secret scrubbing |
 | `init.rs` | First-run directory setup |
 
-### TUI modules (`crates/curl-tui/src/`)
+### TUI modules (`crates/lazycurl/src/`)
 
 | Module | Purpose |
 |---|---|
@@ -57,14 +57,14 @@ When the variables overlay is open (`app.show_variables`), input is routed to `h
 ## Data Storage
 
 First run creates the config directory:
-- **Linux/macOS:** `~/.config/curl-tui/`
-- **Windows:** `%APPDATA%/curl-tui/`
+- **Linux/macOS:** `~/.config/lazycurl/`
+- **Windows:** `%APPDATA%/lazycurl/`
 
 Contains: `config.json`, `collections/`, `environments/`, `history.jsonl`, `.gitignore`
 
 ## Conventions
 
-- All business logic goes in `curl-tui-core`. The binary crate contains NO logic.
+- All business logic goes in `lazycurl-core`. The binary crate contains NO logic.
 - Use `thiserror` for error types in core, propagate with `?`.
 - All public types derive `Serialize, Deserialize, Debug, Clone, PartialEq`.
 - Use `#[cfg(test)]` inline modules for unit tests in each source file.
@@ -85,26 +85,26 @@ Contains: `config.json`, `collections/`, `environments/`, `history.jsonl`, `.git
 Every new feature or bugfix follows test-first development:
 
 1. **Write the failing test** in the relevant module's `#[cfg(test)]` block
-2. **Run it** to confirm it fails: `cargo test -p curl-tui-core -- <module>::tests::<test_name>`
+2. **Run it** to confirm it fails: `cargo test -p lazycurl-core -- <module>::tests::<test_name>`
 3. **Write the minimal implementation** to make it pass
 4. **Run again** to confirm it passes
 5. **Commit** the test and implementation together
 
 ### Where tests live
 
-- **Unit tests:** Inline `#[cfg(test)] mod tests` at the bottom of each source file in `crates/curl-tui-core/src/`
-- **Integration tests:** `crates/curl-tui-core/tests/integration_test.rs` — end-to-end workflows (collection CRUD, variable resolution, secret redaction, command building)
-- **Widget tests:** `crates/curl-tui/src/text_input.rs` — inline tests for the TextInput widget
+- **Unit tests:** Inline `#[cfg(test)] mod tests` at the bottom of each source file in `crates/lazycurl-core/src/`
+- **Integration tests:** `crates/lazycurl-core/tests/integration_test.rs` — end-to-end workflows (collection CRUD, variable resolution, secret redaction, command building)
+- **Widget tests:** `crates/lazycurl/src/text_input.rs` — inline tests for the TextInput widget
 - **TUI rendering:** Not tested in CI — the UI layer is kept thin, all logic lives in testable core modules
 
 ### Running tests
 
 ```bash
 cargo test --workspace                          # All 88 tests
-cargo test -p curl-tui-core                     # Core library only (72 tests)
-cargo test -p curl-tui-core -- secret           # Only secret module tests
-cargo test -p curl-tui-core -- variable::tests  # Only variable module tests
-cargo test -p curl-tui                          # TUI crate tests (11 text_input tests)
+cargo test -p lazycurl-core                     # Core library only (72 tests)
+cargo test -p lazycurl-core -- secret           # Only secret module tests
+cargo test -p lazycurl-core -- variable::tests  # Only variable module tests
+cargo test -p lazycurl                          # TUI crate tests (11 text_input tests)
 ```
 
 ### Verification

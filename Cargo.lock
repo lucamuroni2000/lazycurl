@@ -138,33 +138,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "curl-tui"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "crossterm",
- "curl-tui-core",
- "ratatui",
- "serde_json",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "curl-tui-core"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dirs",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "uuid",
-]
-
-[[package]]
 name = "darling"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -399,6 +372,33 @@ checksum = "b49715b7073f385ba4bc528e5747d02e66cb39c6146efb66b781f131f0fb399c"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "lazycurl"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "crossterm",
+ "lazycurl-core",
+ "ratatui",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "lazycurl-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dirs",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
