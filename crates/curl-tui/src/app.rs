@@ -174,6 +174,12 @@ pub struct App {
     pub project_picker_cursor: usize,
     pub all_projects: Vec<(curl_tui_core::types::Project, String)>,
     pub show_first_launch: bool,
+    // Environment Manager state
+    pub show_env_manager: bool,
+    pub env_manager_cursor: usize,
+    pub env_manager_renaming: Option<usize>,
+    pub env_manager_confirm_delete: Option<usize>,
+    pub env_manager_name_input: crate::text_input::TextInput,
 }
 
 impl App {
@@ -210,6 +216,11 @@ impl App {
             project_picker_cursor: 0,
             all_projects: Vec::new(),
             show_first_launch: false,
+            show_env_manager: false,
+            env_manager_cursor: 0,
+            env_manager_renaming: None,
+            env_manager_confirm_delete: None,
+            env_manager_name_input: crate::text_input::TextInput::new(""),
         }
     }
 
@@ -1457,6 +1468,182 @@ impl App {
         ws.data.sync_active_environment_name();
         let project_dir = config_dir().join("projects").join(&ws.data.slug);
         let _ = curl_tui_core::project::save_project(&project_dir, &ws.data.project);
+    }
+
+    /// Open the environment manager modal, reset state.
+    pub fn open_env_manager(&mut self) {
+        self.show_env_manager = true;
+        self.env_manager_cursor = 0;
+        self.env_manager_renaming = None;
+        self.env_manager_confirm_delete = None;
+    }
+
+    /// Create a new environment from the env manager modal (does not auto-activate).
+    pub fn env_manager_create(&mut self) {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        let env = Environment {
+            id: uuid::Uuid::new_v4(),
+            name: "New Environment".to_string(),
+            variables: std::collections::HashMap::new(),
+        };
+        let env_dir = config_dir()
+            .join("projects")
+            .join(&ws.data.slug)
+            .join("environments");
+        match curl_tui_core::environment::save_environment(&env_dir, &env) {
+            Ok(_) => {
+                ws.data.environments.push(env);
+                let idx = ws.data.environments.len() - 1;
+                self.env_manager_cursor = idx;
+                self.env_manager_name_input.set_content("New Environment");
+                self.env_manager_renaming = Some(idx);
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Error creating environment: {}", e));
+            }
+        }
+    }
+
+    /// Activate the environment at the cursor and close the modal.
+    pub fn env_manager_activate(&mut self) {
+        let cursor = self.env_manager_cursor;
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        if let Some(env) = ws.data.environments.get(cursor) {
+            let name = env.name.clone();
+            ws.data.active_environment = Some(cursor);
+            ws.data.var_environment_idx = Some(cursor);
+            let _ = ws;
+            self.persist_active_environment();
+            self.show_env_manager = false;
+            self.status_message = Some(format!("Environment: {}", name));
+        }
+    }
+
+    /// Enter rename mode for the environment at the cursor.
+    pub fn env_manager_start_rename(&mut self) {
+        let cursor = self.env_manager_cursor;
+        let name = self
+            .active_workspace()
+            .and_then(|ws| ws.data.environments.get(cursor))
+            .map(|env| env.name.clone());
+        if let Some(name) = name {
+            self.env_manager_name_input.set_content(&name);
+            self.env_manager_renaming = Some(cursor);
+        }
+    }
+
+    /// Commit the rename: delete old file, save new, update name in memory.
+    pub fn env_manager_confirm_rename(&mut self) {
+        let Some(rename_idx) = self.env_manager_renaming else {
+            return;
+        };
+        let new_name = self.env_manager_name_input.content().to_string();
+        if new_name.is_empty() {
+            self.env_manager_renaming = None;
+            return;
+        }
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        if let Some(env) = ws.data.environments.get_mut(rename_idx) {
+            let old_slug = curl_tui_core::collection::slugify(&env.name);
+            let env_dir = config_dir()
+                .join("projects")
+                .join(&ws.data.slug)
+                .join("environments");
+            // Delete old file
+            let old_path = env_dir.join(format!("{}.json", old_slug));
+            if old_path.exists() {
+                let _ = std::fs::remove_file(&old_path);
+            }
+            // Update name and save new file
+            env.name = new_name;
+            let _ = curl_tui_core::environment::save_environment(&env_dir, env);
+        }
+        self.env_manager_renaming = None;
+        // If the renamed env is the active one, update project.json
+        if self
+            .active_workspace()
+            .and_then(|ws| ws.data.active_environment)
+            == Some(rename_idx)
+        {
+            self.persist_active_environment();
+        }
+    }
+
+    /// Show delete confirmation for the environment at the cursor.
+    pub fn env_manager_request_delete(&mut self) {
+        let env_count = self
+            .active_workspace()
+            .map(|ws| ws.data.environments.len())
+            .unwrap_or(0);
+        if self.env_manager_cursor < env_count {
+            self.env_manager_confirm_delete = Some(self.env_manager_cursor);
+        }
+    }
+
+    /// Execute the confirmed deletion.
+    pub fn env_manager_execute_delete(&mut self) {
+        let Some(delete_idx) = self.env_manager_confirm_delete.take() else {
+            return;
+        };
+        let cursor = self.env_manager_cursor;
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        let Some(env) = ws.data.environments.get(delete_idx) else {
+            return;
+        };
+
+        // Delete the file from disk
+        let slug_str = curl_tui_core::collection::slugify(&env.name);
+        let path = config_dir()
+            .join("projects")
+            .join(&ws.data.slug)
+            .join("environments")
+            .join(format!("{}.json", slug_str));
+        if path.exists() {
+            let _ = std::fs::remove_file(&path);
+        }
+
+        let name = env.name.clone();
+        ws.data.environments.remove(delete_idx);
+
+        // Adjust active_environment index
+        if ws.data.environments.is_empty() {
+            ws.data.active_environment = None;
+            ws.data.var_environment_idx = None;
+        } else {
+            let max = ws.data.environments.len() - 1;
+            ws.data.active_environment = ws.data.active_environment.map(|i| {
+                if i == delete_idx {
+                    return max.min(delete_idx); // deleted the active one
+                }
+                if i > delete_idx {
+                    i - 1 // shift down
+                } else {
+                    i
+                }
+            });
+            ws.data.var_environment_idx = ws.data.active_environment;
+        }
+
+        // Compute new cursor value while ws is still in scope
+        let new_cursor = if ws.data.environments.is_empty() {
+            0
+        } else {
+            let max = ws.data.environments.len() - 1;
+            cursor.min(max)
+        };
+
+        let _ = ws;
+        self.env_manager_cursor = new_cursor;
+        self.persist_active_environment();
+        self.status_message = Some(format!("Deleted environment '{}'", name));
     }
 
     pub fn cycle_environment(&mut self) {
