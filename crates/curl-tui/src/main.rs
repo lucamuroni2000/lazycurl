@@ -247,6 +247,9 @@ async fn run_loop(
                     Action::Quit => app.should_quit = true,
                     _ => {}
                 }
+            // Environment manager modal intercepts actions when open
+            } else if app.show_env_manager {
+                handle_env_manager_action(app, &action);
             // Variables overlay intercepts actions when open
             } else if app.show_variables {
                 handle_variables_action(app, &action);
@@ -358,11 +361,7 @@ async fn run_loop(
                     }
                     Action::SwitchEnvironment => app.cycle_environment(),
                     Action::ManageEnvironments => {
-                        app.create_new_environment();
-                        app.show_variables = true;
-                        app.var_cursor = 0;
-                        app.var_editing = None;
-                        app.var_tier = app::VarTier::Environment;
+                        app.open_env_manager();
                     }
                     Action::CopyCurl => {
                         if let Some(req) = app.current_request() {
@@ -576,6 +575,99 @@ fn handle_variables_action(app: &mut App, action: &Action) {
                 app.var_cycle_container_forward();
             }
         }
+        _ => {}
+    }
+}
+
+fn handle_env_manager_action(app: &mut App, action: &Action) {
+    // Delete confirmation state takes priority
+    if app.env_manager_confirm_delete.is_some() {
+        match action {
+            Action::CharInput('y') => {
+                app.env_manager_execute_delete();
+            }
+            Action::Cancel => {
+                app.env_manager_confirm_delete = None;
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    // Renaming state
+    if app.env_manager_renaming.is_some() {
+        match action {
+            Action::Enter => {
+                app.env_manager_confirm_rename();
+            }
+            Action::Cancel => {
+                app.env_manager_renaming = None;
+            }
+            Action::CharInput(c) => {
+                app.env_manager_name_input.insert_char(*c);
+            }
+            Action::Backspace => {
+                app.env_manager_name_input.delete_char_before();
+            }
+            Action::Delete => {
+                app.env_manager_name_input.delete_char_after();
+            }
+            Action::CursorLeft => {
+                app.env_manager_name_input.move_left();
+            }
+            Action::CursorRight => {
+                app.env_manager_name_input.move_right();
+            }
+            Action::Home => {
+                app.env_manager_name_input.move_home();
+            }
+            Action::End => {
+                app.env_manager_name_input.move_end();
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    // Normal modal state
+    let env_count = app
+        .active_workspace()
+        .map(|ws| ws.data.environments.len())
+        .unwrap_or(0);
+
+    match action {
+        Action::Cancel => {
+            app.show_env_manager = false;
+        }
+        Action::MoveUp => {
+            if app.env_manager_cursor > 0 {
+                app.env_manager_cursor -= 1;
+            }
+        }
+        Action::MoveDown => {
+            if env_count > 0 && app.env_manager_cursor + 1 < env_count {
+                app.env_manager_cursor += 1;
+            }
+        }
+        Action::Enter => {
+            if env_count > 0 {
+                app.env_manager_activate();
+            }
+        }
+        Action::CharInput('n') => {
+            app.env_manager_create();
+        }
+        Action::CharInput('r') => {
+            if env_count > 0 {
+                app.env_manager_start_rename();
+            }
+        }
+        Action::CharInput('d') | Action::DeleteItem => {
+            if env_count > 0 {
+                app.env_manager_request_delete();
+            }
+        }
+        Action::Quit => app.should_quit = true,
         _ => {}
     }
 }
