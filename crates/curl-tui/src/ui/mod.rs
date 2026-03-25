@@ -1,4 +1,5 @@
 pub mod collections;
+pub mod environment_manager;
 pub mod help;
 pub mod layout;
 pub mod picker;
@@ -39,6 +40,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
     if app.show_variables {
         variables::draw(frame, app);
+    }
+    if app.show_env_manager {
+        environment_manager::draw(frame, app);
     }
     if app.show_help {
         help::draw(frame);
