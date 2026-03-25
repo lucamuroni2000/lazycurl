@@ -519,8 +519,10 @@ fn handle_variables_action(app: &mut App, action: &Action) {
                 if needs_container {
                     match app.var_tier {
                         app::VarTier::Environment => {
-                            app.show_variables = false;
-                            app.create_new_environment();
+                            app.status_message = Some(
+                                "No environment selected. Press Ctrl+Shift+E to manage environments."
+                                    .to_string(),
+                            );
                         }
                         app::VarTier::Collection => {
                             app.status_message =
@@ -533,27 +535,22 @@ fn handle_variables_action(app: &mut App, action: &Action) {
                 }
             }
         }
-        Action::SwitchEnvironment | Action::NewRequest => {
-            // Ctrl+E or Ctrl+N in the variables overlay: create a new environment
-            if app.var_tier == app::VarTier::Environment {
-                app.show_variables = false;
-                app.create_new_environment();
-            }
-        }
         Action::ManageEnvironments => {
-            // Ctrl+Shift+E in the variables overlay: create and stay in overlay
-            app.create_new_environment();
-            app.var_tier = app::VarTier::Environment;
+            // Ctrl+Shift+E: close variables overlay, open env manager
+            app.show_variables = false;
+            app.open_env_manager();
+        }
+        Action::SwitchEnvironment => {
+            // Ctrl+E cycles environments even while overlay is open
+            app.cycle_environment();
+            // Sync var_environment_idx to follow the active env
+            if let Some(ws) = app.active_workspace_mut() {
+                ws.data.var_environment_idx = ws.data.active_environment;
+            }
         }
         Action::DeleteItem => {
             if app.input_mode != app::InputMode::Editing {
-                let keys = app.var_keys();
-                if keys.is_empty() && app.var_tier == app::VarTier::Environment {
-                    // No variables — delete the environment itself
-                    app.delete_active_environment();
-                } else {
-                    app.var_delete();
-                }
+                app.var_delete();
             }
         }
         Action::ToggleSecretFlag => {
@@ -564,14 +561,16 @@ fn handle_variables_action(app: &mut App, action: &Action) {
         Action::RevealSecrets => {
             app.secrets_revealed = !app.secrets_revealed;
         }
-        // [ and ] cycle through collections/environments within the current tier
+        // [ and ] cycle through collections within the current tier
         Action::CharInput('[') => {
-            if app.input_mode != app::InputMode::Editing {
+            if app.input_mode != app::InputMode::Editing && app.var_tier == app::VarTier::Collection
+            {
                 app.var_cycle_container_backward();
             }
         }
         Action::CharInput(']') => {
-            if app.input_mode != app::InputMode::Editing {
+            if app.input_mode != app::InputMode::Editing && app.var_tier == app::VarTier::Collection
+            {
                 app.var_cycle_container_forward();
             }
         }

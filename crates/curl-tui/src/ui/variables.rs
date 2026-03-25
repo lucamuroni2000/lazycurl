@@ -63,7 +63,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
                 None => ("None selected".to_string(), "0/0".to_string()),
             };
             format!(
-                " Environment: {} [{}]  ([ ] switch  Ctrl+E: new  d: delete)",
+                " Environment: {} [{}]  (Ctrl+E: switch  Ctrl+Shift+E: manage)",
                 name, idx_info
             )
         }
@@ -103,7 +103,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
             matches!(app.var_tier, VarTier::Collection) && app.var_collection_idx().is_none();
 
         let msg = if no_env {
-            " No environment selected. Press Ctrl+E to create one, or 'a' to add."
+            " No environment selected. Press Ctrl+Shift+E to manage environments."
         } else if no_col {
             " No collection selected. Save a request first (Ctrl+S)."
         } else {

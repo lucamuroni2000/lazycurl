@@ -1651,9 +1651,8 @@ impl App {
             return;
         };
         if ws.data.environments.is_empty() {
-            // Need to release borrow before calling create_new_environment
-            let _ = ws;
-            self.create_new_environment();
+            self.status_message =
+                Some("No environments. Press Ctrl+Shift+E to manage environments.".to_string());
             return;
         }
         // Cycle: None -> 0 -> 1 -> ... -> N-1 -> None -> 0 -> ...
