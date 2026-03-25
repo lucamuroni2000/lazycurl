@@ -162,7 +162,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         hints.push(Span::styled("v", key_style));
         hints.push(Span::styled(":vars ", hint_style));
         hints.push(Span::styled("Ctrl+Shift+E", key_style));
-        hints.push(Span::styled(":new env ", hint_style));
+        hints.push(Span::styled(":envs ", hint_style));
         hints.push(Span::styled("?", key_style));
         hints.push(Span::styled(":help ", hint_style));
         hints.push(Span::styled("Ctrl+Q", key_style));

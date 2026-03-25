@@ -64,7 +64,7 @@ pub fn build_keymap(
         ("send_request", Action::SendRequest),
         ("save_request", Action::SaveRequest),
         ("switch_env", Action::SwitchEnvironment),
-        ("create_env", Action::CreateEnvironment),
+        ("manage_envs", Action::ManageEnvironments),
         ("copy_curl", Action::CopyCurl),
         ("new_request", Action::NewRequest),
         ("cycle_panes", Action::CyclePaneForward),

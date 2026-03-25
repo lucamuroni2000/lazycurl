@@ -357,7 +357,7 @@ async fn run_loop(
                         }
                     }
                     Action::SwitchEnvironment => app.cycle_environment(),
-                    Action::CreateEnvironment => {
+                    Action::ManageEnvironments => {
                         app.create_new_environment();
                         app.show_variables = true;
                         app.var_cursor = 0;
@@ -541,7 +541,7 @@ fn handle_variables_action(app: &mut App, action: &Action) {
                 app.create_new_environment();
             }
         }
-        Action::CreateEnvironment => {
+        Action::ManageEnvironments => {
             // Ctrl+Shift+E in the variables overlay: create and stay in overlay
             app.create_new_environment();
             app.var_tier = app::VarTier::Environment;

@@ -16,7 +16,7 @@ fn default_keybindings() -> HashMap<String, String> {
     map.insert("send_request".into(), "ctrl+enter".into());
     map.insert("save_request".into(), "ctrl+s".into());
     map.insert("switch_env".into(), "ctrl+e".into());
-    map.insert("create_env".into(), "ctrl+shift+e".into());
+    map.insert("manage_envs".into(), "ctrl+shift+e".into());
     map.insert("copy_curl".into(), "ctrl+y".into());
     map.insert("new_request".into(), "ctrl+n".into());
     map.insert("cycle_panes".into(), "tab".into());

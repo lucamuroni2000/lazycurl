@@ -79,7 +79,7 @@ pub enum Action {
     SendRequest,
     SaveRequest,
     SwitchEnvironment,
-    CreateEnvironment,
+    ManageEnvironments,
     NewRequest,
     CopyCurl,
     ToggleCollections,
