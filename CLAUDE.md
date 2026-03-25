@@ -7,7 +7,7 @@ Terminal-native Postman replacement built in Rust.
 ```bash
 cargo build --workspace          # Build everything
 cargo run -p lazycurl            # Launch the TUI
-cargo test --workspace           # Run all 88 tests
+cargo test --workspace           # Run all tests (~115)
 cargo install --path crates/lazycurl  # Install to ~/.cargo/bin/
 ```
 
@@ -34,6 +34,8 @@ Cargo workspace with two crates:
 | `config.rs` | `AppConfig` with keybinding merge, file persistence |
 | `history.rs` | Append-only JSONL history with secret scrubbing |
 | `init.rs` | First-run directory setup |
+| `project.rs` | Project CRUD, slug-based directory management |
+| `migration.rs` | One-time migration from flat layout to project-based structure |
 
 ### TUI modules (`crates/lazycurl/src/`)
 
@@ -42,7 +44,23 @@ Cargo workspace with two crates:
 | `app.rs` | App state, `InputMode` (Normal/Editing), `Action` enum, all state mutation methods |
 | `input.rs` | Config-driven keybinding dispatch, `resolve_action`/`resolve_navigation`/`resolve_editing` |
 | `text_input.rs` | Reusable single-line text input with cursor |
-| `ui/` | All rendering: layout, collections, request, response, statusbar, help, variables overlays |
+| `ui/` | All rendering (see below) |
+
+### UI sub-modules (`crates/lazycurl/src/ui/`)
+
+| Module | Purpose |
+|---|---|
+| `layout.rs` | Pane layout computation |
+| `collections.rs` | Collections sidebar rendering |
+| `request.rs` | Request pane (method bar, headers, body, params) + method picker dropdown |
+| `response.rs` | Response pane (body, headers, timing) |
+| `statusbar.rs` | Context-sensitive status bar with keybinding hints |
+| `help.rs` | Help overlay with keybinding reference |
+| `variables.rs` | Variables editor overlay (Global/Environment/Collection tiers) |
+| `environment_manager.rs` | Environment CRUD modal (accessed via variables overlay) |
+| `picker.rs` | Collection picker for save-to-collection flow |
+| `project_picker.rs` | Project switcher overlay |
+| `project_tabs.rs` | Project tab bar in title row |
 
 ### Input mode pattern
 
@@ -52,7 +70,7 @@ All input goes through a two-mode system:
 
 This is the central dispatch pattern in `main.rs:run_loop`.
 
-When the variables overlay is open (`app.show_variables`), input is routed to `handle_variables_action` instead of the normal dispatch — it's a modal overlay that intercepts all keys.
+Several modal overlays intercept input when open, checked in priority order in `run_loop`: method picker > collection picker > project picker > env manager > variables overlay > delete confirmation > normal dispatch. Each modal fully captures keypresses while active.
 
 ## Data Storage
 
@@ -60,7 +78,20 @@ First run creates the config directory:
 - **Linux/macOS:** `~/.config/lazycurl/`
 - **Windows:** `%APPDATA%/lazycurl/`
 
-Contains: `config.json`, `collections/`, `environments/`, `history.jsonl`, `.gitignore`
+Structure:
+```
+lazycurl/
+  config.json
+  history.jsonl
+  .gitignore
+  projects/
+    <project-slug>/
+      project.json
+      collections/
+      environments/
+```
+
+Legacy flat layouts (collections/environments at root) are auto-migrated to project-based structure on first run via `migration.rs`.
 
 ## Conventions
 
@@ -100,8 +131,8 @@ Every new feature or bugfix follows test-first development:
 ### Running tests
 
 ```bash
-cargo test --workspace                          # All 88 tests
-cargo test -p lazycurl-core                     # Core library only (72 tests)
+cargo test --workspace                          # All tests (~115)
+cargo test -p lazycurl-core                     # Core library only (~96)
 cargo test -p lazycurl-core -- secret           # Only secret module tests
 cargo test -p lazycurl-core -- variable::tests  # Only variable module tests
 cargo test -p lazycurl                          # TUI crate tests (11 text_input tests)
@@ -119,6 +150,11 @@ cargo test -p lazycurl                          # TUI crate tests (11 text_input
 - Characters like `{`, `[`, `@` on non-US keyboards require AltGr (reported as ALT|CONTROL by crossterm). The editing resolver accepts any modifier combo for printable chars, excluding only pure Ctrl+letter shortcuts.
 - `Ctrl+Enter` doesn't work on all terminals. `F5` is always registered as a fallback for Send Request.
 - JSON response detection checks body content first (not Content-Type header) since many APIs return wrong headers.
+
+## CI/CD
+
+- **CI** (`.github/workflows/ci.yml`): Runs on push to main and PRs — fmt check, clippy, cross-platform tests (Linux, macOS, Windows)
+- **Release** (`.github/workflows/release.yml`): Triggered by `v*.*.*` tags — builds release binaries for Linux x86_64, macOS x86_64 + ARM, Windows x86_64, then creates a GitHub Release with assets
 
 ## Dependencies
 
