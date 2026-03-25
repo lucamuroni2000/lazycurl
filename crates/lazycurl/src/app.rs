@@ -2084,6 +2084,10 @@ impl App {
                             if let Some(var) = self.var_remove_raw(&old_key) {
                                 self.var_insert_raw(&new_key, var);
                             }
+                            // Update cursor to follow the renamed key in sorted order
+                            let keys = self.var_keys();
+                            self.var_cursor =
+                                keys.iter().position(|k| k == &new_key).unwrap_or(0);
                         }
                     }
                     VarEditTarget::Value => {
