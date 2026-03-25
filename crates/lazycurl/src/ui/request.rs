@@ -319,7 +319,7 @@ pub fn draw_method_picker(frame: &mut Frame, app: &App, request_area: Rect) {
 
     let width = 12u16;
     let height = methods.len() as u16 + 2; // +2 for border
-    // Position dropdown below the method+URL bar (row 2 in the request pane inner area)
+                                           // Position dropdown below the method+URL bar (row 2 in the request pane inner area)
     let x = request_area.x + 1;
     let y = request_area.y + 3; // after name line + method/url line + border
     let area = Rect::new(

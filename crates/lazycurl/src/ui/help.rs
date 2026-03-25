@@ -29,7 +29,10 @@ pub fn draw(frame: &mut Frame) {
         binding("Ctrl+S", "Save request to collection"),
         binding("Ctrl+N", "Create a new request"),
         binding("Ctrl+E", "Cycle active environment"),
-        binding("Ctrl+Shift+E", "Manage environments (from Variables overlay)"),
+        binding(
+            "Ctrl+Shift+E",
+            "Manage environments (from Variables overlay)",
+        ),
         binding("Ctrl+Y", "Copy request as curl command"),
         Line::raw(""),
         header("Item Management"),

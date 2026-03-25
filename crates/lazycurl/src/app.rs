@@ -1314,10 +1314,7 @@ impl App {
     pub fn open_method_picker(&mut self) {
         if let Some(req) = self.current_request() {
             let current = req.method;
-            self.method_picker_cursor = Method::ALL
-                .iter()
-                .position(|&m| m == current)
-                .unwrap_or(0);
+            self.method_picker_cursor = Method::ALL.iter().position(|&m| m == current).unwrap_or(0);
             self.show_method_picker = true;
         }
     }
@@ -2130,8 +2127,7 @@ impl App {
                             }
                             // Update cursor to follow the renamed key in sorted order
                             let keys = self.var_keys();
-                            self.var_cursor =
-                                keys.iter().position(|k| k == &new_key).unwrap_or(0);
+                            self.var_cursor = keys.iter().position(|k| k == &new_key).unwrap_or(0);
                         }
                     }
                     VarEditTarget::Value => {

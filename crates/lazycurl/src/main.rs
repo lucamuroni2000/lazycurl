@@ -177,15 +177,12 @@ async fn run_loop(
                         }
                     }
                     Action::MoveDown => {
-                        if app.method_picker_cursor + 1
-                            < lazycurl_core::types::Method::ALL.len()
-                        {
+                        if app.method_picker_cursor + 1 < lazycurl_core::types::Method::ALL.len() {
                             app.method_picker_cursor += 1;
                         }
                     }
                     Action::Enter => {
-                        let method =
-                            lazycurl_core::types::Method::ALL[app.method_picker_cursor];
+                        let method = lazycurl_core::types::Method::ALL[app.method_picker_cursor];
                         app.select_method(method);
                     }
                     Action::Quit => app.should_quit = true,
