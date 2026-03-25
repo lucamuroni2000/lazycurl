@@ -29,7 +29,6 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         app.edit_field,
         Some(EditField::NewCollectionName)
             | Some(EditField::CollectionName(_))
-            | Some(EditField::EnvironmentName(_))
             | Some(EditField::RequestName)
             | Some(EditField::NewProjectName)
     );
@@ -38,7 +37,6 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         let label = match app.edit_field {
             Some(EditField::NewCollectionName) => "Collection name",
             Some(EditField::CollectionName(_)) => "Rename collection",
-            Some(EditField::EnvironmentName(_)) => "Environment name",
             Some(EditField::RequestName) => "Request name",
             Some(EditField::NewProjectName) => "Project name",
             _ => "Name",

@@ -27,7 +27,6 @@ pub enum EditField {
     BodyContent,
     RequestName,
     CollectionName(usize),
-    EnvironmentName(usize),
     /// Editing name for a new collection being created (not yet in the list)
     NewCollectionName,
     /// Editing name for a new project being created
@@ -905,7 +904,6 @@ impl App {
             EditField::ParamValue(i) => self.param_value_inputs.get_mut(i),
             EditField::RequestName
             | EditField::CollectionName(_)
-            | EditField::EnvironmentName(_)
             | EditField::NewCollectionName
             | EditField::NewProjectName => Some(&mut self.name_input),
         }
@@ -1056,37 +1054,6 @@ impl App {
                                 &collections_dir,
                                 collection,
                             );
-                        }
-                    }
-                }
-            }
-            EditField::EnvironmentName(env_idx) => {
-                let name = self.name_input.content().to_string();
-                if !name.is_empty() {
-                    if let Some(ws) = self.active_workspace_mut() {
-                        if let Some(env) = ws.data.environments.get_mut(env_idx) {
-                            // Delete old file if name changed (slug differs)
-                            let old_slug = curl_tui_core::collection::slugify(&env.name);
-                            let new_slug = curl_tui_core::collection::slugify(&name);
-                            let env_dir = config_dir()
-                                .join("projects")
-                                .join(&ws.data.slug)
-                                .join("environments");
-                            if old_slug != new_slug {
-                                let old_path = env_dir.join(format!("{}.json", old_slug));
-                                if old_path.exists() {
-                                    let _ = std::fs::remove_file(&old_path);
-                                }
-                            }
-
-                            env.name = name.clone();
-                            match curl_tui_core::environment::save_environment(&env_dir, env) {
-                                Ok(_) => {
-                                    self.status_message =
-                                        Some(format!("Environment '{}' saved!", name))
-                                }
-                                Err(e) => self.status_message = Some(format!("Save error: {}", e)),
-                            }
                         }
                     }
                 }
@@ -1671,85 +1638,6 @@ impl App {
                 self.status_message = Some("Environment: None".to_string());
             }
         }
-        self.persist_active_environment();
-    }
-
-    pub fn create_new_environment(&mut self) {
-        let Some(ws) = self.active_workspace_mut() else {
-            return;
-        };
-        let name = if ws.data.environments.is_empty() {
-            "Development"
-        } else {
-            "New Environment"
-        };
-        let env = Environment {
-            id: uuid::Uuid::new_v4(),
-            name: name.to_string(),
-            variables: std::collections::HashMap::new(),
-        };
-        let env_dir = config_dir()
-            .join("projects")
-            .join(&ws.data.slug)
-            .join("environments");
-        match curl_tui_core::environment::save_environment(&env_dir, &env) {
-            Ok(_) => {
-                ws.data.environments.push(env);
-                let idx = ws.data.environments.len() - 1;
-                ws.data.active_environment = Some(idx);
-                // Prompt to rename it
-                self.name_input.set_content(name);
-                self.start_editing(EditField::EnvironmentName(idx));
-                self.status_message = Some("Name your environment, then press Enter".to_string());
-                self.persist_active_environment();
-            }
-            Err(e) => {
-                self.status_message = Some(format!("Error creating environment: {}", e));
-            }
-        }
-    }
-
-    pub fn delete_active_environment(&mut self) {
-        let Some(ws) = self.active_workspace_mut() else {
-            return;
-        };
-        let idx = match ws.data.var_environment_idx.or(ws.data.active_environment) {
-            Some(i) => i,
-            None => {
-                self.status_message = Some("No environment selected".to_string());
-                return;
-            }
-        };
-        let Some(env) = ws.data.environments.get(idx) else {
-            return;
-        };
-
-        // Delete the file from disk
-        let slug_str = curl_tui_core::collection::slugify(&env.name);
-        let path = config_dir()
-            .join("projects")
-            .join(&ws.data.slug)
-            .join("environments")
-            .join(format!("{}.json", slug_str));
-        if path.exists() {
-            let _ = std::fs::remove_file(&path);
-        }
-
-        let name = env.name.clone();
-        ws.data.environments.remove(idx);
-
-        // Adjust all environment indices
-        if ws.data.environments.is_empty() {
-            ws.data.active_environment = None;
-            ws.data.var_environment_idx = None;
-        } else {
-            let max = ws.data.environments.len() - 1;
-            ws.data.active_environment = ws.data.active_environment.map(|i| i.min(max));
-            ws.data.var_environment_idx = Some(idx.min(max));
-        }
-        self.var_cursor = 0;
-
-        self.status_message = Some(format!("Deleted environment '{}'", name));
         self.persist_active_environment();
     }
 
