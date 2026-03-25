@@ -728,14 +728,18 @@ impl App {
         if let Some(req_idx) = ws.data.selected_request {
             if let Some(col) = ws.data.collections.get(col_idx) {
                 if let Some(req) = col.requests.get(req_idx) {
-                    self.status_message =
-                        Some(format!("Delete request '{}'? y to confirm, Esc to cancel", req.name));
+                    self.status_message = Some(format!(
+                        "Delete request '{}'? y to confirm, Esc to cancel",
+                        req.name
+                    ));
                     self.confirm_delete = true;
                 }
             }
         } else if let Some(col) = ws.data.collections.get(col_idx) {
-            self.status_message =
-                Some(format!("Delete collection '{}'? y to confirm, Esc to cancel", col.name));
+            self.status_message = Some(format!(
+                "Delete collection '{}'? y to confirm, Esc to cancel",
+                col.name
+            ));
             self.confirm_delete = true;
         }
     }
@@ -1711,7 +1715,11 @@ impl App {
         };
 
         // Close the project if it's open
-        if let Some(open_idx) = self.open_projects.iter().position(|ws| ws.data.slug == slug) {
+        if let Some(open_idx) = self
+            .open_projects
+            .iter()
+            .position(|ws| ws.data.slug == slug)
+        {
             self.close_project(open_idx);
         }
 
@@ -2113,8 +2121,10 @@ impl App {
     pub fn var_request_delete(&mut self) {
         let keys = self.var_keys();
         if let Some(key) = keys.get(self.var_cursor) {
-            self.status_message =
-                Some(format!("Delete variable '{}'? y to confirm, Esc to cancel", key));
+            self.status_message = Some(format!(
+                "Delete variable '{}'? y to confirm, Esc to cancel",
+                key
+            ));
             self.var_confirm_delete = true;
         }
     }

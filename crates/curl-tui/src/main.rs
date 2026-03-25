@@ -713,8 +713,7 @@ fn handle_project_picker_action(app: &mut App, action: &Action) {
             }
         }
         Action::Enter => {
-            if let Some((project, slug)) =
-                app.all_projects.get(app.project_picker_cursor).cloned()
+            if let Some((project, slug)) = app.all_projects.get(app.project_picker_cursor).cloned()
             {
                 // Check if already open
                 if let Some(idx) = app.open_projects.iter().position(|ws| ws.data.slug == slug) {
