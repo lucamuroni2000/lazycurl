@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
+use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Tabs};
 use ratatui::Frame;
 
 use crate::app::{App, Pane, ResponseTab};
@@ -111,18 +111,14 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                     ContentType::Other => "Raw",
                 };
                 let total_lines = lines.len();
+                let scroll = app.response_scroll().min(total_lines.saturating_sub(1));
                 let header_line = Line::from(vec![
                     Span::styled(
                         format!(" {} ", type_label),
                         Style::default().fg(Color::Black).bg(Color::DarkGray),
                     ),
                     Span::styled(
-                        format!(
-                            "  {} lines  (scroll: {}/{})",
-                            total_lines,
-                            app.response_scroll().min(total_lines),
-                            total_lines
-                        ),
+                        format!("  {} lines  ({}/{})", total_lines, scroll + 1, total_lines),
                         Style::default().fg(Color::DarkGray),
                     ),
                 ]);
@@ -134,35 +130,49 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                     .split(chunks[2]);
 
                 frame.render_widget(Paragraph::new(header_line), body_chunks[0]);
-                frame.render_widget(
-                    Paragraph::new(lines).scroll((app.response_scroll() as u16, 0)),
-                    body_chunks[1],
-                );
+                render_lines_with_cursor(frame, lines, scroll, is_focused, body_chunks[1]);
             }
             ResponseTab::Headers => {
-                let mut lines = Vec::new();
-                for (key, value) in &resp.headers {
-                    lines.push(Line::from(vec![
-                        Span::styled(key, Style::default().fg(Color::Yellow)),
-                        Span::styled(": ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(value, Style::default().fg(Color::White)),
-                    ]));
-                }
-                frame.render_widget(Paragraph::new(lines), chunks[2]);
+                let lines: Vec<Line> = resp
+                    .headers
+                    .iter()
+                    .map(|(key, value)| {
+                        Line::from(vec![
+                            Span::styled(key.clone(), Style::default().fg(Color::Yellow)),
+                            Span::styled(": ", Style::default().fg(Color::DarkGray)),
+                            Span::styled(value.clone(), Style::default().fg(Color::White)),
+                        ])
+                    })
+                    .collect();
+                let scroll = app.response_scroll().min(lines.len().saturating_sub(1));
+                render_lines_with_cursor(frame, lines, scroll, is_focused, chunks[2]);
             }
             ResponseTab::Timing => {
                 let timing = &resp.timing;
                 let lines = vec![
-                    Line::from(format!(" DNS Lookup:   {:.1}ms", timing.dns_lookup_ms)),
-                    Line::from(format!(" TCP Connect:  {:.1}ms", timing.tcp_connect_ms)),
-                    Line::from(format!(" TLS Handshake:{:.1}ms", timing.tls_handshake_ms)),
-                    Line::from(format!(" First Byte:   {:.1}ms", timing.transfer_start_ms)),
-                    Line::from(format!(" Total:        {:.1}ms", timing.total_ms)),
+                    Line::styled(
+                        format!(" DNS Lookup:   {:.1}ms", timing.dns_lookup_ms),
+                        Style::default().fg(Color::White),
+                    ),
+                    Line::styled(
+                        format!(" TCP Connect:  {:.1}ms", timing.tcp_connect_ms),
+                        Style::default().fg(Color::White),
+                    ),
+                    Line::styled(
+                        format!(" TLS Handshake:{:.1}ms", timing.tls_handshake_ms),
+                        Style::default().fg(Color::White),
+                    ),
+                    Line::styled(
+                        format!(" First Byte:   {:.1}ms", timing.transfer_start_ms),
+                        Style::default().fg(Color::White),
+                    ),
+                    Line::styled(
+                        format!(" Total:        {:.1}ms", timing.total_ms),
+                        Style::default().fg(Color::White),
+                    ),
                 ];
-                frame.render_widget(
-                    Paragraph::new(lines).style(Style::default().fg(Color::White)),
-                    chunks[2],
-                );
+                let scroll = app.response_scroll().min(lines.len().saturating_sub(1));
+                render_lines_with_cursor(frame, lines, scroll, is_focused, chunks[2]);
             }
         }
     } else {
@@ -172,6 +182,42 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             chunks[2],
         );
     }
+}
+
+/// Render a list of lines with a cursor highlight on the selected row.
+/// Scrolls the viewport to keep the cursor visible.
+fn render_lines_with_cursor(
+    frame: &mut Frame,
+    lines: Vec<Line<'static>>,
+    cursor: usize,
+    is_focused: bool,
+    area: Rect,
+) {
+    let items: Vec<ListItem> = lines
+        .into_iter()
+        .enumerate()
+        .map(|(i, line)| {
+            if is_focused && i == cursor {
+                ListItem::new(line).style(Style::default().add_modifier(Modifier::REVERSED))
+            } else {
+                ListItem::new(line)
+            }
+        })
+        .collect();
+
+    let inner_height = area.height as usize;
+    let scroll_offset = if inner_height > 0 && cursor >= inner_height {
+        cursor - inner_height + 1
+    } else {
+        0
+    };
+
+    let mut state = ratatui::widgets::ListState::default();
+    state.select(Some(cursor));
+    *state.offset_mut() = scroll_offset;
+
+    let list = List::new(items);
+    frame.render_stateful_widget(list, area, &mut state);
 }
 
 enum ContentType {

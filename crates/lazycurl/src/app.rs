@@ -379,6 +379,33 @@ impl App {
             .unwrap_or(0)
     }
 
+    /// Compute total lines for the current response tab content.
+    pub fn response_total_lines(&self) -> usize {
+        let Some(ws) = self.active_workspace() else {
+            return 0;
+        };
+        let Some(resp) = &ws.data.last_response else {
+            return 0;
+        };
+        match ws.response_tab {
+            ResponseTab::Body => {
+                let trimmed = resp.body.trim();
+                let is_json = (trimmed.starts_with('{') && trimmed.ends_with('}'))
+                    || (trimmed.starts_with('[') && trimmed.ends_with(']'));
+                if is_json {
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                        let pretty = serde_json::to_string_pretty(&val)
+                            .unwrap_or_else(|_| resp.body.clone());
+                        return pretty.lines().count();
+                    }
+                }
+                resp.body.lines().count()
+            }
+            ResponseTab::Headers => resp.headers.len(),
+            ResponseTab::Timing => 5,
+        }
+    }
+
     pub fn var_collection_idx(&self) -> Option<usize> {
         self.active_workspace()
             .and_then(|ws| ws.data.var_collection_idx)
@@ -1661,8 +1688,11 @@ impl App {
                 // Could move between header rows in future
             }
             Pane::Response => {
+                let total = self.response_total_lines();
                 if let Some(ws) = self.active_workspace_mut() {
-                    ws.response_scroll = ws.response_scroll.saturating_add(1);
+                    if total > 0 && ws.response_scroll + 1 < total {
+                        ws.response_scroll += 1;
+                    }
                 }
             }
         }
@@ -1794,6 +1824,7 @@ impl App {
             ResponseTab::Headers => ResponseTab::Timing,
             ResponseTab::Timing => ResponseTab::Body,
         };
+        ws.response_scroll = 0;
     }
 
     /// Switch to previous response tab
@@ -1806,6 +1837,7 @@ impl App {
             ResponseTab::Headers => ResponseTab::Body,
             ResponseTab::Timing => ResponseTab::Headers,
         };
+        ws.response_scroll = 0;
     }
 
     /// Sync the active environment name to project.json after any environment index change.
