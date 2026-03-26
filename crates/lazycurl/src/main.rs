@@ -765,6 +765,17 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
                 app.log_viewer_search = app.log_viewer_search_input.content().to_string();
                 app.log_viewer_editing_search = false;
                 app.input_mode = app::InputMode::Normal;
+                // Jump to first matching entry
+                if !app.log_viewer_search.is_empty() {
+                    let search_lower = app.log_viewer_search.to_lowercase();
+                    let filtered = app.filtered_log_entries();
+                    if let Some(pos) = filtered
+                        .iter()
+                        .position(|e| e.request.url.to_lowercase().contains(&search_lower))
+                    {
+                        app.log_viewer_cursor = pos;
+                    }
+                }
             }
             Action::Cancel => {
                 app.log_viewer_editing_search = false;
@@ -832,7 +843,7 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
                 .set_content(&app.log_viewer_search);
             app.input_mode = app::InputMode::Editing;
         }
-        Action::CharInput('r') => {
+        Action::CharInput('r') | Action::Rename => {
             let filtered = app.filtered_log_entries();
             if let Some(entry) = filtered.get(app.log_viewer_cursor) {
                 app.load_log_entry_into_editor(entry.clone());
@@ -842,25 +853,14 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
         Action::CharInput('y') => {
             let filtered = app.filtered_log_entries();
             if let Some(entry) = filtered.get(app.log_viewer_cursor) {
-                let time = entry.timestamp.format("%H:%M:%S").to_string();
-                let method = entry.request.method.to_string();
-                let status = entry
+                let text = entry
                     .response
                     .as_ref()
-                    .map(|r| r.status_code.to_string())
-                    .unwrap_or_else(|| "ERR".to_string());
-                let duration = entry
-                    .response
-                    .as_ref()
-                    .map(|r| format!("{}ms", r.time_ms))
-                    .unwrap_or_else(|| "---".to_string());
-                let line = format!(
-                    "{}  {}  {}  {}  {}",
-                    time, method, status, duration, entry.request.url
-                );
+                    .and_then(|r| r.body.as_deref())
+                    .unwrap_or("[no response body]");
                 if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    let _ = clipboard.set_text(&line);
-                    app.status_message = Some("Copied to clipboard".to_string());
+                    let _ = clipboard.set_text(text);
+                    app.status_message = Some("Copied response body to clipboard".to_string());
                 }
             }
         }
@@ -884,6 +884,21 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
                     }
                 }
                 app.status_message = Some(format!("Exported to {}", path.display()));
+                // Try to open the containing folder in the system file explorer
+                if let Some(parent) = path.parent() {
+                    #[cfg(target_os = "windows")]
+                    {
+                        let _ = std::process::Command::new("explorer").arg(parent).spawn();
+                    }
+                    #[cfg(target_os = "macos")]
+                    {
+                        let _ = std::process::Command::new("open").arg(parent).spawn();
+                    }
+                    #[cfg(target_os = "linux")]
+                    {
+                        let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+                    }
+                }
             }
         }
         Action::Quit => app.should_quit = true,

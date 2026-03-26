@@ -43,7 +43,7 @@ pub fn draw(frame: &mut Frame) {
         binding("/", "Search log entries (highlight + n/N to jump)"),
         binding("f", "Filter by method, status, or URL substring"),
         binding("r", "Re-send: load request into editor"),
-        binding("y", "Copy selected log line to clipboard"),
+        binding("y", "Copy response body to clipboard"),
         binding("Y", "Copy log file path to clipboard"),
         binding("e", "Export current (filtered) view to JSONL file"),
         Line::raw(""),

@@ -35,11 +35,18 @@ pub fn draw(frame: &mut Frame, app: &App) {
 fn draw_list(frame: &mut Frame, app: &App, area: Rect) {
     let filtered = app.filtered_log_entries();
 
-    let title = if app.log_viewer_editing_filter {
+    let title = if app.log_viewer_editing_search {
         format!(
-            " Request Log — Filter: {} ",
+            " Request Log — Search: {}_ ",
+            app.log_viewer_search_input.content()
+        )
+    } else if app.log_viewer_editing_filter {
+        format!(
+            " Request Log — Filter: {}_ ",
             app.log_viewer_filter_input.content()
         )
+    } else if !app.log_viewer_search.is_empty() {
+        format!(" Request Log — Search: {} ", app.log_viewer_search)
     } else if !app.log_viewer_filter.is_empty() {
         format!(" Request Log — Filter: {} ", app.log_viewer_filter)
     } else {
@@ -80,13 +87,29 @@ fn draw_list(frame: &mut Frame, app: &App, area: Rect) {
                 Style::default()
             };
 
+            // Highlight search matches in the URL
+            let url_span = if !app.log_viewer_search.is_empty()
+                && entry
+                    .request
+                    .url
+                    .to_lowercase()
+                    .contains(&app.log_viewer_search.to_lowercase())
+            {
+                Span::styled(
+                    entry.request.url.clone(),
+                    Style::default().fg(Color::Black).bg(Color::Yellow),
+                )
+            } else {
+                Span::raw(entry.request.url.clone())
+            };
+
             let line = Line::from(vec![
                 Span::raw(format!("{} {}  ", marker, time)),
                 Span::styled(method, Style::default()),
                 Span::raw("  "),
                 Span::styled(status, Style::default().fg(status_color)),
                 Span::raw(format!("  {}  ", duration)),
-                Span::raw(&entry.request.url),
+                url_span,
             ]);
 
             ListItem::new(line).style(style)
