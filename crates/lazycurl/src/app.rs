@@ -166,6 +166,9 @@ pub struct App {
     pub param_key_inputs: Vec<crate::text_input::TextInput>,
     pub param_value_inputs: Vec<crate::text_input::TextInput>,
     pub name_input: crate::text_input::TextInput,
+    // Header/Param row cursors
+    pub header_cursor: usize,
+    pub param_cursor: usize,
     // Collection picker
     pub show_collection_picker: bool,
     pub picker_cursor: usize,
@@ -256,6 +259,8 @@ impl App {
             param_key_inputs: Vec::new(),
             param_value_inputs: Vec::new(),
             name_input: crate::text_input::TextInput::new(""),
+            header_cursor: 0,
+            param_cursor: 0,
             show_collection_picker: false,
             picker_cursor: 0,
             show_variables: false,
@@ -1648,6 +1653,74 @@ impl App {
         self.start_editing(EditField::ParamKey(param_idx));
     }
 
+    pub fn delete_header(&mut self) {
+        let count = self.current_request().map(|r| r.headers.len()).unwrap_or(0);
+        if count == 0 || self.header_cursor >= count {
+            return;
+        }
+        let idx = self.header_cursor;
+        if let Some(ws) = self.active_workspace_mut() {
+            if let Some(ref mut req) = ws.data.current_request {
+                req.headers.remove(idx);
+            }
+        }
+        if idx < self.header_key_inputs.len() {
+            self.header_key_inputs.remove(idx);
+        }
+        if idx < self.header_value_inputs.len() {
+            self.header_value_inputs.remove(idx);
+        }
+        let new_count = self.current_request().map(|r| r.headers.len()).unwrap_or(0);
+        if self.header_cursor >= new_count && new_count > 0 {
+            self.header_cursor = new_count - 1;
+        }
+    }
+
+    pub fn delete_param(&mut self) {
+        let count = self.current_request().map(|r| r.params.len()).unwrap_or(0);
+        if count == 0 || self.param_cursor >= count {
+            return;
+        }
+        let idx = self.param_cursor;
+        if let Some(ws) = self.active_workspace_mut() {
+            if let Some(ref mut req) = ws.data.current_request {
+                req.params.remove(idx);
+            }
+        }
+        if idx < self.param_key_inputs.len() {
+            self.param_key_inputs.remove(idx);
+        }
+        if idx < self.param_value_inputs.len() {
+            self.param_value_inputs.remove(idx);
+        }
+        let new_count = self.current_request().map(|r| r.params.len()).unwrap_or(0);
+        if self.param_cursor >= new_count && new_count > 0 {
+            self.param_cursor = new_count - 1;
+        }
+    }
+
+    pub fn toggle_header_enabled(&mut self) {
+        let idx = self.header_cursor;
+        if let Some(ws) = self.active_workspace_mut() {
+            if let Some(ref mut req) = ws.data.current_request {
+                if let Some(header) = req.headers.get_mut(idx) {
+                    header.enabled = !header.enabled;
+                }
+            }
+        }
+    }
+
+    pub fn toggle_param_enabled(&mut self) {
+        let idx = self.param_cursor;
+        if let Some(ws) = self.active_workspace_mut() {
+            if let Some(ref mut req) = ws.data.current_request {
+                if let Some(param) = req.params.get_mut(idx) {
+                    param.enabled = !param.enabled;
+                }
+            }
+        }
+    }
+
     /// Handle Enter in Normal mode based on active pane
     pub fn handle_enter(&mut self) {
         match self.active_pane {
@@ -1674,8 +1747,26 @@ impl App {
                 }
             }
             Pane::Request => {
-                // Start editing the URL field
-                self.start_editing(EditField::Url);
+                match self.request_tab() {
+                    RequestTab::Headers => {
+                        let count = self.current_request().map(|r| r.headers.len()).unwrap_or(0);
+                        if count > 0 && self.header_cursor < count {
+                            self.start_editing(EditField::HeaderKey(self.header_cursor));
+                        }
+                    }
+                    RequestTab::Params => {
+                        let count = self.current_request().map(|r| r.params.len()).unwrap_or(0);
+                        if count > 0 && self.param_cursor < count {
+                            self.start_editing(EditField::ParamKey(self.param_cursor));
+                        }
+                    }
+                    RequestTab::Body => {
+                        self.start_editing(EditField::BodyContent);
+                    }
+                    _ => {
+                        self.start_editing(EditField::Url);
+                    }
+                }
             }
             _ => {}
         }
@@ -1708,7 +1799,19 @@ impl App {
                 self.adjust_collection_scroll(20); // approximate; UI will clamp
             }
             Pane::Request => {
-                // Could move between header rows in future
+                match self.request_tab() {
+                    RequestTab::Headers => {
+                        if self.header_cursor > 0 {
+                            self.header_cursor -= 1;
+                        }
+                    }
+                    RequestTab::Params => {
+                        if self.param_cursor > 0 {
+                            self.param_cursor -= 1;
+                        }
+                    }
+                    _ => {}
+                }
             }
             Pane::Response => {
                 if let Some(ws) = self.active_workspace_mut() {
@@ -1728,7 +1831,28 @@ impl App {
                 self.adjust_collection_scroll(20); // approximate; UI will clamp
             }
             Pane::Request => {
-                // Could move between header rows in future
+                let max = match self.request_tab() {
+                    RequestTab::Headers => {
+                        self.current_request().map(|r| r.headers.len()).unwrap_or(0)
+                    }
+                    RequestTab::Params => {
+                        self.current_request().map(|r| r.params.len()).unwrap_or(0)
+                    }
+                    _ => 0,
+                };
+                match self.request_tab() {
+                    RequestTab::Headers => {
+                        if max > 0 && self.header_cursor + 1 < max {
+                            self.header_cursor += 1;
+                        }
+                    }
+                    RequestTab::Params => {
+                        if max > 0 && self.param_cursor + 1 < max {
+                            self.param_cursor += 1;
+                        }
+                    }
+                    _ => {}
+                }
             }
             Pane::Response => {
                 let total = self.response_total_lines();

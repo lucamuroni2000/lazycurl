@@ -331,7 +331,29 @@ async fn run_loop(
                     }
                     Action::CyclePaneForward => {
                         if app.input_mode == app::InputMode::Editing {
-                            app.stop_editing();
+                            match app.edit_field {
+                                Some(app::EditField::HeaderKey(i)) => {
+                                    app.stop_editing();
+                                    app.start_editing(app::EditField::HeaderValue(i));
+                                    continue;
+                                }
+                                Some(app::EditField::HeaderValue(_)) => {
+                                    app.stop_editing();
+                                    continue;
+                                }
+                                Some(app::EditField::ParamKey(i)) => {
+                                    app.stop_editing();
+                                    app.start_editing(app::EditField::ParamValue(i));
+                                    continue;
+                                }
+                                Some(app::EditField::ParamValue(_)) => {
+                                    app.stop_editing();
+                                    continue;
+                                }
+                                _ => {
+                                    app.stop_editing();
+                                }
+                            }
                         }
                         app.cycle_pane_forward();
                     }
@@ -459,12 +481,26 @@ async fn run_loop(
                     Action::DeleteItem => {
                         if app.active_pane == app::Pane::Collections {
                             app.request_collection_delete();
+                        } else if app.active_pane == app::Pane::Request {
+                            match app.request_tab() {
+                                app::RequestTab::Headers => app.delete_header(),
+                                app::RequestTab::Params => app.delete_param(),
+                                _ => {}
+                            }
                         }
-                        // TODO: implement delete for headers/params in Request pane
                     }
                     Action::CycleMethod => {
                         if app.active_pane == app::Pane::Request {
                             app.open_method_picker();
+                        }
+                    }
+                    Action::ToggleSecretFlag => {
+                        if app.active_pane == app::Pane::Request {
+                            match app.request_tab() {
+                                app::RequestTab::Headers => app.toggle_header_enabled(),
+                                app::RequestTab::Params => app.toggle_param_enabled(),
+                                _ => {}
+                            }
                         }
                     }
                     Action::Rename => app.handle_rename(),
