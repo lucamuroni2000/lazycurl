@@ -7,7 +7,7 @@ Terminal-native Postman replacement built in Rust.
 ```bash
 cargo build --workspace          # Build everything
 cargo run -p lazycurl            # Launch the TUI
-cargo test --workspace           # Run all tests (~123)
+cargo test --workspace           # Run all tests (~149)
 cargo install --path crates/lazycurl  # Install to ~/.cargo/bin/
 ```
 
@@ -36,6 +36,7 @@ Cargo workspace with two crates:
 | `logging.rs` | Structured logging setup |
 | `project.rs` | Project CRUD, slug-based directory management |
 | `migration.rs` | One-time migration from flat layout to project-based structure |
+| `export.rs` | Export requests as curl commands, code snippets, or other formats |
 
 ### TUI modules (`crates/lazycurl/src/`)
 
@@ -63,6 +64,7 @@ Cargo workspace with two crates:
 | `project_picker.rs` | Project switcher overlay |
 | `project_tabs.rs` | Project tab bar in title row |
 | `log_viewer.rs` | Log viewer overlay rendering |
+| `export_picker.rs` | Export format picker overlay |
 
 ### Input mode pattern
 
@@ -72,7 +74,7 @@ All input goes through a two-mode system:
 
 This is the central dispatch pattern in `main.rs:run_loop`.
 
-Several modal overlays intercept input when open, checked in priority order in `run_loop`: method picker > collection picker > project picker > env manager > variables overlay > delete confirmation > normal dispatch. Each modal fully captures keypresses while active.
+Several modal overlays intercept input when open, checked in priority order in `run_loop`: method picker > export picker > collection picker > project picker > env manager > variables overlay > normal dispatch. Each modal fully captures keypresses while active.
 
 ## Data Storage
 
@@ -133,8 +135,8 @@ Every new feature or bugfix follows test-first development:
 ### Running tests
 
 ```bash
-cargo test --workspace                          # All tests (~123)
-cargo test -p lazycurl-core                     # Core library only (~104)
+cargo test --workspace                          # All tests (~149)
+cargo test -p lazycurl-core                     # Core library only (~127)
 cargo test -p lazycurl-core -- secret           # Only secret module tests
 cargo test -p lazycurl-core -- variable::tests  # Only variable module tests
 cargo test -p lazycurl                          # TUI crate tests (11 text_input tests)

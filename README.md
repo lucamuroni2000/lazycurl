@@ -14,12 +14,13 @@ Built with Rust using [Ratatui](https://ratatui.rs/) and [crossterm](https://git
 ## Features
 
 - Send HTTP requests (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)
+- **Authentication** — Bearer token, Basic auth, API key (header or query)
 - Organize requests into **collections** and **projects**
 - **Environment variables** with three-tier resolution (Collection > Environment > Global)
-- **Secret variables** — marked values are redacted in history, logs, and copy-to-clipboard
+- **Secret variables** — marked values are redacted in history, logs, and exports
+- **Export** — curl command, Postman Collection v2.1, OpenAPI 3.0
 - Configurable keybindings
 - Request history with automatic secret scrubbing
-- Copy request as `curl` command or response body to clipboard
 - JSON response highlighting
 - Built-in log viewer with filtering
 
@@ -69,8 +70,10 @@ On first run it creates a config directory (`~/.config/lazycurl/` on Linux/macOS
 | `Ctrl+S` | Save request |
 | `Ctrl+N` | New request / collection |
 | `Ctrl+E` | Cycle environment |
-| `Ctrl+Y` | Copy request as curl command |
+| `Ctrl+Shift+E` | Manage environments |
+| `Ctrl+Y` | Export request (curl / Postman / OpenAPI) |
 | `v` | Open variables editor |
+| `F8` | Reveal secret values |
 | `y` | Copy response body to clipboard |
 | `/` | Search |
 | `Ctrl+L` | Open log viewer |
@@ -94,7 +97,7 @@ All logic lives in `lazycurl-core` so it can be tested without a terminal. The b
 
 ```bash
 cargo build --workspace           # Build
-cargo test --workspace            # Run tests (~123)
+cargo test --workspace            # Run tests (~149)
 cargo fmt --all --check           # Check formatting
 cargo clippy --workspace -- -D warnings  # Lint
 ```
