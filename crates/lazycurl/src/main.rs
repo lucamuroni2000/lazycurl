@@ -835,13 +835,71 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
             app.log_viewer_filter_input
                 .set_content(&app.log_viewer_filter);
             app.input_mode = app::InputMode::Editing;
-            app.log_viewer_search.clear();
         }
         Action::CharInput('/') | Action::Search => {
             app.log_viewer_editing_search = true;
             app.log_viewer_search_input
                 .set_content(&app.log_viewer_search);
             app.input_mode = app::InputMode::Editing;
+        }
+        Action::CharInput('c') => {
+            // Clear filter only
+            app.log_viewer_filter.clear();
+            app.log_viewer_cursor = 0;
+        }
+        Action::CharInput('C') => {
+            // Clear search only
+            app.log_viewer_search.clear();
+        }
+        Action::CharInput('n') => {
+            // Jump to next search match
+            if !app.log_viewer_search.is_empty() {
+                let search_lower = app.log_viewer_search.to_lowercase();
+                let filtered = app.filtered_log_entries();
+                let start = app.log_viewer_cursor + 1;
+                if let Some(pos) = filtered
+                    .iter()
+                    .skip(start)
+                    .position(|e| e.request.url.to_lowercase().contains(&search_lower))
+                {
+                    app.log_viewer_cursor = start + pos;
+                } else if let Some(pos) = filtered
+                    .iter()
+                    .position(|e| e.request.url.to_lowercase().contains(&search_lower))
+                {
+                    // Wrap around
+                    app.log_viewer_cursor = pos;
+                }
+            }
+        }
+        Action::CharInput('N') => {
+            // Jump to previous search match
+            if !app.log_viewer_search.is_empty() {
+                let search_lower = app.log_viewer_search.to_lowercase();
+                let filtered = app.filtered_log_entries();
+                if app.log_viewer_cursor > 0 {
+                    if let Some(pos) = filtered[..app.log_viewer_cursor]
+                        .iter()
+                        .rposition(|e| e.request.url.to_lowercase().contains(&search_lower))
+                    {
+                        app.log_viewer_cursor = pos;
+                    } else if let Some(pos) = filtered
+                        .iter()
+                        .rposition(|e| e.request.url.to_lowercase().contains(&search_lower))
+                    {
+                        // Wrap around
+                        app.log_viewer_cursor = pos;
+                    }
+                } else {
+                    // At 0, wrap to last match
+                    if let Some(pos) = filtered
+                        .iter()
+                        .rposition(|e| e.request.url.to_lowercase().contains(&search_lower))
+                    {
+                        app.log_viewer_cursor = pos;
+                    }
+                }
+            }
         }
         Action::CharInput('r') | Action::Rename => {
             let filtered = app.filtered_log_entries();

@@ -97,19 +97,21 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             hints.push(Span::styled(":cancel", hint_style));
         } else {
             hints.push(Span::styled(" j/k", key_style));
-            hints.push(Span::styled(":navigate ", hint_style));
+            hints.push(Span::styled(":nav ", hint_style));
             hints.push(Span::styled("Enter", key_style));
             hints.push(Span::styled(":detail ", hint_style));
             hints.push(Span::styled("f", key_style));
             hints.push(Span::styled(":filter ", hint_style));
             hints.push(Span::styled("/", key_style));
             hints.push(Span::styled(":search ", hint_style));
+            hints.push(Span::styled("n/N", key_style));
+            hints.push(Span::styled(":next/prev ", hint_style));
+            hints.push(Span::styled("c/C", key_style));
+            hints.push(Span::styled(":clear ", hint_style));
             hints.push(Span::styled("r", key_style));
             hints.push(Span::styled(":re-send ", hint_style));
             hints.push(Span::styled("y", key_style));
             hints.push(Span::styled(":body ", hint_style));
-            hints.push(Span::styled("Y", key_style));
-            hints.push(Span::styled(":path ", hint_style));
             hints.push(Span::styled("e", key_style));
             hints.push(Span::styled(":export ", hint_style));
             hints.push(Span::styled("Esc", key_style));

@@ -35,22 +35,34 @@ pub fn draw(frame: &mut Frame, app: &App) {
 fn draw_list(frame: &mut Frame, app: &App, area: Rect) {
     let filtered = app.filtered_log_entries();
 
-    let title = if app.log_viewer_editing_search {
-        format!(
-            " Request Log — Search: {}_ ",
-            app.log_viewer_search_input.content()
-        )
-    } else if app.log_viewer_editing_filter {
-        format!(
-            " Request Log — Filter: {}_ ",
-            app.log_viewer_filter_input.content()
-        )
-    } else if !app.log_viewer_search.is_empty() {
-        format!(" Request Log — Search: {} ", app.log_viewer_search)
-    } else if !app.log_viewer_filter.is_empty() {
-        format!(" Request Log — Filter: {} ", app.log_viewer_filter)
-    } else {
-        " Request Log ".to_string()
+    let title = {
+        let mut parts = vec![" Request Log".to_string()];
+
+        // Show active filter (or editing state)
+        if app.log_viewer_editing_filter {
+            parts.push(format!(
+                "Filter: {}_",
+                app.log_viewer_filter_input.content()
+            ));
+        } else if !app.log_viewer_filter.is_empty() {
+            parts.push(format!("Filter: {}", app.log_viewer_filter));
+        }
+
+        // Show active search (or editing state)
+        if app.log_viewer_editing_search {
+            parts.push(format!(
+                "Search: {}_",
+                app.log_viewer_search_input.content()
+            ));
+        } else if !app.log_viewer_search.is_empty() {
+            parts.push(format!("Search: {}", app.log_viewer_search));
+        }
+
+        if parts.len() == 1 {
+            " Request Log ".to_string()
+        } else {
+            format!("{} ", parts.join(" — "))
+        }
     };
 
     let block = Block::default().title(title).borders(Borders::ALL);
