@@ -83,6 +83,46 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     let mut hints: Vec<Span> = Vec::new();
 
+    // Log viewer hints (checked early, before other overlays)
+    if app.show_log_viewer {
+        if app.log_viewer_editing_filter {
+            hints.push(Span::styled(" Enter", key_style));
+            hints.push(Span::styled(":apply ", hint_style));
+            hints.push(Span::styled("Esc", key_style));
+            hints.push(Span::styled(":cancel", hint_style));
+        } else if app.log_viewer_editing_search {
+            hints.push(Span::styled(" Enter", key_style));
+            hints.push(Span::styled(":search ", hint_style));
+            hints.push(Span::styled("Esc", key_style));
+            hints.push(Span::styled(":cancel", hint_style));
+        } else {
+            hints.push(Span::styled(" j/k", key_style));
+            hints.push(Span::styled(":navigate ", hint_style));
+            hints.push(Span::styled("Enter", key_style));
+            hints.push(Span::styled(":detail ", hint_style));
+            hints.push(Span::styled("f", key_style));
+            hints.push(Span::styled(":filter ", hint_style));
+            hints.push(Span::styled("/", key_style));
+            hints.push(Span::styled(":search ", hint_style));
+            hints.push(Span::styled("r", key_style));
+            hints.push(Span::styled(":re-send ", hint_style));
+            hints.push(Span::styled("y", key_style));
+            hints.push(Span::styled(":copy ", hint_style));
+            hints.push(Span::styled("e", key_style));
+            hints.push(Span::styled(":export ", hint_style));
+            hints.push(Span::styled("Esc", key_style));
+            hints.push(Span::styled(":close", hint_style));
+        }
+
+        let mut line_spans = vec![mode_indicator, Span::raw(" "), status_msg];
+        line_spans.extend(hints);
+        let line = Line::from(line_spans);
+
+        let status = Paragraph::new(line).style(Style::default().bg(Color::Black));
+        frame.render_widget(status, area);
+        return;
+    }
+
     if app.input_mode == InputMode::Editing {
         // Editing mode — show editing-specific hints
         hints.push(Span::styled(" Esc", key_style));

@@ -34,6 +34,7 @@ pub fn draw(frame: &mut Frame) {
             "Manage environments (from Variables overlay)",
         ),
         binding("Ctrl+Y", "Copy request as curl command"),
+        binding("Ctrl+L", "Open request log viewer"),
         Line::raw(""),
         header("Item Management"),
         binding("a  (Add)", "Add new header, param, or variable"),
