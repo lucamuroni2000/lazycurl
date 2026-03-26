@@ -188,6 +188,67 @@ pub struct ResponseTiming {
     pub total_ms: f64,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LogHeader {
+    pub name: String,
+    pub value: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_template: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LogParam {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RequestLogData {
+    pub method: Method,
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url_template: Option<String>,
+    #[serde(default)]
+    pub headers: Vec<LogHeader>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_template: Option<String>,
+    #[serde(default)]
+    pub params: Vec<LogParam>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ResponseLogData {
+    pub status_code: u16,
+    pub status_text: String,
+    #[serde(default)]
+    pub headers: Vec<LogHeader>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    pub body_size_bytes: u64,
+    #[serde(default)]
+    pub body_truncated: bool,
+    pub body_type: String,
+    pub time_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RequestLogEntry {
+    pub id: uuid::Uuid,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collection: Option<String>,
+    pub request: RequestLogData,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response: Option<ResponseLogData>,
+    pub curl_command: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 /// Parsed response from a curl execution
 #[derive(Debug, Clone)]
 pub struct CurlResponse {
@@ -471,6 +532,90 @@ mod tests {
         let entry: HistoryEntry = serde_json::from_str(json).unwrap();
         assert!(entry.project_id.is_none());
         assert!(entry.project_name.is_none());
+    }
+
+    #[test]
+    fn test_request_log_entry_roundtrip() {
+        let entry = RequestLogEntry {
+            id: uuid::Uuid::new_v4(),
+            timestamp: chrono::Utc::now(),
+            project: Some("my-api".to_string()),
+            collection: Some("auth-endpoints".to_string()),
+            request: RequestLogData {
+                method: Method::Post,
+                url: "https://api.example.com/login".to_string(),
+                url_template: Some("https://{{base_url}}/login".to_string()),
+                headers: vec![
+                    LogHeader {
+                        name: "Content-Type".to_string(),
+                        value: "application/json".to_string(),
+                        value_template: None,
+                    },
+                    LogHeader {
+                        name: "Authorization".to_string(),
+                        value: "[REDACTED]".to_string(),
+                        value_template: Some("Bearer {{api_token}}".to_string()),
+                    },
+                ],
+                body: Some(r#"{"user": "test"}"#.to_string()),
+                body_template: Some(r#"{"user": "{{username}}"}"#.to_string()),
+                params: vec![LogParam {
+                    name: "debug".to_string(),
+                    value: "true".to_string(),
+                }],
+            },
+            response: Some(ResponseLogData {
+                status_code: 200,
+                status_text: "OK".to_string(),
+                headers: vec![LogHeader {
+                    name: "Content-Type".to_string(),
+                    value: "application/json".to_string(),
+                    value_template: None,
+                }],
+                body: Some(r#"{"token": "[REDACTED]"}"#.to_string()),
+                body_size_bytes: 1024,
+                body_truncated: false,
+                body_type: "text".to_string(),
+                time_ms: 342,
+            }),
+            curl_command: "curl -X POST https://api.example.com/login".to_string(),
+            error: None,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let deserialized: RequestLogEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.request.method, Method::Post);
+        assert_eq!(deserialized.response.unwrap().status_code, 200);
+        assert_eq!(deserialized.request.headers.len(), 2);
+        assert_eq!(
+            deserialized.request.headers[1].value_template,
+            Some("Bearer {{api_token}}".to_string())
+        );
+    }
+
+    #[test]
+    fn test_request_log_entry_minimal() {
+        let entry = RequestLogEntry {
+            id: uuid::Uuid::new_v4(),
+            timestamp: chrono::Utc::now(),
+            project: None,
+            collection: None,
+            request: RequestLogData {
+                method: Method::Get,
+                url: "https://example.com".to_string(),
+                url_template: None,
+                headers: vec![],
+                body: None,
+                body_template: None,
+                params: vec![],
+            },
+            response: None,
+            curl_command: "curl https://example.com".to_string(),
+            error: Some("Connection refused".to_string()),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let deserialized: RequestLogEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.error, Some("Connection refused".to_string()));
+        assert!(deserialized.response.is_none());
     }
 
     fn make_workspace_with_envs() -> ProjectWorkspaceData {
