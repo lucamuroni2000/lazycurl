@@ -65,7 +65,16 @@ fn draw_list(frame: &mut Frame, app: &App, area: Rect) {
         }
     };
 
-    let block = Block::default().title(title).borders(Borders::ALL);
+    let list_focused = !app.log_viewer_detail_focused;
+    let border_style = if list_focused && app.log_viewer_show_detail {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default()
+    };
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(border_style);
 
     let items: Vec<ListItem> = filtered
         .iter()
@@ -274,13 +283,19 @@ fn draw_detail(frame: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
+    let detail_border_style = if app.log_viewer_detail_focused {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default()
+    };
     let block = Block::default()
         .title(" Request Detail ")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_style(detail_border_style);
     let paragraph = Paragraph::new(lines)
         .block(block)
-        .wrap(Wrap { trim: false });
+        .wrap(Wrap { trim: false })
+        .scroll((app.log_viewer_detail_scroll as u16, 0));
     frame.render_widget(paragraph, area);
 }
 

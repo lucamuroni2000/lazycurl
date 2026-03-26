@@ -811,24 +811,54 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
 
     match action {
         Action::OpenLogViewer | Action::Cancel => {
-            if app.log_viewer_show_detail {
+            if app.log_viewer_detail_focused {
+                // Unfocus detail, back to list
+                app.log_viewer_detail_focused = false;
+            } else if app.log_viewer_show_detail {
                 app.log_viewer_show_detail = false;
             } else {
                 app.show_log_viewer = false;
             }
         }
+        Action::CyclePaneForward | Action::CyclePaneBackward => {
+            // Tab toggles focus between list and detail pane
+            if app.log_viewer_show_detail {
+                app.log_viewer_detail_focused = !app.log_viewer_detail_focused;
+            }
+        }
         Action::MoveUp => {
-            if app.log_viewer_cursor > 0 {
+            if app.log_viewer_detail_focused {
+                // Scroll detail pane up
+                if app.log_viewer_detail_scroll > 0 {
+                    app.log_viewer_detail_scroll -= 1;
+                }
+            } else if app.log_viewer_cursor > 0 {
                 app.log_viewer_cursor -= 1;
+                app.log_viewer_detail_scroll = 0;
             }
         }
         Action::MoveDown => {
-            if entry_count > 0 && app.log_viewer_cursor + 1 < entry_count {
+            if app.log_viewer_detail_focused {
+                // Scroll detail pane down
+                app.log_viewer_detail_scroll += 1;
+            } else if entry_count > 0 && app.log_viewer_cursor + 1 < entry_count {
                 app.log_viewer_cursor += 1;
+                app.log_viewer_detail_scroll = 0;
             }
         }
         Action::Enter => {
-            app.log_viewer_show_detail = !app.log_viewer_show_detail;
+            if !app.log_viewer_show_detail {
+                // Open detail and focus it
+                app.log_viewer_show_detail = true;
+                app.log_viewer_detail_focused = true;
+                app.log_viewer_detail_scroll = 0;
+            } else if !app.log_viewer_detail_focused {
+                // Already open but list is focused — focus detail
+                app.log_viewer_detail_focused = true;
+            } else {
+                // Detail is focused — unfocus back to list
+                app.log_viewer_detail_focused = false;
+            }
         }
         Action::CharInput('f') => {
             app.log_viewer_editing_filter = true;

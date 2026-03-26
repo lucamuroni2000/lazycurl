@@ -206,6 +206,10 @@ pub struct App {
     #[allow(dead_code)]
     pub log_viewer_show_detail: bool,
     #[allow(dead_code)]
+    pub log_viewer_detail_focused: bool,
+    #[allow(dead_code)]
+    pub log_viewer_detail_scroll: usize,
+    #[allow(dead_code)]
     pub log_viewer_filter: String,
     #[allow(dead_code)]
     pub log_viewer_search: String,
@@ -275,6 +279,8 @@ impl App {
             log_viewer_entries: Vec::new(),
             log_viewer_cursor: 0,
             log_viewer_show_detail: false,
+            log_viewer_detail_focused: false,
+            log_viewer_detail_scroll: 0,
             log_viewer_filter: String::new(),
             log_viewer_search: String::new(),
             log_viewer_editing_filter: false,
@@ -441,6 +447,8 @@ impl App {
         self.log_viewer_loaded_dates = vec![today];
         self.log_viewer_cursor = 0;
         self.log_viewer_show_detail = false;
+        self.log_viewer_detail_focused = false;
+        self.log_viewer_detail_scroll = 0;
         self.log_viewer_filter.clear();
         self.log_viewer_search.clear();
         self.show_log_viewer = true;

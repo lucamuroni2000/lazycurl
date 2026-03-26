@@ -95,11 +95,26 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             hints.push(Span::styled(":search ", hint_style));
             hints.push(Span::styled("Esc", key_style));
             hints.push(Span::styled(":cancel", hint_style));
+        } else if app.log_viewer_detail_focused {
+            // Detail pane focused
+            hints.push(Span::styled(" Up/Down", key_style));
+            hints.push(Span::styled(":scroll ", hint_style));
+            hints.push(Span::styled("Tab", key_style));
+            hints.push(Span::styled(":list ", hint_style));
+            hints.push(Span::styled("y", key_style));
+            hints.push(Span::styled(":body ", hint_style));
+            hints.push(Span::styled("Esc", key_style));
+            hints.push(Span::styled(":back", hint_style));
         } else {
+            // List pane focused
             hints.push(Span::styled(" j/k", key_style));
             hints.push(Span::styled(":nav ", hint_style));
             hints.push(Span::styled("Enter", key_style));
             hints.push(Span::styled(":detail ", hint_style));
+            if app.log_viewer_show_detail {
+                hints.push(Span::styled("Tab", key_style));
+                hints.push(Span::styled(":detail ", hint_style));
+            }
             hints.push(Span::styled("f", key_style));
             hints.push(Span::styled(":filter ", hint_style));
             hints.push(Span::styled("/", key_style));
