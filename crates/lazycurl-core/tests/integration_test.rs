@@ -334,3 +334,147 @@ fn test_environment_sync_round_trip() {
     assert!(restored_idx.is_some());
     assert_eq!(envs[restored_idx.unwrap()].name, "Production");
 }
+
+#[test]
+fn test_export_full_request_as_curl() {
+    use lazycurl_core::export::export_curl;
+    use lazycurl_core::types::*;
+
+    let request = Request {
+        id: uuid::Uuid::new_v4(),
+        name: "Full Request".to_string(),
+        method: Method::Post,
+        url: "https://api.example.com/users".to_string(),
+        headers: vec![
+            Header {
+                key: "Content-Type".to_string(),
+                value: "application/json".to_string(),
+                enabled: true,
+            },
+            Header {
+                key: "Authorization".to_string(),
+                value: "Bearer {{token}}".to_string(),
+                enabled: true,
+            },
+        ],
+        params: vec![Param {
+            key: "page".to_string(),
+            value: "1".to_string(),
+            enabled: true,
+        }],
+        body: Some(Body::Json {
+            content: r#"{"name":"Alice"}"#.to_string(),
+        }),
+        auth: None,
+    };
+
+    let curl = export_curl(&request, &[]);
+    assert!(curl.contains("curl"));
+    assert!(curl.contains("-X POST"));
+    assert!(curl.contains("-H"));
+    assert!(curl.contains("Content-Type: application/json"));
+    assert!(curl.contains("Authorization: Bearer {{token}}"));
+    assert!(curl.contains("-d"));
+    assert!(curl.contains("page=1"));
+}
+
+#[test]
+fn test_export_collection_as_postman() {
+    use lazycurl_core::export::export_postman_collection;
+    use lazycurl_core::types::*;
+    use std::collections::HashMap;
+
+    let collection = Collection {
+        id: uuid::Uuid::new_v4(),
+        name: "Test API".to_string(),
+        variables: {
+            let mut m = HashMap::new();
+            m.insert(
+                "base_url".to_string(),
+                Variable {
+                    value: "https://api.test.com".to_string(),
+                    secret: false,
+                },
+            );
+            m
+        },
+        requests: vec![
+            Request {
+                id: uuid::Uuid::new_v4(),
+                name: "List".to_string(),
+                method: Method::Get,
+                url: "https://api.test.com/items".to_string(),
+                headers: vec![],
+                params: vec![],
+                body: None,
+                auth: None,
+            },
+            Request {
+                id: uuid::Uuid::new_v4(),
+                name: "Create".to_string(),
+                method: Method::Post,
+                url: "https://api.test.com/items".to_string(),
+                headers: vec![],
+                params: vec![],
+                body: Some(Body::Json {
+                    content: r#"{"name":"test"}"#.to_string(),
+                }),
+                auth: Some(Auth::Bearer {
+                    token: "{{token}}".to_string(),
+                }),
+            },
+        ],
+    };
+
+    let json = export_postman_collection(&collection);
+    let json_str = serde_json::to_string_pretty(&json).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+    assert_eq!(parsed["info"]["name"].as_str().unwrap(), "Test API");
+    assert_eq!(parsed["item"].as_array().unwrap().len(), 2);
+    assert_eq!(parsed["variable"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn test_export_collection_as_openapi() {
+    use lazycurl_core::export::export_openapi_collection;
+    use lazycurl_core::types::*;
+    use std::collections::HashMap;
+
+    let collection = Collection {
+        id: uuid::Uuid::new_v4(),
+        name: "Test API".to_string(),
+        variables: HashMap::new(),
+        requests: vec![
+            Request {
+                id: uuid::Uuid::new_v4(),
+                name: "List Items".to_string(),
+                method: Method::Get,
+                url: "https://api.test.com/items".to_string(),
+                headers: vec![],
+                params: vec![],
+                body: None,
+                auth: None,
+            },
+            Request {
+                id: uuid::Uuid::new_v4(),
+                name: "Create Item".to_string(),
+                method: Method::Post,
+                url: "https://api.test.com/items".to_string(),
+                headers: vec![],
+                params: vec![],
+                body: Some(Body::Json {
+                    content: r#"{"name":"test"}"#.to_string(),
+                }),
+                auth: None,
+            },
+        ],
+    };
+
+    let json = export_openapi_collection(&collection);
+    assert_eq!(json["openapi"].as_str().unwrap(), "3.0.3");
+    let paths = json["paths"].as_object().unwrap();
+    assert_eq!(paths.len(), 1);
+    let items_path = &paths["/items"];
+    assert!(items_path["get"].is_object());
+    assert!(items_path["post"].is_object());
+}
