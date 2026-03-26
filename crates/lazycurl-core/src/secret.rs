@@ -35,6 +35,9 @@ pub fn generate_gitignore() -> String {
         "# History contains request metadata",
         "history.jsonl",
         "",
+        "# Logs may contain request data",
+        "logs/",
+        "",
     ]
     .join("\n")
 }
@@ -79,6 +82,7 @@ mod tests {
         let content = generate_gitignore();
         assert!(content.contains("environments/"));
         assert!(content.contains("history.jsonl"));
+        assert!(content.contains("logs/"));
     }
 
     #[test]
