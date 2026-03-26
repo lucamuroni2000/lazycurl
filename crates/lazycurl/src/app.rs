@@ -551,6 +551,76 @@ impl App {
         self.status_message = Some("Loaded request from log".to_string());
     }
 
+    /// Compute the number of lines in the detail pane for the selected log entry.
+    pub fn log_viewer_detail_total_lines(&self) -> usize {
+        let filtered = self.filtered_log_entries();
+        let entry = match filtered.get(self.log_viewer_cursor) {
+            Some(e) => e,
+            None => return 0,
+        };
+
+        let mut count = 0;
+
+        // Method + URL line
+        count += 1;
+
+        // Status + timing
+        if entry.response.is_some() {
+            count += 1;
+        }
+        count += 1; // blank line
+
+        // Request headers
+        if !entry.request.headers.is_empty() {
+            count += 1; // section header
+            count += entry.request.headers.len();
+            count += 1; // blank line
+        }
+
+        // Request body
+        if let Some(ref body) = entry.request.body {
+            count += 1; // section header
+            let formatted = serde_json::from_str::<serde_json::Value>(body)
+                .ok()
+                .and_then(|v| serde_json::to_string_pretty(&v).ok())
+                .unwrap_or_else(|| body.clone());
+            count += formatted.lines().count();
+            count += 1; // blank line
+        }
+
+        // Response
+        if let Some(ref resp) = entry.response {
+            if !resp.headers.is_empty() {
+                count += 1; // section header
+                count += resp.headers.len();
+                count += 1; // blank line
+            }
+
+            count += 1; // body section header
+            if let Some(ref body) = resp.body {
+                let formatted = serde_json::from_str::<serde_json::Value>(body)
+                    .ok()
+                    .and_then(|v| serde_json::to_string_pretty(&v).ok())
+                    .unwrap_or_else(|| body.clone());
+                count += formatted.lines().count();
+            } else if resp.body_type == "binary" {
+                count += 1;
+            }
+        }
+
+        // Curl command
+        if !entry.curl_command.is_empty() {
+            count += 3; // blank + header + command
+        }
+
+        // Error
+        if entry.error.is_some() {
+            count += 2; // blank + error
+        }
+
+        count
+    }
+
     // ── Request execution ────────────────────────────────────────
 
     pub async fn send_request(&mut self) {

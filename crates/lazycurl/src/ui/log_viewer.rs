@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem};
 use ratatui::Frame;
 
 use crate::app::App;
@@ -283,6 +283,7 @@ fn draw_detail(frame: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
+    // Render as a list with a cursor highlight for line-by-line navigation
     let detail_border_style = if app.log_viewer_detail_focused {
         Style::default().fg(Color::Cyan)
     } else {
@@ -292,11 +293,33 @@ fn draw_detail(frame: &mut Frame, app: &App, area: Rect) {
         .title(" Request Detail ")
         .borders(Borders::ALL)
         .border_style(detail_border_style);
-    let paragraph = Paragraph::new(lines)
-        .block(block)
-        .wrap(Wrap { trim: false })
-        .scroll((app.log_viewer_detail_scroll as u16, 0));
-    frame.render_widget(paragraph, area);
+
+    let items: Vec<ListItem> = lines
+        .into_iter()
+        .enumerate()
+        .map(|(i, line)| {
+            if app.log_viewer_detail_focused && i == app.log_viewer_detail_scroll {
+                ListItem::new(line).style(Style::default().add_modifier(Modifier::REVERSED))
+            } else {
+                ListItem::new(line)
+            }
+        })
+        .collect();
+
+    // Calculate scroll offset to keep cursor visible within the inner area
+    let inner_height = area.height.saturating_sub(2) as usize; // borders
+    let scroll_offset = if inner_height > 0 && app.log_viewer_detail_scroll >= inner_height {
+        app.log_viewer_detail_scroll - inner_height + 1
+    } else {
+        0
+    };
+
+    let mut state = ratatui::widgets::ListState::default();
+    state.select(Some(app.log_viewer_detail_scroll));
+    *state.offset_mut() = scroll_offset;
+
+    let list = List::new(items).block(block);
+    frame.render_stateful_widget(list, area, &mut state);
 }
 
 /// Append body lines to the output, pretty-printing JSON if possible.

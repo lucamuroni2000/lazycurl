@@ -828,7 +828,6 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
         }
         Action::MoveUp => {
             if app.log_viewer_detail_focused {
-                // Scroll detail pane up
                 if app.log_viewer_detail_scroll > 0 {
                     app.log_viewer_detail_scroll -= 1;
                 }
@@ -839,8 +838,10 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
         }
         Action::MoveDown => {
             if app.log_viewer_detail_focused {
-                // Scroll detail pane down
-                app.log_viewer_detail_scroll += 1;
+                let total = app.log_viewer_detail_total_lines();
+                if total > 0 && app.log_viewer_detail_scroll + 1 < total {
+                    app.log_viewer_detail_scroll += 1;
+                }
             } else if entry_count > 0 && app.log_viewer_cursor + 1 < entry_count {
                 app.log_viewer_cursor += 1;
                 app.log_viewer_detail_scroll = 0;
