@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use lazycurl_core::command::CurlCommandBuilder;
 use lazycurl_core::config::{config_dir, AppConfig};
+use lazycurl_core::export::ExportFormat;
 use lazycurl_core::logging;
 use lazycurl_core::types::{
     Auth, Body, Collection, CurlResponse, Environment, LogHeader, LogParam, Method, Request,
@@ -83,7 +84,7 @@ pub enum Action {
     SwitchEnvironment,
     ManageEnvironments,
     NewRequest,
-    CopyCurl,
+    OpenExportPicker,
     ToggleCollections,
     ToggleRequest,
     ToggleResponse,
@@ -225,6 +226,11 @@ pub struct App {
     pub log_viewer_loaded_dates: Vec<String>,
     #[allow(dead_code)]
     pub log_write_failed: bool,
+    // Export picker
+    pub show_export_picker: bool,
+    pub export_format_cursor: usize,
+    pub export_scope_is_collection: bool,
+    pub export_collection_available: bool,
 }
 
 impl App {
@@ -289,6 +295,10 @@ impl App {
             log_viewer_search_input: crate::text_input::TextInput::new(""),
             log_viewer_loaded_dates: Vec::new(),
             log_write_failed: false,
+            show_export_picker: false,
+            export_format_cursor: 0,
+            export_scope_is_collection: false,
+            export_collection_available: false,
         }
     }
 
@@ -300,6 +310,39 @@ impl App {
                 self.status_message_at = None;
             }
         }
+    }
+
+    // ── Export picker ─────────────────────────────────────────────
+
+    pub fn open_export_picker(&mut self) {
+        if self.current_request().is_none() {
+            self.status_message = Some("Nothing to export".to_string());
+            return;
+        }
+        self.export_collection_available = self
+            .active_workspace()
+            .and_then(|ws| ws.data.selected_collection)
+            .and_then(|idx| {
+                self.active_workspace()
+                    .and_then(|ws| ws.data.collections.get(idx))
+            })
+            .is_some();
+        self.export_scope_is_collection =
+            self.active_pane == Pane::Collections && self.export_collection_available;
+        self.export_format_cursor = 0;
+        self.show_export_picker = true;
+    }
+
+    pub fn export_formats(&self) -> &'static [ExportFormat] {
+        if self.export_scope_is_collection {
+            ExportFormat::collection_formats()
+        } else {
+            ExportFormat::request_formats()
+        }
+    }
+
+    pub fn selected_export_format(&self) -> ExportFormat {
+        self.export_formats()[self.export_format_cursor]
     }
 
     // ── Workspace accessors ──────────────────────────────────────

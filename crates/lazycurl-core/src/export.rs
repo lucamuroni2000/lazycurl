@@ -16,7 +16,11 @@ pub enum ExportFormat {
 impl ExportFormat {
     /// Formats available when exporting a single request.
     pub fn request_formats() -> &'static [ExportFormat] {
-        &[ExportFormat::Curl, ExportFormat::PostmanV21, ExportFormat::OpenApi3]
+        &[
+            ExportFormat::Curl,
+            ExportFormat::PostmanV21,
+            ExportFormat::OpenApi3,
+        ]
     }
 
     /// Formats available when exporting a collection (curl excluded).
@@ -99,7 +103,11 @@ pub fn export_curl(request: &Request, secrets: &[String]) -> String {
             Auth::Basic { username, password } => {
                 builder = builder.basic_auth(username, password);
             }
-            Auth::ApiKey { key, value, location } => match location {
+            Auth::ApiKey {
+                key,
+                value,
+                location,
+            } => match location {
                 ApiKeyLocation::Header => {
                     builder = builder.header(key, value);
                 }
@@ -247,7 +255,11 @@ fn postman_auth(request: &Request) -> Option<serde_json::Value> {
                 {"key": "password", "value": password, "type": "string"}
             ]
         })),
-        Some(Auth::ApiKey { key, value, location }) => {
+        Some(Auth::ApiKey {
+            key,
+            value,
+            location,
+        }) => {
             let loc = match location {
                 ApiKeyLocation::Header => "header",
                 ApiKeyLocation::Query => "query",
@@ -296,8 +308,10 @@ pub fn export_openapi_request(request: &Request) -> serde_json::Value {
 
 /// Export a collection as an OpenAPI 3.0.3 JSON object.
 pub fn export_openapi_collection(collection: &Collection) -> serde_json::Value {
-    let mut path_map: std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>> =
-        std::collections::BTreeMap::new();
+    let mut path_map: std::collections::BTreeMap<
+        String,
+        serde_json::Map<String, serde_json::Value>,
+    > = std::collections::BTreeMap::new();
     let mut server = String::new();
 
     for request in &collection.requests {
@@ -307,7 +321,10 @@ pub fn export_openapi_collection(collection: &Collection) -> serde_json::Value {
         }
         let method_key = request.method.to_string().to_lowercase();
         let operation = openapi_operation(request);
-        path_map.entry(path).or_default().insert(method_key, operation);
+        path_map
+            .entry(path)
+            .or_default()
+            .insert(method_key, operation);
     }
 
     let mut paths = serde_json::Map::new();
@@ -395,7 +412,10 @@ fn openapi_operation(request: &Request) -> serde_json::Value {
             Body::Form { fields } => {
                 let mut properties = serde_json::Map::new();
                 for field in fields.iter().filter(|f| f.enabled) {
-                    properties.insert(field.key.clone(), serde_json::json!({"type": "string", "example": field.value}));
+                    properties.insert(
+                        field.key.clone(),
+                        serde_json::json!({"type": "string", "example": field.value}),
+                    );
                 }
                 operation["requestBody"] = serde_json::json!({
                     "content": { "application/x-www-form-urlencoded": {
@@ -407,7 +427,10 @@ fn openapi_operation(request: &Request) -> serde_json::Value {
                 let mut properties = serde_json::Map::new();
                 for part in parts {
                     if part.file_path.is_some() {
-                        properties.insert(part.name.clone(), serde_json::json!({"type": "string", "format": "binary"}));
+                        properties.insert(
+                            part.name.clone(),
+                            serde_json::json!({"type": "string", "format": "binary"}),
+                        );
                     } else {
                         properties.insert(part.name.clone(), serde_json::json!({"type": "string", "example": part.value.as_deref().unwrap_or("")}));
                     }
@@ -443,14 +466,23 @@ fn collect_security_schemes(requests: &[Request]) -> serde_json::Map<String, ser
         if let Some(auth) = &request.auth {
             match auth {
                 Auth::Bearer { .. } => {
-                    schemes.entry("bearerAuth").or_insert_with(|| serde_json::json!({"type": "http", "scheme": "bearer"}));
+                    schemes
+                        .entry("bearerAuth")
+                        .or_insert_with(|| serde_json::json!({"type": "http", "scheme": "bearer"}));
                 }
                 Auth::Basic { .. } => {
-                    schemes.entry("basicAuth").or_insert_with(|| serde_json::json!({"type": "http", "scheme": "basic"}));
+                    schemes
+                        .entry("basicAuth")
+                        .or_insert_with(|| serde_json::json!({"type": "http", "scheme": "basic"}));
                 }
                 Auth::ApiKey { key, location, .. } => {
-                    let loc = match location { ApiKeyLocation::Header => "header", ApiKeyLocation::Query => "query" };
-                    schemes.entry("apiKeyAuth").or_insert_with(|| serde_json::json!({"type": "apiKey", "name": key, "in": loc}));
+                    let loc = match location {
+                        ApiKeyLocation::Header => "header",
+                        ApiKeyLocation::Query => "query",
+                    };
+                    schemes.entry("apiKeyAuth").or_insert_with(
+                        || serde_json::json!({"type": "apiKey", "name": key, "in": loc}),
+                    );
                 }
                 Auth::None => {}
             }
@@ -479,14 +511,26 @@ mod tests {
             method: Method::Get,
             url: "https://api.example.com/users".to_string(),
             headers: vec![
-                Header { key: "Accept".to_string(), value: "application/json".to_string(), enabled: true },
-                Header { key: "X-Debug".to_string(), value: "true".to_string(), enabled: false },
+                Header {
+                    key: "Accept".to_string(),
+                    value: "application/json".to_string(),
+                    enabled: true,
+                },
+                Header {
+                    key: "X-Debug".to_string(),
+                    value: "true".to_string(),
+                    enabled: false,
+                },
             ],
-            params: vec![
-                Param { key: "page".to_string(), value: "1".to_string(), enabled: true },
-            ],
+            params: vec![Param {
+                key: "page".to_string(),
+                value: "1".to_string(),
+                enabled: true,
+            }],
             body: None,
-            auth: Some(Auth::Bearer { token: "my-secret-token".to_string() }),
+            auth: Some(Auth::Bearer {
+                token: "my-secret-token".to_string(),
+            }),
         }
     }
 
@@ -518,7 +562,9 @@ mod tests {
             url: "https://api.example.com/users".to_string(),
             headers: vec![],
             params: vec![],
-            body: Some(Body::Json { content: r#"{"name":"Alice"}"#.to_string() }),
+            body: Some(Body::Json {
+                content: r#"{"name":"Alice"}"#.to_string(),
+            }),
             auth: None,
         };
         let curl = export_curl(&req, &[]);
@@ -539,8 +585,16 @@ mod tests {
             params: vec![],
             body: Some(Body::Form {
                 fields: vec![
-                    FormField { key: "user".to_string(), value: "alice".to_string(), enabled: true },
-                    FormField { key: "disabled".to_string(), value: "skip".to_string(), enabled: false },
+                    FormField {
+                        key: "user".to_string(),
+                        value: "alice".to_string(),
+                        enabled: true,
+                    },
+                    FormField {
+                        key: "disabled".to_string(),
+                        value: "skip".to_string(),
+                        enabled: false,
+                    },
                 ],
             }),
             auth: None,
@@ -561,7 +615,10 @@ mod tests {
             headers: vec![],
             params: vec![],
             body: None,
-            auth: Some(Auth::Basic { username: "user".to_string(), password: "pass".to_string() }),
+            auth: Some(Auth::Basic {
+                username: "user".to_string(),
+                password: "pass".to_string(),
+            }),
         };
         let curl = export_curl(&req, &[]);
         assert!(curl.contains("-u"));
@@ -677,7 +734,13 @@ mod tests {
             name: "My API".to_string(),
             variables: {
                 let mut m = HashMap::new();
-                m.insert("base_url".to_string(), Variable { value: "https://api.example.com".to_string(), secret: false });
+                m.insert(
+                    "base_url".to_string(),
+                    Variable {
+                        value: "https://api.example.com".to_string(),
+                        secret: false,
+                    },
+                );
                 m
             },
             requests: vec![make_request()],
@@ -698,8 +761,11 @@ mod tests {
             name: "Create".to_string(),
             method: Method::Post,
             url: "https://example.com/api".to_string(),
-            headers: vec![], params: vec![],
-            body: Some(Body::Json { content: r#"{"key":"value"}"#.to_string() }),
+            headers: vec![],
+            params: vec![],
+            body: Some(Body::Json {
+                content: r#"{"key":"value"}"#.to_string(),
+            }),
             auth: None,
         };
         let json = export_postman_request(&req);
@@ -716,11 +782,14 @@ mod tests {
             name: "Login".to_string(),
             method: Method::Post,
             url: "https://example.com/login".to_string(),
-            headers: vec![], params: vec![],
+            headers: vec![],
+            params: vec![],
             body: Some(Body::Form {
-                fields: vec![
-                    FormField { key: "user".to_string(), value: "alice".to_string(), enabled: true },
-                ],
+                fields: vec![FormField {
+                    key: "user".to_string(),
+                    value: "alice".to_string(),
+                    enabled: true,
+                }],
             }),
             auth: None,
         };
@@ -738,15 +807,24 @@ mod tests {
             name: "Test".to_string(),
             method: Method::Get,
             url: "https://example.com".to_string(),
-            headers: vec![], params: vec![], body: None,
-            auth: Some(Auth::Basic { username: "user".to_string(), password: "pass".to_string() }),
+            headers: vec![],
+            params: vec![],
+            body: None,
+            auth: Some(Auth::Basic {
+                username: "user".to_string(),
+                password: "pass".to_string(),
+            }),
         };
         let json = export_postman_request(&req);
         let auth = &json["item"][0]["request"]["auth"];
         assert_eq!(auth["type"].as_str().unwrap(), "basic");
         let basic = auth["basic"].as_array().unwrap();
-        assert!(basic.iter().any(|v| v["key"] == "username" && v["value"] == "user"));
-        assert!(basic.iter().any(|v| v["key"] == "password" && v["value"] == "pass"));
+        assert!(basic
+            .iter()
+            .any(|v| v["key"] == "username" && v["value"] == "user"));
+        assert!(basic
+            .iter()
+            .any(|v| v["key"] == "password" && v["value"] == "pass"));
     }
 
     #[test]
@@ -768,20 +846,32 @@ mod tests {
     #[test]
     fn test_export_openapi_collection_groups_by_path() {
         let req1 = Request {
-            id: uuid::Uuid::new_v4(), name: "List Users".to_string(), method: Method::Get,
+            id: uuid::Uuid::new_v4(),
+            name: "List Users".to_string(),
+            method: Method::Get,
             url: "https://api.example.com/users".to_string(),
-            headers: vec![], params: vec![], body: None, auth: None,
+            headers: vec![],
+            params: vec![],
+            body: None,
+            auth: None,
         };
         let req2 = Request {
-            id: uuid::Uuid::new_v4(), name: "Create User".to_string(), method: Method::Post,
+            id: uuid::Uuid::new_v4(),
+            name: "Create User".to_string(),
+            method: Method::Post,
             url: "https://api.example.com/users".to_string(),
-            headers: vec![], params: vec![],
-            body: Some(Body::Json { content: r#"{"name":"Alice"}"#.to_string() }),
+            headers: vec![],
+            params: vec![],
+            body: Some(Body::Json {
+                content: r#"{"name":"Alice"}"#.to_string(),
+            }),
             auth: None,
         };
         let collection = Collection {
-            id: uuid::Uuid::new_v4(), name: "User API".to_string(),
-            variables: HashMap::new(), requests: vec![req1, req2],
+            id: uuid::Uuid::new_v4(),
+            name: "User API".to_string(),
+            variables: HashMap::new(),
+            requests: vec![req1, req2],
         };
         let json = export_openapi_collection(&collection);
         let paths = json["paths"].as_object().unwrap();
@@ -794,10 +884,15 @@ mod tests {
     #[test]
     fn test_export_openapi_request_body() {
         let req = Request {
-            id: uuid::Uuid::new_v4(), name: "Create".to_string(), method: Method::Post,
+            id: uuid::Uuid::new_v4(),
+            name: "Create".to_string(),
+            method: Method::Post,
             url: "https://example.com/api/items".to_string(),
-            headers: vec![], params: vec![],
-            body: Some(Body::Json { content: r#"{"key":"val"}"#.to_string() }),
+            headers: vec![],
+            params: vec![],
+            body: Some(Body::Json {
+                content: r#"{"key":"val"}"#.to_string(),
+            }),
             auth: None,
         };
         let json = export_openapi_request(&req);
@@ -809,10 +904,16 @@ mod tests {
     #[test]
     fn test_export_openapi_bearer_auth() {
         let req = Request {
-            id: uuid::Uuid::new_v4(), name: "Test".to_string(), method: Method::Get,
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
+            method: Method::Get,
             url: "https://example.com/api".to_string(),
-            headers: vec![], params: vec![], body: None,
-            auth: Some(Auth::Bearer { token: "tok".to_string() }),
+            headers: vec![],
+            params: vec![],
+            body: None,
+            auth: Some(Auth::Bearer {
+                token: "tok".to_string(),
+            }),
         };
         let json = export_openapi_request(&req);
         let schemes = json["components"]["securitySchemes"].as_object().unwrap();
@@ -823,12 +924,20 @@ mod tests {
     #[test]
     fn test_export_openapi_servers_from_url() {
         let req = Request {
-            id: uuid::Uuid::new_v4(), name: "Test".to_string(), method: Method::Get,
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
+            method: Method::Get,
             url: "https://api.example.com/v1/users".to_string(),
-            headers: vec![], params: vec![], body: None, auth: None,
+            headers: vec![],
+            params: vec![],
+            body: None,
+            auth: None,
         };
         let json = export_openapi_request(&req);
         let servers = json["servers"].as_array().unwrap();
-        assert_eq!(servers[0]["url"].as_str().unwrap(), "https://api.example.com");
+        assert_eq!(
+            servers[0]["url"].as_str().unwrap(),
+            "https://api.example.com"
+        );
     }
 }

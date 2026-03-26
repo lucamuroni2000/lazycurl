@@ -17,8 +17,8 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use app::{Action, App, EditField};
-use lazycurl_core::command::CurlCommandBuilder;
 use lazycurl_core::config::{config_dir, AppConfig};
+use lazycurl_core::export::{self, ExportFormat};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -216,6 +216,9 @@ async fn run_loop(
                     Action::Quit => app.should_quit = true,
                     _ => {}
                 }
+            // Export picker intercepts when open
+            } else if app.show_export_picker {
+                handle_export_picker_action(app, &action);
             // Collection picker intercepts when open
             } else if app.show_collection_picker {
                 match action {
@@ -390,11 +393,15 @@ async fn run_loop(
                         }
                     }
                     Action::SwitchEnvironment => app.cycle_environment(),
-                    Action::CopyCurl => {
-                        if let Some(req) = app.current_request() {
-                            let cmd = CurlCommandBuilder::new(&req.url).method(req.method).build();
-                            let display = cmd.to_display_string(&[]);
-                            app.status_message = Some(format!("Copied: {}", display));
+                    Action::OpenExportPicker => {
+                        if !app.show_method_picker
+                            && !app.show_collection_picker
+                            && !app.show_project_picker
+                            && !app.show_env_manager
+                            && !app.show_variables
+                            && !app.show_log_viewer
+                        {
+                            app.open_export_picker();
                         }
                     }
                     // Navigation actions (Normal mode)
@@ -991,21 +998,7 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
                     }
                 }
                 app.status_message = Some(format!("Exported to {}", path.display()));
-                // Try to open the containing folder in the system file explorer
-                if let Some(parent) = path.parent() {
-                    #[cfg(target_os = "windows")]
-                    {
-                        let _ = std::process::Command::new("explorer").arg(parent).spawn();
-                    }
-                    #[cfg(target_os = "macos")]
-                    {
-                        let _ = std::process::Command::new("open").arg(parent).spawn();
-                    }
-                    #[cfg(target_os = "linux")]
-                    {
-                        let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
-                    }
-                }
+                open_in_file_explorer(&path);
             }
         }
         Action::Quit => app.should_quit = true,
@@ -1132,5 +1125,127 @@ fn handle_project_picker_action(app: &mut App, action: &Action) {
         }
         Action::Quit => app.should_quit = true,
         _ => {}
+    }
+}
+
+fn open_in_file_explorer(path: &std::path::Path) {
+    if let Some(parent) = path.parent() {
+        #[cfg(target_os = "windows")]
+        {
+            let _ = std::process::Command::new("explorer").arg(parent).spawn();
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::process::Command::new("open").arg(parent).spawn();
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+        }
+    }
+}
+
+fn handle_export_picker_action(app: &mut App, action: &Action) {
+    match action {
+        Action::Cancel => {
+            app.show_export_picker = false;
+        }
+        Action::MoveUp | Action::CharInput('k') => {
+            if app.export_format_cursor > 0 {
+                app.export_format_cursor -= 1;
+            }
+        }
+        Action::MoveDown | Action::CharInput('j') => {
+            let max = app.export_formats().len().saturating_sub(1);
+            if app.export_format_cursor < max {
+                app.export_format_cursor += 1;
+            }
+        }
+        Action::CyclePaneForward => {
+            if app.export_collection_available {
+                app.export_scope_is_collection = !app.export_scope_is_collection;
+                app.export_format_cursor = 0;
+            }
+        }
+        Action::Enter => {
+            let format = app.selected_export_format();
+            execute_export(app, format);
+            app.show_export_picker = false;
+        }
+        Action::Quit => app.should_quit = true,
+        _ => {}
+    }
+}
+
+fn execute_export(app: &mut App, format: ExportFormat) {
+    match format {
+        ExportFormat::Curl => {
+            if let Some(req) = app.current_request() {
+                let req = req.clone();
+                let curl_str = export::export_curl(&req, &[]);
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    let _ = clipboard.set_text(&curl_str);
+                }
+                app.status_message = Some("Copied curl command to clipboard".to_string());
+            }
+        }
+        ExportFormat::PostmanV21 | ExportFormat::OpenApi3 => {
+            let (json, name) = if app.export_scope_is_collection {
+                let collection = app
+                    .active_workspace()
+                    .and_then(|ws| {
+                        ws.data
+                            .selected_collection
+                            .and_then(|idx| ws.data.collections.get(idx))
+                    })
+                    .cloned();
+                if let Some(col) = collection {
+                    let json = match format {
+                        ExportFormat::PostmanV21 => export::export_postman_collection(&col),
+                        ExportFormat::OpenApi3 => export::export_openapi_collection(&col),
+                        _ => unreachable!(),
+                    };
+                    (json, col.name)
+                } else {
+                    app.status_message = Some("No collection selected".to_string());
+                    return;
+                }
+            } else {
+                if let Some(req) = app.current_request().cloned() {
+                    let json = match format {
+                        ExportFormat::PostmanV21 => export::export_postman_request(&req),
+                        ExportFormat::OpenApi3 => export::export_openapi_request(&req),
+                        _ => unreachable!(),
+                    };
+                    (json, req.name)
+                } else {
+                    app.status_message = Some("No request to export".to_string());
+                    return;
+                }
+            };
+
+            let dir = export::exports_dir();
+            if let Err(e) = std::fs::create_dir_all(&dir) {
+                app.status_message = Some(format!("Failed to create exports dir: {}", e));
+                return;
+            }
+
+            let filename = export::export_filename(&name, format);
+            let path = dir.join(&filename);
+
+            match serde_json::to_string_pretty(&json) {
+                Ok(content) => {
+                    if let Err(e) = std::fs::write(&path, content) {
+                        app.status_message = Some(format!("Export failed: {}", e));
+                        return;
+                    }
+                    app.status_message = Some(format!("Exported to {}", filename));
+                    open_in_file_explorer(&path);
+                }
+                Err(e) => {
+                    app.status_message = Some(format!("Serialization failed: {}", e));
+                }
+            }
+        }
     }
 }

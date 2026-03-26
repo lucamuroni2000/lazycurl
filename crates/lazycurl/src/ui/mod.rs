@@ -1,5 +1,6 @@
 pub mod collections;
 pub mod environment_manager;
+pub mod export_picker;
 pub mod help;
 pub mod layout;
 pub mod log_viewer;
@@ -43,6 +44,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
 
     // Overlays (on top of everything)
+    if app.show_export_picker {
+        export_picker::draw(frame, app);
+    }
     if app.show_collection_picker {
         picker::draw_collection_picker(frame, app);
     }
