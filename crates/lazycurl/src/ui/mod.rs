@@ -2,6 +2,7 @@ pub mod collections;
 pub mod environment_manager;
 pub mod help;
 pub mod layout;
+pub mod log_viewer;
 pub mod picker;
 pub mod project_picker;
 pub mod project_tabs;
@@ -56,6 +57,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
     if app.show_project_picker {
         project_picker::draw(frame, app);
+    }
+    if app.show_log_viewer {
+        log_viewer::draw(frame, app);
     }
     if app.show_first_launch {
         project_picker::draw_first_launch(frame, app);
