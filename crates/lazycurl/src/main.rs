@@ -734,12 +734,24 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
                 app.input_mode = app::InputMode::Normal;
             }
             Action::CharInput(c) => app.log_viewer_filter_input.insert_char(*c),
-            Action::Backspace => { app.log_viewer_filter_input.delete_char_before(); }
-            Action::Delete => { app.log_viewer_filter_input.delete_char_after(); }
-            Action::CursorLeft => { app.log_viewer_filter_input.move_left(); }
-            Action::CursorRight => { app.log_viewer_filter_input.move_right(); }
-            Action::Home => { app.log_viewer_filter_input.move_home(); }
-            Action::End => { app.log_viewer_filter_input.move_end(); }
+            Action::Backspace => {
+                app.log_viewer_filter_input.delete_char_before();
+            }
+            Action::Delete => {
+                app.log_viewer_filter_input.delete_char_after();
+            }
+            Action::CursorLeft => {
+                app.log_viewer_filter_input.move_left();
+            }
+            Action::CursorRight => {
+                app.log_viewer_filter_input.move_right();
+            }
+            Action::Home => {
+                app.log_viewer_filter_input.move_home();
+            }
+            Action::End => {
+                app.log_viewer_filter_input.move_end();
+            }
             Action::Quit => app.should_quit = true,
             _ => {}
         }
@@ -759,12 +771,24 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
                 app.input_mode = app::InputMode::Normal;
             }
             Action::CharInput(c) => app.log_viewer_search_input.insert_char(*c),
-            Action::Backspace => { app.log_viewer_search_input.delete_char_before(); }
-            Action::Delete => { app.log_viewer_search_input.delete_char_after(); }
-            Action::CursorLeft => { app.log_viewer_search_input.move_left(); }
-            Action::CursorRight => { app.log_viewer_search_input.move_right(); }
-            Action::Home => { app.log_viewer_search_input.move_home(); }
-            Action::End => { app.log_viewer_search_input.move_end(); }
+            Action::Backspace => {
+                app.log_viewer_search_input.delete_char_before();
+            }
+            Action::Delete => {
+                app.log_viewer_search_input.delete_char_after();
+            }
+            Action::CursorLeft => {
+                app.log_viewer_search_input.move_left();
+            }
+            Action::CursorRight => {
+                app.log_viewer_search_input.move_right();
+            }
+            Action::Home => {
+                app.log_viewer_search_input.move_home();
+            }
+            Action::End => {
+                app.log_viewer_search_input.move_end();
+            }
             Action::Quit => app.should_quit = true,
             _ => {}
         }
@@ -797,13 +821,15 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
         }
         Action::CharInput('f') => {
             app.log_viewer_editing_filter = true;
-            app.log_viewer_filter_input.set_content(&app.log_viewer_filter);
+            app.log_viewer_filter_input
+                .set_content(&app.log_viewer_filter);
             app.input_mode = app::InputMode::Editing;
             app.log_viewer_search.clear();
         }
         Action::CharInput('/') | Action::Search => {
             app.log_viewer_editing_search = true;
-            app.log_viewer_search_input.set_content(&app.log_viewer_search);
+            app.log_viewer_search_input
+                .set_content(&app.log_viewer_search);
             app.input_mode = app::InputMode::Editing;
         }
         Action::CharInput('r') => {
@@ -818,13 +844,20 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
             if let Some(entry) = filtered.get(app.log_viewer_cursor) {
                 let time = entry.timestamp.format("%H:%M:%S").to_string();
                 let method = entry.request.method.to_string();
-                let status = entry.response.as_ref()
+                let status = entry
+                    .response
+                    .as_ref()
                     .map(|r| r.status_code.to_string())
                     .unwrap_or_else(|| "ERR".to_string());
-                let duration = entry.response.as_ref()
+                let duration = entry
+                    .response
+                    .as_ref()
                     .map(|r| format!("{}ms", r.time_ms))
                     .unwrap_or_else(|| "---".to_string());
-                let line = format!("{}  {}  {}  {}  {}", time, method, status, duration, entry.request.url);
+                let line = format!(
+                    "{}  {}  {}  {}  {}",
+                    time, method, status, duration, entry.request.url
+                );
                 if let Ok(mut clipboard) = arboard::Clipboard::new() {
                     let _ = clipboard.set_text(&line);
                     app.status_message = Some("Copied to clipboard".to_string());

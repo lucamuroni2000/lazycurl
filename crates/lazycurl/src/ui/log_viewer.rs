@@ -29,7 +29,10 @@ fn draw_list(frame: &mut Frame, app: &App, area: Rect) {
     let filtered = app.filtered_log_entries();
 
     let title = if app.log_viewer_editing_filter {
-        format!(" Request Log — Filter: {} ", app.log_viewer_filter_input.content())
+        format!(
+            " Request Log — Filter: {} ",
+            app.log_viewer_filter_input.content()
+        )
     } else if !app.log_viewer_filter.is_empty() {
         format!(" Request Log — Filter: {} ", app.log_viewer_filter)
     } else {
@@ -92,7 +95,9 @@ fn draw_detail(frame: &mut Frame, app: &App, area: Rect) {
     let entry = match filtered.get(app.log_viewer_cursor) {
         Some(e) => e,
         None => {
-            let block = Block::default().title(" Request Detail ").borders(Borders::ALL);
+            let block = Block::default()
+                .title(" Request Detail ")
+                .borders(Borders::ALL);
             frame.render_widget(block, area);
             return;
         }
@@ -102,14 +107,20 @@ fn draw_detail(frame: &mut Frame, app: &App, area: Rect) {
 
     // Request line
     lines.push(Line::from(vec![
-        Span::styled(entry.request.method.to_string(), Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(
+            entry.request.method.to_string(),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
         Span::raw(format!(" {}", entry.request.url)),
     ]));
     lines.push(Line::raw(""));
 
     // Request headers
     if !entry.request.headers.is_empty() {
-        lines.push(Line::styled("-- Request Headers --", Style::default().add_modifier(Modifier::DIM)));
+        lines.push(Line::styled(
+            "-- Request Headers --",
+            Style::default().add_modifier(Modifier::DIM),
+        ));
         for h in &entry.request.headers {
             lines.push(Line::raw(format!("{}: {}", h.name, h.value)));
         }
@@ -118,7 +129,10 @@ fn draw_detail(frame: &mut Frame, app: &App, area: Rect) {
 
     // Request body
     if let Some(ref body) = entry.request.body {
-        lines.push(Line::styled("-- Request Body --", Style::default().add_modifier(Modifier::DIM)));
+        lines.push(Line::styled(
+            "-- Request Body --",
+            Style::default().add_modifier(Modifier::DIM),
+        ));
         for body_line in body.lines() {
             lines.push(Line::raw(body_line.to_string()));
         }
@@ -128,7 +142,10 @@ fn draw_detail(frame: &mut Frame, app: &App, area: Rect) {
     // Response
     if let Some(ref resp) = entry.response {
         if !resp.headers.is_empty() {
-            lines.push(Line::styled("-- Response Headers --", Style::default().add_modifier(Modifier::DIM)));
+            lines.push(Line::styled(
+                "-- Response Headers --",
+                Style::default().add_modifier(Modifier::DIM),
+            ));
             for h in &resp.headers {
                 lines.push(Line::raw(format!("{}: {}", h.name, h.value)));
             }
@@ -136,11 +153,17 @@ fn draw_detail(frame: &mut Frame, app: &App, area: Rect) {
         }
 
         let body_label = if resp.body_truncated {
-            format!("-- Response Body ({} bytes, truncated) --", resp.body_size_bytes)
+            format!(
+                "-- Response Body ({} bytes, truncated) --",
+                resp.body_size_bytes
+            )
         } else {
             format!("-- Response Body ({} bytes) --", resp.body_size_bytes)
         };
-        lines.push(Line::styled(body_label, Style::default().add_modifier(Modifier::DIM)));
+        lines.push(Line::styled(
+            body_label,
+            Style::default().add_modifier(Modifier::DIM),
+        ));
         if let Some(ref body) = resp.body {
             for body_line in body.lines() {
                 lines.push(Line::raw(body_line.to_string()));
@@ -152,10 +175,17 @@ fn draw_detail(frame: &mut Frame, app: &App, area: Rect) {
 
     if let Some(ref err) = entry.error {
         lines.push(Line::raw(""));
-        lines.push(Line::styled(format!("Error: {}", err), Style::default().fg(Color::Red)));
+        lines.push(Line::styled(
+            format!("Error: {}", err),
+            Style::default().fg(Color::Red),
+        ));
     }
 
-    let block = Block::default().title(" Request Detail ").borders(Borders::ALL);
-    let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+    let block = Block::default()
+        .title(" Request Detail ")
+        .borders(Borders::ALL);
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
 }

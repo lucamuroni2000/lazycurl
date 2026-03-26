@@ -265,8 +265,16 @@ mod tests {
     fn test_logs_dir_path() {
         let dir = logs_dir();
         let dir_str = dir.to_string_lossy();
-        assert!(dir_str.contains("lazycurl"), "expected 'lazycurl' in path: {}", dir_str);
-        assert!(dir.ends_with("logs"), "expected path to end with 'logs': {}", dir_str);
+        assert!(
+            dir_str.contains("lazycurl"),
+            "expected 'lazycurl' in path: {}",
+            dir_str
+        );
+        assert!(
+            dir.ends_with("logs"),
+            "expected path to end with 'logs': {}",
+            dir_str
+        );
     }
 
     #[test]
@@ -280,7 +288,11 @@ mod tests {
 
         let date = entry.timestamp.format("%Y-%m-%d").to_string();
         let expected_file = logs_path.join(format!("requests-{}.jsonl", date));
-        assert!(expected_file.exists(), "expected log file to exist: {:?}", expected_file);
+        assert!(
+            expected_file.exists(),
+            "expected log file to exist: {:?}",
+            expected_file
+        );
     }
 
     #[test]
@@ -325,7 +337,12 @@ mod tests {
         let content = std::fs::read_to_string(&file_path).unwrap();
 
         let lines: Vec<&str> = content.lines().collect();
-        assert_eq!(lines.len(), 2, "expected 2 JSONL lines, got {}", lines.len());
+        assert_eq!(
+            lines.len(),
+            2,
+            "expected 2 JSONL lines, got {}",
+            lines.len()
+        );
     }
 
     #[test]
@@ -367,7 +384,10 @@ mod tests {
         let logs_path = tmp.path().join("logs");
 
         let entries = read_request_logs(&logs_path, None).unwrap();
-        assert!(entries.is_empty(), "expected empty vec for non-existent logs dir");
+        assert!(
+            entries.is_empty(),
+            "expected empty vec for non-existent logs dir"
+        );
     }
 
     #[test]
@@ -381,7 +401,12 @@ mod tests {
         log_request(&logs_path, &entry, &secrets, 1024 * 1024).unwrap();
 
         let entries = read_request_logs(&logs_path, None).unwrap();
-        assert_eq!(entries.len(), 2, "expected 2 log entries, got {}", entries.len());
+        assert_eq!(
+            entries.len(),
+            2,
+            "expected 2 log entries, got {}",
+            entries.len()
+        );
     }
 
     #[test]
@@ -398,7 +423,10 @@ mod tests {
         assert_eq!(entries_today.len(), 1, "expected 1 entry for today");
 
         let entries_wrong = read_request_logs(&logs_path, Some("1900-01-01")).unwrap();
-        assert!(entries_wrong.is_empty(), "expected empty vec for wrong date");
+        assert!(
+            entries_wrong.is_empty(),
+            "expected empty vec for wrong date"
+        );
     }
 
     #[test]

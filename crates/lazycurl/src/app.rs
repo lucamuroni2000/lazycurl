@@ -435,8 +435,8 @@ impl App {
     pub fn open_log_viewer(&mut self) {
         let logs_path = lazycurl_core::logging::logs_dir();
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-        self.log_viewer_entries = lazycurl_core::logging::read_request_logs(&logs_path, Some(&today))
-            .unwrap_or_default();
+        self.log_viewer_entries =
+            lazycurl_core::logging::read_request_logs(&logs_path, Some(&today)).unwrap_or_default();
         self.log_viewer_entries.reverse(); // Most recent first
         self.log_viewer_loaded_dates = vec![today];
         self.log_viewer_cursor = 0;
@@ -460,7 +460,10 @@ impl App {
                 tokens.iter().all(|token| {
                     let upper = token.to_uppercase();
                     // Check if it's an HTTP method
-                    if matches!(upper.as_str(), "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS") {
+                    if matches!(
+                        upper.as_str(),
+                        "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS"
+                    ) {
                         return entry.request.method.to_string() == upper;
                     }
                     // Check if it's a status class (e.g., "4xx", "2xx")
@@ -482,7 +485,11 @@ impl App {
                         }
                     }
                     // URL substring match (case-insensitive)
-                    entry.request.url.to_lowercase().contains(&token.to_lowercase())
+                    entry
+                        .request
+                        .url
+                        .to_lowercase()
+                        .contains(&token.to_lowercase())
                 })
             })
             .cloned()
@@ -493,16 +500,26 @@ impl App {
     #[allow(dead_code)]
     pub fn load_log_entry_into_editor(&mut self, entry: lazycurl_core::types::RequestLogEntry) {
         let url = entry.request.url_template.unwrap_or(entry.request.url);
-        let headers: Vec<lazycurl_core::types::Header> = entry.request.headers.iter().map(|h| lazycurl_core::types::Header {
-            key: h.name.clone(),
-            value: h.value_template.clone().unwrap_or_else(|| h.value.clone()),
-            enabled: true,
-        }).collect();
-        let params: Vec<lazycurl_core::types::Param> = entry.request.params.iter().map(|p| lazycurl_core::types::Param {
-            key: p.name.clone(),
-            value: p.value.clone(),
-            enabled: true,
-        }).collect();
+        let headers: Vec<lazycurl_core::types::Header> = entry
+            .request
+            .headers
+            .iter()
+            .map(|h| lazycurl_core::types::Header {
+                key: h.name.clone(),
+                value: h.value_template.clone().unwrap_or_else(|| h.value.clone()),
+                enabled: true,
+            })
+            .collect();
+        let params: Vec<lazycurl_core::types::Param> = entry
+            .request
+            .params
+            .iter()
+            .map(|p| lazycurl_core::types::Param {
+                key: p.name.clone(),
+                value: p.value.clone(),
+                enabled: true,
+            })
+            .collect();
 
         let request = Request {
             id: uuid::Uuid::new_v4(),
@@ -511,7 +528,9 @@ impl App {
             url,
             headers,
             params,
-            body: entry.request.body_template
+            body: entry
+                .request
+                .body_template
                 .or(entry.request.body)
                 .map(|content| Body::Json { content }),
             auth: None,
@@ -748,34 +767,50 @@ impl App {
                         } else {
                             None
                         },
-                        headers: request.headers.iter().filter(|h| h.enabled).map(|h| {
-                            LogHeader {
+                        headers: request
+                            .headers
+                            .iter()
+                            .filter(|h| h.enabled)
+                            .map(|h| LogHeader {
                                 name: h.key.clone(),
                                 value: h.value.clone(),
                                 value_template: None,
-                            }
-                        }).collect(),
+                            })
+                            .collect(),
                         body: request.body.as_ref().and_then(|b| match b {
-                            Body::Json { content } | Body::Text { content } => Some(content.clone()),
+                            Body::Json { content } | Body::Text { content } => {
+                                Some(content.clone())
+                            }
                             _ => None,
                         }),
                         body_template: None,
-                        params: request.params.iter().filter(|p| p.enabled).map(|p| {
-                            LogParam {
+                        params: request
+                            .params
+                            .iter()
+                            .filter(|p| p.enabled)
+                            .map(|p| LogParam {
                                 name: p.key.clone(),
                                 value: p.value.clone(),
-                            }
-                        }).collect(),
+                            })
+                            .collect(),
                     },
                     response: Some(ResponseLogData {
                         status_code: resp.status_code,
                         status_text: format!("{}", resp.status_code),
-                        headers: resp.headers.iter().map(|(k, v)| LogHeader {
-                            name: k.clone(),
-                            value: v.clone(),
-                            value_template: None,
-                        }).collect(),
-                        body: if resp.body.is_empty() { None } else { Some(resp.body.clone()) },
+                        headers: resp
+                            .headers
+                            .iter()
+                            .map(|(k, v)| LogHeader {
+                                name: k.clone(),
+                                value: v.clone(),
+                                value_template: None,
+                            })
+                            .collect(),
+                        body: if resp.body.is_empty() {
+                            None
+                        } else {
+                            Some(resp.body.clone())
+                        },
                         body_size_bytes: resp.body.len() as u64,
                         body_truncated: false,
                         body_type: "text".to_string(),
