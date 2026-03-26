@@ -265,6 +265,200 @@ fn postman_auth(request: &Request) -> Option<serde_json::Value> {
     }
 }
 
+/// Export a single request as an OpenAPI 3.0.3 JSON object.
+pub fn export_openapi_request(request: &Request) -> serde_json::Value {
+    let (server, path) = parse_url_parts(&request.url);
+    let method_key = request.method.to_string().to_lowercase();
+    let operation = openapi_operation(request);
+
+    let mut paths = serde_json::Map::new();
+    let mut path_obj = serde_json::Map::new();
+    path_obj.insert(method_key, operation);
+    paths.insert(path, serde_json::Value::Object(path_obj));
+
+    let mut spec = serde_json::json!({
+        "openapi": "3.0.3",
+        "info": {
+            "title": request.name,
+            "version": "1.0.0"
+        },
+        "servers": [{"url": server}],
+        "paths": paths
+    });
+
+    let security_schemes = collect_security_schemes(std::slice::from_ref(request));
+    if !security_schemes.is_empty() {
+        spec["components"] = serde_json::json!({"securitySchemes": security_schemes});
+    }
+
+    spec
+}
+
+/// Export a collection as an OpenAPI 3.0.3 JSON object.
+pub fn export_openapi_collection(collection: &Collection) -> serde_json::Value {
+    let mut path_map: std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>> =
+        std::collections::BTreeMap::new();
+    let mut server = String::new();
+
+    for request in &collection.requests {
+        let (srv, path) = parse_url_parts(&request.url);
+        if server.is_empty() {
+            server = srv;
+        }
+        let method_key = request.method.to_string().to_lowercase();
+        let operation = openapi_operation(request);
+        path_map.entry(path).or_default().insert(method_key, operation);
+    }
+
+    let mut paths = serde_json::Map::new();
+    for (path, methods) in path_map {
+        paths.insert(path, serde_json::Value::Object(methods));
+    }
+
+    let mut spec = serde_json::json!({
+        "openapi": "3.0.3",
+        "info": {
+            "title": collection.name,
+            "version": "1.0.0"
+        },
+        "servers": if server.is_empty() { serde_json::json!([]) } else { serde_json::json!([{"url": server}]) },
+        "paths": paths
+    });
+
+    let security_schemes = collect_security_schemes(&collection.requests);
+    if !security_schemes.is_empty() {
+        spec["components"] = serde_json::json!({"securitySchemes": security_schemes});
+    }
+
+    spec
+}
+
+fn parse_url_parts(url: &str) -> (String, String) {
+    let url_no_query = url.split('?').next().unwrap_or(url);
+    if let Some(scheme_end) = url_no_query.find("://") {
+        let after_scheme = &url_no_query[scheme_end + 3..];
+        if let Some(slash_pos) = after_scheme.find('/') {
+            let server = &url_no_query[..scheme_end + 3 + slash_pos];
+            let path = &after_scheme[slash_pos..];
+            return (server.to_string(), path.to_string());
+        }
+        return (url_no_query.to_string(), "/".to_string());
+    }
+    (String::new(), url_no_query.to_string())
+}
+
+fn openapi_operation(request: &Request) -> serde_json::Value {
+    let mut operation = serde_json::json!({
+        "summary": request.name,
+        "responses": { "200": { "description": "Successful response" } }
+    });
+
+    let mut parameters: Vec<serde_json::Value> = Vec::new();
+    for header in &request.headers {
+        if header.enabled {
+            parameters.push(serde_json::json!({
+                "name": header.key, "in": "header",
+                "schema": { "type": "string" }, "example": header.value
+            }));
+        }
+    }
+    for param in &request.params {
+        if param.enabled {
+            parameters.push(serde_json::json!({
+                "name": param.key, "in": "query",
+                "schema": { "type": "string" }, "example": param.value
+            }));
+        }
+    }
+    if !parameters.is_empty() {
+        operation["parameters"] = serde_json::Value::Array(parameters);
+    }
+
+    if let Some(body) = &request.body {
+        match body {
+            Body::Json { content } => {
+                operation["requestBody"] = serde_json::json!({
+                    "content": { "application/json": {
+                        "schema": { "type": "object" },
+                        "example": serde_json::from_str::<serde_json::Value>(content)
+                            .unwrap_or_else(|_| serde_json::Value::String(content.clone()))
+                    }}
+                });
+            }
+            Body::Text { content } => {
+                operation["requestBody"] = serde_json::json!({
+                    "content": { "text/plain": {
+                        "schema": { "type": "string" }, "example": content
+                    }}
+                });
+            }
+            Body::Form { fields } => {
+                let mut properties = serde_json::Map::new();
+                for field in fields.iter().filter(|f| f.enabled) {
+                    properties.insert(field.key.clone(), serde_json::json!({"type": "string", "example": field.value}));
+                }
+                operation["requestBody"] = serde_json::json!({
+                    "content": { "application/x-www-form-urlencoded": {
+                        "schema": { "type": "object", "properties": properties }
+                    }}
+                });
+            }
+            Body::Multipart { parts } => {
+                let mut properties = serde_json::Map::new();
+                for part in parts {
+                    if part.file_path.is_some() {
+                        properties.insert(part.name.clone(), serde_json::json!({"type": "string", "format": "binary"}));
+                    } else {
+                        properties.insert(part.name.clone(), serde_json::json!({"type": "string", "example": part.value.as_deref().unwrap_or("")}));
+                    }
+                }
+                operation["requestBody"] = serde_json::json!({
+                    "content": { "multipart/form-data": {
+                        "schema": { "type": "object", "properties": properties }
+                    }}
+                });
+            }
+            Body::None => {}
+        }
+    }
+
+    if let Some(auth) = &request.auth {
+        let security_name = match auth {
+            Auth::Bearer { .. } => Some("bearerAuth"),
+            Auth::Basic { .. } => Some("basicAuth"),
+            Auth::ApiKey { .. } => Some("apiKeyAuth"),
+            Auth::None => None,
+        };
+        if let Some(name) = security_name {
+            operation["security"] = serde_json::json!([{name: []}]);
+        }
+    }
+
+    operation
+}
+
+fn collect_security_schemes(requests: &[Request]) -> serde_json::Map<String, serde_json::Value> {
+    let mut schemes = serde_json::Map::new();
+    for request in requests {
+        if let Some(auth) = &request.auth {
+            match auth {
+                Auth::Bearer { .. } => {
+                    schemes.entry("bearerAuth").or_insert_with(|| serde_json::json!({"type": "http", "scheme": "bearer"}));
+                }
+                Auth::Basic { .. } => {
+                    schemes.entry("basicAuth").or_insert_with(|| serde_json::json!({"type": "http", "scheme": "basic"}));
+                }
+                Auth::ApiKey { key, location, .. } => {
+                    let loc = match location { ApiKeyLocation::Header => "header", ApiKeyLocation::Query => "query" };
+                    schemes.entry("apiKeyAuth").or_insert_with(|| serde_json::json!({"type": "apiKey", "name": key, "in": loc}));
+                }
+                Auth::None => {}
+            }
+        }
+    }
+    schemes
+}
+
 /// Generate a timestamped filename for an export.
 pub fn export_filename(name: &str, format: ExportFormat) -> String {
     let slug = slugify(name);
@@ -553,5 +747,88 @@ mod tests {
         let basic = auth["basic"].as_array().unwrap();
         assert!(basic.iter().any(|v| v["key"] == "username" && v["value"] == "user"));
         assert!(basic.iter().any(|v| v["key"] == "password" && v["value"] == "pass"));
+    }
+
+    #[test]
+    fn test_export_openapi_single_request() {
+        let req = make_request();
+        let json = export_openapi_request(&req);
+        assert_eq!(json["openapi"].as_str().unwrap(), "3.0.3");
+        assert_eq!(json["info"]["title"].as_str().unwrap(), "Get Users");
+        assert_eq!(json["info"]["version"].as_str().unwrap(), "1.0.0");
+        let paths = json["paths"].as_object().unwrap();
+        assert_eq!(paths.len(), 1);
+        let (_, path_obj) = paths.iter().next().unwrap();
+        let operation = &path_obj["get"];
+        assert!(operation.is_object());
+        let params = operation["parameters"].as_array().unwrap();
+        assert_eq!(params.len(), 2);
+    }
+
+    #[test]
+    fn test_export_openapi_collection_groups_by_path() {
+        let req1 = Request {
+            id: uuid::Uuid::new_v4(), name: "List Users".to_string(), method: Method::Get,
+            url: "https://api.example.com/users".to_string(),
+            headers: vec![], params: vec![], body: None, auth: None,
+        };
+        let req2 = Request {
+            id: uuid::Uuid::new_v4(), name: "Create User".to_string(), method: Method::Post,
+            url: "https://api.example.com/users".to_string(),
+            headers: vec![], params: vec![],
+            body: Some(Body::Json { content: r#"{"name":"Alice"}"#.to_string() }),
+            auth: None,
+        };
+        let collection = Collection {
+            id: uuid::Uuid::new_v4(), name: "User API".to_string(),
+            variables: HashMap::new(), requests: vec![req1, req2],
+        };
+        let json = export_openapi_collection(&collection);
+        let paths = json["paths"].as_object().unwrap();
+        assert_eq!(paths.len(), 1);
+        let users_path = &paths["/users"];
+        assert!(users_path["get"].is_object());
+        assert!(users_path["post"].is_object());
+    }
+
+    #[test]
+    fn test_export_openapi_request_body() {
+        let req = Request {
+            id: uuid::Uuid::new_v4(), name: "Create".to_string(), method: Method::Post,
+            url: "https://example.com/api/items".to_string(),
+            headers: vec![], params: vec![],
+            body: Some(Body::Json { content: r#"{"key":"val"}"#.to_string() }),
+            auth: None,
+        };
+        let json = export_openapi_request(&req);
+        let op = &json["paths"]["/api/items"]["post"];
+        let content = &op["requestBody"]["content"]["application/json"];
+        assert!(content.is_object());
+    }
+
+    #[test]
+    fn test_export_openapi_bearer_auth() {
+        let req = Request {
+            id: uuid::Uuid::new_v4(), name: "Test".to_string(), method: Method::Get,
+            url: "https://example.com/api".to_string(),
+            headers: vec![], params: vec![], body: None,
+            auth: Some(Auth::Bearer { token: "tok".to_string() }),
+        };
+        let json = export_openapi_request(&req);
+        let schemes = json["components"]["securitySchemes"].as_object().unwrap();
+        assert!(schemes.contains_key("bearerAuth"));
+        assert_eq!(schemes["bearerAuth"]["scheme"].as_str().unwrap(), "bearer");
+    }
+
+    #[test]
+    fn test_export_openapi_servers_from_url() {
+        let req = Request {
+            id: uuid::Uuid::new_v4(), name: "Test".to_string(), method: Method::Get,
+            url: "https://api.example.com/v1/users".to_string(),
+            headers: vec![], params: vec![], body: None, auth: None,
+        };
+        let json = export_openapi_request(&req);
+        let servers = json["servers"].as_array().unwrap();
+        assert_eq!(servers[0]["url"].as_str().unwrap(), "https://api.example.com");
     }
 }
