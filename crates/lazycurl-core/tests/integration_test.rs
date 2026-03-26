@@ -1,8 +1,8 @@
 use lazycurl_core::collection::{list_collections, load_collection, save_collection};
 use lazycurl_core::command::CurlCommandBuilder;
 use lazycurl_core::config::AppConfig;
-use lazycurl_core::history::append_entry_redacted;
 use lazycurl_core::init::initialize;
+use lazycurl_core::logging;
 use lazycurl_core::types::*;
 use lazycurl_core::variable::FileVariableResolver;
 use std::collections::HashMap;
@@ -123,30 +123,50 @@ fn test_variable_resolution_end_to_end() {
     assert_eq!(secrets, vec!["stg-secret-123".to_string()]);
 }
 
-/// Security: secrets never appear in history
+/// Security: secrets never appear in request logs
 #[test]
-fn test_secrets_redacted_in_history() {
+fn test_secrets_redacted_in_logs() {
     let tmp = tempfile::tempdir().unwrap();
-    let history_path = tmp.path().join("history.jsonl");
+    let logs_path = tmp.path().join("logs");
 
-    let entry = HistoryEntry {
+    let entry = RequestLogEntry {
         id: uuid::Uuid::new_v4(),
         timestamp: chrono::Utc::now(),
-        collection_id: None,
-        request_name: "Auth Request".to_string(),
-        method: Method::Post,
-        url: "https://api.example.com/login?key=super-secret-key".to_string(),
-        status_code: Some(200),
-        duration_ms: Some(50),
-        environment: Some("Production".to_string()),
-        project_id: None,
-        project_name: None,
+        project: None,
+        collection: None,
+        request: RequestLogData {
+            method: Method::Post,
+            url: "https://api.example.com/login?key=super-secret-key".to_string(),
+            url_template: None,
+            headers: vec![],
+            body: None,
+            body_template: None,
+            params: vec![],
+        },
+        response: Some(ResponseLogData {
+            status_code: 200,
+            status_text: "OK".to_string(),
+            headers: vec![],
+            body: None,
+            body_size_bytes: 0,
+            body_truncated: false,
+            body_type: "text".to_string(),
+            time_ms: 50,
+        }),
+        curl_command: String::new(),
+        error: None,
     };
 
     let secrets = vec!["super-secret-key".to_string()];
-    append_entry_redacted(&history_path, &entry, &secrets).unwrap();
+    logging::log_request(&logs_path, &entry, &secrets, 65536).unwrap();
 
-    let content = std::fs::read_to_string(&history_path).unwrap();
+    // Find the log file and verify secrets are redacted
+    let files: Vec<_> = std::fs::read_dir(&logs_path)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(files.len(), 1);
+    let content = std::fs::read_to_string(files[0].path()).unwrap();
     assert!(!content.contains("super-secret-key"));
     assert!(content.contains("[REDACTED]"));
 }

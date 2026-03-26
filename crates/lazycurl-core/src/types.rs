@@ -157,27 +157,6 @@ pub struct Project {
     pub active_environment: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HistoryEntry {
-    pub id: uuid::Uuid,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub collection_id: Option<uuid::Uuid>,
-    pub request_name: String,
-    pub method: Method,
-    pub url: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status_code: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub duration_ms: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub environment: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<uuid::Uuid>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_name: Option<String>,
-}
-
 /// Timing breakdown for curl responses
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResponseTiming {
@@ -482,56 +461,6 @@ mod tests {
         let json = r#"{"id":"00000000-0000-0000-0000-000000000000","name":"Test"}"#;
         let project: Project = serde_json::from_str(json).unwrap();
         assert!(project.active_environment.is_none());
-    }
-
-    #[test]
-    fn test_history_entry_roundtrip() {
-        let entry = HistoryEntry {
-            id: uuid::Uuid::new_v4(),
-            timestamp: chrono::Utc::now(),
-            collection_id: None,
-            request_name: "Get Users".to_string(),
-            method: Method::Get,
-            url: "https://api.example.com/users".to_string(),
-            status_code: Some(200),
-            duration_ms: Some(142),
-            environment: Some("Development".to_string()),
-            project_id: None,
-            project_name: None,
-        };
-        let json = serde_json::to_string(&entry).unwrap();
-        let deserialized: HistoryEntry = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.request_name, "Get Users");
-        assert_eq!(deserialized.status_code, Some(200));
-    }
-
-    #[test]
-    fn test_history_entry_with_project_fields() {
-        let entry = HistoryEntry {
-            id: uuid::Uuid::new_v4(),
-            timestamp: chrono::Utc::now(),
-            collection_id: None,
-            request_name: "Test".to_string(),
-            method: Method::Get,
-            url: "https://example.com".to_string(),
-            status_code: Some(200),
-            duration_ms: Some(100),
-            environment: None,
-            project_id: Some(uuid::Uuid::new_v4()),
-            project_name: Some("My API".to_string()),
-        };
-        let json = serde_json::to_string(&entry).unwrap();
-        let deserialized: HistoryEntry = serde_json::from_str(&json).unwrap();
-        assert!(deserialized.project_id.is_some());
-        assert_eq!(deserialized.project_name, Some("My API".to_string()));
-    }
-
-    #[test]
-    fn test_history_entry_backward_compat() {
-        let json = r#"{"id":"00000000-0000-0000-0000-000000000000","timestamp":"2026-01-01T00:00:00Z","request_name":"Test","method":"GET","url":"https://example.com"}"#;
-        let entry: HistoryEntry = serde_json::from_str(json).unwrap();
-        assert!(entry.project_id.is_none());
-        assert!(entry.project_name.is_none());
     }
 
     #[test]

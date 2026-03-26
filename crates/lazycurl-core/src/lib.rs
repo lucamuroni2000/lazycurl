@@ -2,7 +2,6 @@ pub mod collection;
 pub mod command;
 pub mod config;
 pub mod environment;
-pub mod history;
 pub mod init;
 pub mod logging;
 pub mod migration;

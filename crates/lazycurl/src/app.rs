@@ -2,9 +2,10 @@ use std::time::Instant;
 
 use lazycurl_core::command::CurlCommandBuilder;
 use lazycurl_core::config::{config_dir, AppConfig};
-use lazycurl_core::history::append_entry_dual;
+use lazycurl_core::logging;
 use lazycurl_core::types::{
-    Auth, Body, Collection, CurlResponse, Environment, HistoryEntry, Method, Request,
+    Auth, Body, Collection, CurlResponse, Environment, LogHeader, LogParam, Method, Request,
+    RequestLogData, RequestLogEntry, ResponseLogData,
 };
 use lazycurl_core::variable::FileVariableResolver;
 
@@ -114,6 +115,8 @@ pub enum Action {
     OpenProjectPicker,
     #[allow(dead_code)]
     CloseProject,
+    #[allow(dead_code)]
+    OpenLogViewer,
     None,
 }
 
@@ -193,6 +196,31 @@ pub struct App {
     pub env_manager_renaming: Option<usize>,
     pub env_manager_confirm_delete: Option<usize>,
     pub env_manager_name_input: crate::text_input::TextInput,
+    // Log viewer
+    #[allow(dead_code)]
+    pub show_log_viewer: bool,
+    #[allow(dead_code)]
+    pub log_viewer_entries: Vec<lazycurl_core::types::RequestLogEntry>,
+    #[allow(dead_code)]
+    pub log_viewer_cursor: usize,
+    #[allow(dead_code)]
+    pub log_viewer_show_detail: bool,
+    #[allow(dead_code)]
+    pub log_viewer_filter: String,
+    #[allow(dead_code)]
+    pub log_viewer_search: String,
+    #[allow(dead_code)]
+    pub log_viewer_editing_filter: bool,
+    #[allow(dead_code)]
+    pub log_viewer_editing_search: bool,
+    #[allow(dead_code)]
+    pub log_viewer_filter_input: crate::text_input::TextInput,
+    #[allow(dead_code)]
+    pub log_viewer_search_input: crate::text_input::TextInput,
+    #[allow(dead_code)]
+    pub log_viewer_loaded_dates: Vec<String>,
+    #[allow(dead_code)]
+    pub log_write_failed: bool,
 }
 
 impl App {
@@ -243,6 +271,18 @@ impl App {
             env_manager_renaming: None,
             env_manager_confirm_delete: None,
             env_manager_name_input: crate::text_input::TextInput::new(""),
+            show_log_viewer: false,
+            log_viewer_entries: Vec::new(),
+            log_viewer_cursor: 0,
+            log_viewer_show_detail: false,
+            log_viewer_filter: String::new(),
+            log_viewer_search: String::new(),
+            log_viewer_editing_filter: false,
+            log_viewer_editing_search: false,
+            log_viewer_filter_input: crate::text_input::TextInput::new(""),
+            log_viewer_search_input: crate::text_input::TextInput::new(""),
+            log_viewer_loaded_dates: Vec::new(),
+            log_write_failed: false,
         }
     }
 
@@ -388,6 +428,102 @@ impl App {
         }
     }
 
+    // ── Log viewer ───────────────────────────────────────────────
+
+    /// Open the log viewer, loading today's entries.
+    #[allow(dead_code)]
+    pub fn open_log_viewer(&mut self) {
+        let logs_path = lazycurl_core::logging::logs_dir();
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        self.log_viewer_entries = lazycurl_core::logging::read_request_logs(&logs_path, Some(&today))
+            .unwrap_or_default();
+        self.log_viewer_entries.reverse(); // Most recent first
+        self.log_viewer_loaded_dates = vec![today];
+        self.log_viewer_cursor = 0;
+        self.log_viewer_show_detail = false;
+        self.log_viewer_filter.clear();
+        self.log_viewer_search.clear();
+        self.show_log_viewer = true;
+    }
+
+    /// Return filtered log entries based on the current filter string.
+    #[allow(dead_code)]
+    pub fn filtered_log_entries(&self) -> Vec<lazycurl_core::types::RequestLogEntry> {
+        if self.log_viewer_filter.is_empty() {
+            return self.log_viewer_entries.clone();
+        }
+
+        let tokens: Vec<&str> = self.log_viewer_filter.split_whitespace().collect();
+        self.log_viewer_entries
+            .iter()
+            .filter(|entry| {
+                tokens.iter().all(|token| {
+                    let upper = token.to_uppercase();
+                    // Check if it's an HTTP method
+                    if matches!(upper.as_str(), "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS") {
+                        return entry.request.method.to_string() == upper;
+                    }
+                    // Check if it's a status class (e.g., "4xx", "2xx")
+                    if upper.len() == 3 && upper.ends_with("XX") {
+                        if let Some(class) = upper.chars().next().and_then(|c| c.to_digit(10)) {
+                            if let Some(ref resp) = entry.response {
+                                return (resp.status_code / 100) as u32 == class;
+                            }
+                            return false;
+                        }
+                    }
+                    // Check if it's an exact status code
+                    if let Ok(code) = token.parse::<u16>() {
+                        if (100..600).contains(&code) {
+                            if let Some(ref resp) = entry.response {
+                                return resp.status_code == code;
+                            }
+                            return false;
+                        }
+                    }
+                    // URL substring match (case-insensitive)
+                    entry.request.url.to_lowercase().contains(&token.to_lowercase())
+                })
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Load a log entry back into the request editor for re-sending.
+    #[allow(dead_code)]
+    pub fn load_log_entry_into_editor(&mut self, entry: lazycurl_core::types::RequestLogEntry) {
+        let url = entry.request.url_template.unwrap_or(entry.request.url);
+        let headers: Vec<lazycurl_core::types::Header> = entry.request.headers.iter().map(|h| lazycurl_core::types::Header {
+            key: h.name.clone(),
+            value: h.value_template.clone().unwrap_or_else(|| h.value.clone()),
+            enabled: true,
+        }).collect();
+        let params: Vec<lazycurl_core::types::Param> = entry.request.params.iter().map(|p| lazycurl_core::types::Param {
+            key: p.name.clone(),
+            value: p.value.clone(),
+            enabled: true,
+        }).collect();
+
+        let request = Request {
+            id: uuid::Uuid::new_v4(),
+            name: "From Log".to_string(),
+            method: entry.request.method,
+            url,
+            headers,
+            params,
+            body: entry.request.body_template
+                .or(entry.request.body)
+                .map(|content| Body::Json { content }),
+            auth: None,
+        };
+
+        if let Some(ws) = self.active_workspace_mut() {
+            ws.data.current_request = Some(request);
+        }
+        self.load_request_into_inputs();
+        self.status_message = Some("Loaded request from log".to_string());
+    }
+
     // ── Request execution ────────────────────────────────────────
 
     pub async fn send_request(&mut self) {
@@ -424,14 +560,7 @@ impl App {
             .selected_collection
             .and_then(|i| ws.data.collections.get(i))
             .map(|c| c.id);
-        let env_name = ws
-            .data
-            .active_environment
-            .and_then(|i| ws.data.environments.get(i))
-            .map(|e| e.name.clone());
-        let project_id = Some(ws.data.project.id);
         let project_name = Some(ws.data.project.name.clone());
-        let slug = ws.data.slug.clone();
         let default_timeout = self.config.default_timeout;
         let max_size = self.config.max_response_body_size_bytes as usize;
 
@@ -604,26 +733,59 @@ impl App {
                     resp.status_code, request.method, resp.timing.total_ms
                 ));
 
-                // Log to history (dual: global + project)
-                let global_history = config_dir().join("history.jsonl");
-                let project_history = config_dir()
-                    .join("projects")
-                    .join(&slug)
-                    .join("history.jsonl");
-                let entry = HistoryEntry {
+                // Log request to JSONL file
+                let logs_path = logging::logs_dir();
+                let log_entry = RequestLogEntry {
                     id: uuid::Uuid::new_v4(),
                     timestamp: chrono::Utc::now(),
-                    collection_id,
-                    request_name: request.name.clone(),
-                    method: request.method,
-                    url: resolved_url,
-                    status_code: Some(resp.status_code),
-                    duration_ms: Some(resp.timing.total_ms as u64),
-                    environment: env_name,
-                    project_id,
-                    project_name,
+                    project: project_name.clone(),
+                    collection: collection_id.map(|_| request.name.clone()),
+                    request: RequestLogData {
+                        method: request.method,
+                        url: resolved_url.clone(),
+                        url_template: if resolved_url != request.url {
+                            Some(request.url.clone())
+                        } else {
+                            None
+                        },
+                        headers: request.headers.iter().filter(|h| h.enabled).map(|h| {
+                            LogHeader {
+                                name: h.key.clone(),
+                                value: h.value.clone(),
+                                value_template: None,
+                            }
+                        }).collect(),
+                        body: request.body.as_ref().and_then(|b| match b {
+                            Body::Json { content } | Body::Text { content } => Some(content.clone()),
+                            _ => None,
+                        }),
+                        body_template: None,
+                        params: request.params.iter().filter(|p| p.enabled).map(|p| {
+                            LogParam {
+                                name: p.key.clone(),
+                                value: p.value.clone(),
+                            }
+                        }).collect(),
+                    },
+                    response: Some(ResponseLogData {
+                        status_code: resp.status_code,
+                        status_text: format!("{}", resp.status_code),
+                        headers: resp.headers.iter().map(|(k, v)| LogHeader {
+                            name: k.clone(),
+                            value: v.clone(),
+                            value_template: None,
+                        }).collect(),
+                        body: if resp.body.is_empty() { None } else { Some(resp.body.clone()) },
+                        body_size_bytes: resp.body.len() as u64,
+                        body_truncated: false,
+                        body_type: "text".to_string(),
+                        time_ms: resp.timing.total_ms as u64,
+                    }),
+                    curl_command: resp.raw_command.clone(),
+                    error: None,
                 };
-                let _ = append_entry_dual(&global_history, &project_history, &entry, &secrets);
+                let max_log_body = self.config.max_log_body_size_bytes as usize;
+                let _ = logging::log_request(&logs_path, &log_entry, &secrets, max_log_body);
 
                 // Write response back to workspace
                 if let Some(ws) = self.active_workspace_mut() {
@@ -632,6 +794,32 @@ impl App {
             }
             Err(e) => {
                 self.status_message = Some(format!("Error: {}", e));
+                // Log failed request
+                let logs_path = logging::logs_dir();
+                let log_entry = RequestLogEntry {
+                    id: uuid::Uuid::new_v4(),
+                    timestamp: chrono::Utc::now(),
+                    project: project_name.clone(),
+                    collection: None,
+                    request: RequestLogData {
+                        method: request.method,
+                        url: resolved_url.clone(),
+                        url_template: if resolved_url != request.url {
+                            Some(request.url.clone())
+                        } else {
+                            None
+                        },
+                        headers: vec![],
+                        body: None,
+                        body_template: None,
+                        params: vec![],
+                    },
+                    response: None,
+                    curl_command: String::new(),
+                    error: Some(e.to_string()),
+                };
+                let max_log_body = self.config.max_log_body_size_bytes as usize;
+                let _ = logging::log_request(&logs_path, &log_entry, &secrets, max_log_body);
             }
         }
     }
