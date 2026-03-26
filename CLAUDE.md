@@ -7,7 +7,7 @@ Terminal-native Postman replacement built in Rust.
 ```bash
 cargo build --workspace          # Build everything
 cargo run -p lazycurl            # Launch the TUI
-cargo test --workspace           # Run all tests (~115)
+cargo test --workspace           # Run all tests (~123)
 cargo install --path crates/lazycurl  # Install to ~/.cargo/bin/
 ```
 
@@ -32,8 +32,8 @@ Cargo workspace with two crates:
 | `collection.rs` | Collection CRUD with slug-based file naming |
 | `environment.rs` | Environment CRUD |
 | `config.rs` | `AppConfig` with keybinding merge, file persistence |
-| `history.rs` | Append-only JSONL history with secret scrubbing |
 | `init.rs` | First-run directory setup |
+| `logging.rs` | Structured logging setup |
 | `project.rs` | Project CRUD, slug-based directory management |
 | `migration.rs` | One-time migration from flat layout to project-based structure |
 
@@ -42,6 +42,7 @@ Cargo workspace with two crates:
 | Module | Purpose |
 |---|---|
 | `app.rs` | App state, `InputMode` (Normal/Editing), `Action` enum, all state mutation methods |
+| `events.rs` | Terminal event handling and dispatch |
 | `input.rs` | Config-driven keybinding dispatch, `resolve_action`/`resolve_navigation`/`resolve_editing` |
 | `text_input.rs` | Reusable single-line text input with cursor |
 | `ui/` | All rendering (see below) |
@@ -61,6 +62,7 @@ Cargo workspace with two crates:
 | `picker.rs` | Collection picker for save-to-collection flow |
 | `project_picker.rs` | Project switcher overlay |
 | `project_tabs.rs` | Project tab bar in title row |
+| `log_viewer.rs` | Log viewer overlay rendering |
 
 ### Input mode pattern
 
@@ -131,8 +133,8 @@ Every new feature or bugfix follows test-first development:
 ### Running tests
 
 ```bash
-cargo test --workspace                          # All tests (~115)
-cargo test -p lazycurl-core                     # Core library only (~96)
+cargo test --workspace                          # All tests (~123)
+cargo test -p lazycurl-core                     # Core library only (~104)
 cargo test -p lazycurl-core -- secret           # Only secret module tests
 cargo test -p lazycurl-core -- variable::tests  # Only variable module tests
 cargo test -p lazycurl                          # TUI crate tests (11 text_input tests)
@@ -155,8 +157,3 @@ cargo test -p lazycurl                          # TUI crate tests (11 text_input
 
 - **CI** (`.github/workflows/ci.yml`): Runs on push to main and PRs — fmt check, clippy, cross-platform tests (Linux, macOS, Windows)
 - **Release** (`.github/workflows/release.yml`): Triggered by `v*.*.*` tags — builds release binaries for Linux x86_64, macOS x86_64 + ARM, Windows x86_64, then creates a GitHub Release with assets
-
-## Dependencies
-
-Core: serde, serde_json, tokio, uuid, dirs, chrono, thiserror, tempfile
-TUI: ratatui, crossterm, serde_json

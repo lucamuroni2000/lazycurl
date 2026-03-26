@@ -19,8 +19,9 @@ Built with Rust using [Ratatui](https://ratatui.rs/) and [crossterm](https://git
 - **Secret variables** — marked values are redacted in history, logs, and copy-to-clipboard
 - Configurable keybindings
 - Request history with automatic secret scrubbing
-- Copy request as `curl` command
+- Copy request as `curl` command or response body to clipboard
 - JSON response highlighting
+- Built-in log viewer with filtering
 
 ## Installation
 
@@ -68,7 +69,11 @@ On first run it creates a config directory (`~/.config/lazycurl/` on Linux/macOS
 | `Ctrl+S` | Save request |
 | `Ctrl+N` | New request / collection |
 | `Ctrl+E` | Cycle environment |
+| `Ctrl+Y` | Copy request as curl command |
 | `v` | Open variables editor |
+| `y` | Copy response body to clipboard |
+| `/` | Search |
+| `Ctrl+L` | Open log viewer |
 | `?` | Help |
 | `Ctrl+Q` | Quit |
 
@@ -89,7 +94,7 @@ All logic lives in `lazycurl-core` so it can be tested without a terminal. The b
 
 ```bash
 cargo build --workspace           # Build
-cargo test --workspace            # Run tests (~115)
+cargo test --workspace            # Run tests (~123)
 cargo fmt --all --check           # Check formatting
 cargo clippy --workspace -- -D warnings  # Lint
 ```
