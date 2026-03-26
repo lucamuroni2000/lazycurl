@@ -459,6 +459,24 @@ async fn run_loop(
                         }
                     }
                     Action::Rename => app.handle_rename(),
+                    // Copy response body to clipboard (y in Response pane)
+                    Action::CharInput('y')
+                        if app.active_pane == app::Pane::Response
+                            && app.input_mode == app::InputMode::Normal =>
+                    {
+                        if let Some(resp) = app.last_response() {
+                            let text = if resp.body.is_empty() {
+                                "[no response body]".to_string()
+                            } else {
+                                resp.body.clone()
+                            };
+                            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                                let _ = clipboard.set_text(&text);
+                                app.status_message =
+                                    Some("Copied response body to clipboard".to_string());
+                            }
+                        }
+                    }
                     // Editing actions
                     Action::CharInput(c) => {
                         if let Some(input) = app.active_text_input() {

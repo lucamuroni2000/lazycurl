@@ -205,6 +205,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                 hints.push(Span::styled(":tab ", hint_style));
                 hints.push(Span::styled("Up/Down", key_style));
                 hints.push(Span::styled(":scroll ", hint_style));
+                hints.push(Span::styled("y", key_style));
+                hints.push(Span::styled(":copy body ", hint_style));
             }
         }
 
