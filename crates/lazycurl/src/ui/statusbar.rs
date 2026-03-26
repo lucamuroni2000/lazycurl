@@ -202,14 +202,30 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                 // Tab-specific hints
                 match app.request_tab() {
                     RequestTab::Headers => {
+                        hints.push(Span::styled("Up/Down", key_style));
+                        hints.push(Span::styled(":navigate ", hint_style));
+                        hints.push(Span::styled("Enter", key_style));
+                        hints.push(Span::styled(":edit ", hint_style));
                         hints.push(Span::styled("a", key_style));
-                        hints.push(Span::styled(":add header ", hint_style));
+                        hints.push(Span::styled(":add ", hint_style));
+                        hints.push(Span::styled("d", key_style));
+                        hints.push(Span::styled(":delete ", hint_style));
+                        hints.push(Span::styled("s", key_style));
+                        hints.push(Span::styled(":toggle ", hint_style));
                     }
                     RequestTab::Body => {}
                     RequestTab::Auth => {}
                     RequestTab::Params => {
+                        hints.push(Span::styled("Up/Down", key_style));
+                        hints.push(Span::styled(":navigate ", hint_style));
+                        hints.push(Span::styled("Enter", key_style));
+                        hints.push(Span::styled(":edit ", hint_style));
                         hints.push(Span::styled("a", key_style));
-                        hints.push(Span::styled(":add param ", hint_style));
+                        hints.push(Span::styled(":add ", hint_style));
+                        hints.push(Span::styled("d", key_style));
+                        hints.push(Span::styled(":delete ", hint_style));
+                        hints.push(Span::styled("s", key_style));
+                        hints.push(Span::styled(":toggle ", hint_style));
                     }
                 }
 
