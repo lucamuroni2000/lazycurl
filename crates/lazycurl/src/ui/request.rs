@@ -166,27 +166,110 @@ fn draw_headers(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    let is_focused = app.active_pane == Pane::Request;
     let mut lines = Vec::new();
+    let mut cursor_pos: Option<(u16, u16)> = None;
+
     for (i, header) in req.headers.iter().enumerate() {
+        let is_selected = i == app.header_cursor && is_focused;
         let enabled = if header.enabled { " " } else { "x" };
-        let style = if !header.enabled {
+
+        let editing_key = app.input_mode == InputMode::Editing
+            && app.edit_field == Some(EditField::HeaderKey(i));
+        let editing_value = app.input_mode == InputMode::Editing
+            && app.edit_field == Some(EditField::HeaderValue(i));
+
+        let key_display = if editing_key {
+            app.header_key_inputs
+                .get(i)
+                .map(|inp| inp.content().to_string())
+                .unwrap_or_default()
+        } else {
+            header.key.clone()
+        };
+
+        let value_display = if editing_value {
+            app.header_value_inputs
+                .get(i)
+                .map(|inp| inp.content().to_string())
+                .unwrap_or_default()
+        } else {
+            header.value.clone()
+        };
+
+        let base_style = if !header.enabled {
             Style::default().fg(Color::DarkGray)
         } else {
             Style::default().fg(Color::White)
         };
+
+        let key_style = if editing_key {
+            Style::default().fg(Color::Yellow).bg(Color::DarkGray)
+        } else if is_selected {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default().fg(Color::Yellow)
+        };
+
+        let value_style = if editing_value {
+            base_style.bg(Color::DarkGray)
+        } else if is_selected {
+            base_style.add_modifier(Modifier::REVERSED)
+        } else {
+            base_style
+        };
+
+        let marker_style = if is_selected {
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
+        let sep_style = if is_selected {
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
         lines.push(Line::from(vec![
-            Span::styled(
-                format!("[{}] ", enabled),
-                Style::default().fg(Color::DarkGray),
-            ),
-            Span::styled(&header.key, Style::default().fg(Color::Yellow)),
-            Span::styled(": ", Style::default().fg(Color::DarkGray)),
-            Span::styled(&header.value, style),
+            Span::styled(format!("[{}] ", enabled), marker_style),
+            Span::styled(key_display.clone(), key_style),
+            Span::styled(": ", sep_style),
+            Span::styled(value_display, value_style),
         ]));
-        let _ = i; // used for future selection highlighting
+
+        if editing_key {
+            if let Some(inp) = app.header_key_inputs.get(i) {
+                let prefix_len = 4; // "[x] "
+                let cx = area.x + prefix_len + inp.cursor() as u16;
+                let cy = area.y + i as u16;
+                if cx < area.x + area.width && cy < area.y + area.height {
+                    cursor_pos = Some((cx, cy));
+                }
+            }
+        } else if editing_value {
+            if let Some(inp) = app.header_value_inputs.get(i) {
+                let prefix_len = 4 + key_display.len() as u16 + 2; // "[x] " + key + ": "
+                let cx = area.x + prefix_len + inp.cursor() as u16;
+                let cy = area.y + i as u16;
+                if cx < area.x + area.width && cy < area.y + area.height {
+                    cursor_pos = Some((cx, cy));
+                }
+            }
+        }
     }
 
     frame.render_widget(Paragraph::new(lines), area);
+
+    if let Some((cx, cy)) = cursor_pos {
+        frame.set_cursor_position((cx, cy));
+    }
 }
 
 fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
@@ -274,26 +357,110 @@ fn draw_params(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    let is_focused = app.active_pane == Pane::Request;
     let mut lines = Vec::new();
-    for param in &req.params {
+    let mut cursor_pos: Option<(u16, u16)> = None;
+
+    for (i, param) in req.params.iter().enumerate() {
+        let is_selected = i == app.param_cursor && is_focused;
         let enabled = if param.enabled { " " } else { "x" };
-        let style = if !param.enabled {
+
+        let editing_key = app.input_mode == InputMode::Editing
+            && app.edit_field == Some(EditField::ParamKey(i));
+        let editing_value = app.input_mode == InputMode::Editing
+            && app.edit_field == Some(EditField::ParamValue(i));
+
+        let key_display = if editing_key {
+            app.param_key_inputs
+                .get(i)
+                .map(|inp| inp.content().to_string())
+                .unwrap_or_default()
+        } else {
+            param.key.clone()
+        };
+
+        let value_display = if editing_value {
+            app.param_value_inputs
+                .get(i)
+                .map(|inp| inp.content().to_string())
+                .unwrap_or_default()
+        } else {
+            param.value.clone()
+        };
+
+        let base_style = if !param.enabled {
             Style::default().fg(Color::DarkGray)
         } else {
             Style::default().fg(Color::White)
         };
+
+        let key_style = if editing_key {
+            Style::default().fg(Color::Yellow).bg(Color::DarkGray)
+        } else if is_selected {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default().fg(Color::Yellow)
+        };
+
+        let value_style = if editing_value {
+            base_style.bg(Color::DarkGray)
+        } else if is_selected {
+            base_style.add_modifier(Modifier::REVERSED)
+        } else {
+            base_style
+        };
+
+        let marker_style = if is_selected {
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
+        let sep_style = if is_selected {
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
         lines.push(Line::from(vec![
-            Span::styled(
-                format!("[{}] ", enabled),
-                Style::default().fg(Color::DarkGray),
-            ),
-            Span::styled(&param.key, Style::default().fg(Color::Yellow)),
-            Span::styled("=", Style::default().fg(Color::DarkGray)),
-            Span::styled(&param.value, style),
+            Span::styled(format!("[{}] ", enabled), marker_style),
+            Span::styled(key_display.clone(), key_style),
+            Span::styled("=", sep_style),
+            Span::styled(value_display, value_style),
         ]));
+
+        if editing_key {
+            if let Some(inp) = app.param_key_inputs.get(i) {
+                let prefix_len = 4; // "[x] "
+                let cx = area.x + prefix_len + inp.cursor() as u16;
+                let cy = area.y + i as u16;
+                if cx < area.x + area.width && cy < area.y + area.height {
+                    cursor_pos = Some((cx, cy));
+                }
+            }
+        } else if editing_value {
+            if let Some(inp) = app.param_value_inputs.get(i) {
+                let prefix_len = 4 + key_display.len() as u16 + 1; // "[x] " + key + "="
+                let cx = area.x + prefix_len + inp.cursor() as u16;
+                let cy = area.y + i as u16;
+                if cx < area.x + area.width && cy < area.y + area.height {
+                    cursor_pos = Some((cx, cy));
+                }
+            }
+        }
     }
 
     frame.render_widget(Paragraph::new(lines), area);
+
+    if let Some((cx, cy)) = cursor_pos {
+        frame.set_cursor_position((cx, cy));
+    }
 }
 
 pub fn draw_method_picker(frame: &mut Frame, app: &App, request_area: Rect) {
