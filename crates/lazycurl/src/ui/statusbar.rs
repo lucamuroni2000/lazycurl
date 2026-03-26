@@ -144,6 +144,26 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    if app.show_export_picker {
+        hints.push(Span::styled(" j/k", key_style));
+        hints.push(Span::styled(":select ", hint_style));
+        if app.export_collection_available {
+            hints.push(Span::styled("Tab", key_style));
+            hints.push(Span::styled(":scope ", hint_style));
+        }
+        hints.push(Span::styled("Enter", key_style));
+        hints.push(Span::styled(":export ", hint_style));
+        hints.push(Span::styled("Esc", key_style));
+        hints.push(Span::styled(":cancel", hint_style));
+
+        let mut line_spans = vec![mode_indicator, Span::raw(" "), status_msg];
+        line_spans.extend(hints);
+        let line = Line::from(line_spans);
+        let status = Paragraph::new(line).style(Style::default().bg(Color::Black));
+        frame.render_widget(status, area);
+        return;
+    }
+
     if app.input_mode == InputMode::Editing {
         // Editing mode — show editing-specific hints
         hints.push(Span::styled(" Esc", key_style));
@@ -218,6 +238,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         hints.push(Span::styled(":project ", hint_style));
         hints.push(Span::styled("Ctrl+O", key_style));
         hints.push(Span::styled(":projects ", hint_style));
+        hints.push(Span::styled("Ctrl+Y", key_style));
+        hints.push(Span::styled(":export ", hint_style));
         hints.push(Span::styled("F5", key_style));
         hints.push(Span::styled(":send ", hint_style));
         hints.push(Span::styled("Ctrl+S", key_style));

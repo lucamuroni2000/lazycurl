@@ -33,7 +33,7 @@ pub fn draw(frame: &mut Frame) {
             "Ctrl+Shift+E",
             "Manage environments (from Variables overlay)",
         ),
-        binding("Ctrl+Y", "Copy request as curl command"),
+        binding("Ctrl+Y", "Export request/collection"),
         binding("y  (in Response)", "Copy response body to clipboard"),
         binding("Ctrl+L", "Open request log viewer"),
         Line::raw(""),
