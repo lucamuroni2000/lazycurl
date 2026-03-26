@@ -9,19 +9,26 @@ use crate::app::App;
 pub fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
 
-    // Clear the entire screen for full-screen overlay
-    frame.render_widget(Clear, area);
+    // Reserve bottom row for the status bar (rendered by statusbar.rs)
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(1)])
+        .split(area);
+    let content_area = outer[0];
+
+    // Clear only the content area (status bar stays)
+    frame.render_widget(Clear, content_area);
 
     if app.log_viewer_show_detail {
         // Split: top 40% list, bottom 60% detail
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-            .split(area);
+            .split(content_area);
         draw_list(frame, app, chunks[0]);
         draw_detail(frame, app, chunks[1]);
     } else {
-        draw_list(frame, app, area);
+        draw_list(frame, app, content_area);
     }
 }
 

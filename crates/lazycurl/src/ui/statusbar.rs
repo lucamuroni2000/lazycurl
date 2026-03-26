@@ -108,6 +108,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             hints.push(Span::styled(":re-send ", hint_style));
             hints.push(Span::styled("y", key_style));
             hints.push(Span::styled(":copy ", hint_style));
+            hints.push(Span::styled("Y", key_style));
+            hints.push(Span::styled(":path ", hint_style));
             hints.push(Span::styled("e", key_style));
             hints.push(Span::styled(":export ", hint_style));
             hints.push(Span::styled("Esc", key_style));
