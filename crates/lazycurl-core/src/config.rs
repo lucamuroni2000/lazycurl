@@ -11,6 +11,14 @@ fn default_max_body_size() -> u64 {
     10_485_760 // 10 MB
 }
 
+fn default_log_retention_days() -> u32 {
+    7
+}
+
+fn default_max_log_body_size() -> u64 {
+    65536 // 64 KB
+}
+
 fn default_keybindings() -> HashMap<String, String> {
     let mut map = HashMap::new();
     map.insert("send_request".into(), "ctrl+enter".into());
@@ -55,6 +63,10 @@ pub struct AppConfig {
     pub max_response_body_size_bytes: u64,
     #[serde(default)]
     pub debug_logging: bool,
+    #[serde(default = "default_log_retention_days")]
+    pub log_retention_days: u32,
+    #[serde(default = "default_max_log_body_size")]
+    pub max_log_body_size_bytes: u64,
     #[serde(default)]
     pub open_projects: Vec<String>,
     #[serde(default)]
@@ -72,6 +84,8 @@ impl Default for AppConfig {
             default_timeout: default_timeout(),
             max_response_body_size_bytes: default_max_body_size(),
             debug_logging: false,
+            log_retention_days: default_log_retention_days(),
+            max_log_body_size_bytes: default_max_log_body_size(),
             open_projects: Vec::new(),
             active_project: None,
             restore_session: SessionRestore::default(),
@@ -217,5 +231,33 @@ mod tests {
         assert!(config.open_projects.is_empty());
         assert!(config.active_project.is_none());
         assert_eq!(config.restore_session, SessionRestore::Auto);
+    }
+
+    #[test]
+    fn test_config_log_retention_days_default() {
+        let config = AppConfig::default();
+        assert_eq!(config.log_retention_days, 7);
+    }
+
+    #[test]
+    fn test_config_max_log_body_size_default() {
+        let config = AppConfig::default();
+        assert_eq!(config.max_log_body_size_bytes, 65536);
+    }
+
+    #[test]
+    fn test_config_backward_compat_no_log_fields() {
+        let json = r#"{"default_timeout": 30}"#;
+        let config = AppConfig::load_from_str(json).unwrap();
+        assert_eq!(config.log_retention_days, 7);
+        assert_eq!(config.max_log_body_size_bytes, 65536);
+    }
+
+    #[test]
+    fn test_config_custom_log_retention() {
+        let json = r#"{"log_retention_days": 14, "max_log_body_size_bytes": 131072}"#;
+        let config = AppConfig::load_from_str(json).unwrap();
+        assert_eq!(config.log_retention_days, 14);
+        assert_eq!(config.max_log_body_size_bytes, 131072);
     }
 }
