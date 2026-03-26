@@ -106,8 +106,10 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             hints.push(Span::styled(":search ", hint_style));
             hints.push(Span::styled("n/N", key_style));
             hints.push(Span::styled(":next/prev ", hint_style));
-            hints.push(Span::styled("c/C", key_style));
-            hints.push(Span::styled(":clear ", hint_style));
+            hints.push(Span::styled("c", key_style));
+            hints.push(Span::styled(":clear filter ", hint_style));
+            hints.push(Span::styled("C", key_style));
+            hints.push(Span::styled(":clear search ", hint_style));
             hints.push(Span::styled("r", key_style));
             hints.push(Span::styled(":re-send ", hint_style));
             hints.push(Span::styled("y", key_style));
