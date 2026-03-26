@@ -174,8 +174,8 @@ fn draw_headers(frame: &mut Frame, app: &App, area: Rect) {
         let is_selected = i == app.header_cursor && is_focused;
         let enabled = if header.enabled { " " } else { "x" };
 
-        let editing_key = app.input_mode == InputMode::Editing
-            && app.edit_field == Some(EditField::HeaderKey(i));
+        let editing_key =
+            app.input_mode == InputMode::Editing && app.edit_field == Some(EditField::HeaderKey(i));
         let editing_value = app.input_mode == InputMode::Editing
             && app.edit_field == Some(EditField::HeaderValue(i));
 
@@ -365,8 +365,8 @@ fn draw_params(frame: &mut Frame, app: &App, area: Rect) {
         let is_selected = i == app.param_cursor && is_focused;
         let enabled = if param.enabled { " " } else { "x" };
 
-        let editing_key = app.input_mode == InputMode::Editing
-            && app.edit_field == Some(EditField::ParamKey(i));
+        let editing_key =
+            app.input_mode == InputMode::Editing && app.edit_field == Some(EditField::ParamKey(i));
         let editing_value = app.input_mode == InputMode::Editing
             && app.edit_field == Some(EditField::ParamValue(i));
 

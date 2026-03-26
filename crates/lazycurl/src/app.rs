@@ -1746,28 +1746,26 @@ impl App {
                     self.status_message = Some(format!("Loaded: {}", name));
                 }
             }
-            Pane::Request => {
-                match self.request_tab() {
-                    RequestTab::Headers => {
-                        let count = self.current_request().map(|r| r.headers.len()).unwrap_or(0);
-                        if count > 0 && self.header_cursor < count {
-                            self.start_editing(EditField::HeaderKey(self.header_cursor));
-                        }
-                    }
-                    RequestTab::Params => {
-                        let count = self.current_request().map(|r| r.params.len()).unwrap_or(0);
-                        if count > 0 && self.param_cursor < count {
-                            self.start_editing(EditField::ParamKey(self.param_cursor));
-                        }
-                    }
-                    RequestTab::Body => {
-                        self.start_editing(EditField::BodyContent);
-                    }
-                    _ => {
-                        self.start_editing(EditField::Url);
+            Pane::Request => match self.request_tab() {
+                RequestTab::Headers => {
+                    let count = self.current_request().map(|r| r.headers.len()).unwrap_or(0);
+                    if count > 0 && self.header_cursor < count {
+                        self.start_editing(EditField::HeaderKey(self.header_cursor));
                     }
                 }
-            }
+                RequestTab::Params => {
+                    let count = self.current_request().map(|r| r.params.len()).unwrap_or(0);
+                    if count > 0 && self.param_cursor < count {
+                        self.start_editing(EditField::ParamKey(self.param_cursor));
+                    }
+                }
+                RequestTab::Body => {
+                    self.start_editing(EditField::BodyContent);
+                }
+                _ => {
+                    self.start_editing(EditField::Url);
+                }
+            },
             _ => {}
         }
     }
@@ -1798,21 +1796,19 @@ impl App {
                 self.move_collection_cursor_up();
                 self.adjust_collection_scroll(20); // approximate; UI will clamp
             }
-            Pane::Request => {
-                match self.request_tab() {
-                    RequestTab::Headers => {
-                        if self.header_cursor > 0 {
-                            self.header_cursor -= 1;
-                        }
+            Pane::Request => match self.request_tab() {
+                RequestTab::Headers => {
+                    if self.header_cursor > 0 {
+                        self.header_cursor -= 1;
                     }
-                    RequestTab::Params => {
-                        if self.param_cursor > 0 {
-                            self.param_cursor -= 1;
-                        }
-                    }
-                    _ => {}
                 }
-            }
+                RequestTab::Params => {
+                    if self.param_cursor > 0 {
+                        self.param_cursor -= 1;
+                    }
+                }
+                _ => {}
+            },
             Pane::Response => {
                 if let Some(ws) = self.active_workspace_mut() {
                     if ws.response_scroll > 0 {
