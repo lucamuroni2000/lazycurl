@@ -78,6 +78,7 @@ pub fn build_keymap(
         ("next_project", Action::NextProject),
         ("prev_project", Action::PrevProject),
         ("open_project", Action::OpenProjectPicker),
+        ("open_log_viewer", Action::OpenLogViewer),
     ];
 
     for (key, action) in action_map {

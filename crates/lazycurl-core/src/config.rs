@@ -38,6 +38,7 @@ fn default_keybindings() -> HashMap<String, String> {
     map.insert("next_project".into(), "f6".into());
     map.insert("prev_project".into(), "f7".into());
     map.insert("open_project".into(), "ctrl+o".into());
+    map.insert("open_log_viewer".into(), "ctrl+l".into());
     map
 }
 

@@ -311,6 +311,8 @@ async fn run_loop(
                     }
                     _ => {}
                 }
+            } else if app.show_log_viewer {
+                handle_log_viewer_action(app, &action);
             } else {
                 // Normal dispatch
                 match action {
@@ -338,6 +340,16 @@ async fn run_loop(
                     Action::ToggleRequest => app.toggle_pane(1),
                     Action::ToggleResponse => app.toggle_pane(2),
                     Action::RevealSecrets => app.secrets_revealed = !app.secrets_revealed,
+                    Action::OpenLogViewer => {
+                        if !app.show_method_picker
+                            && !app.show_collection_picker
+                            && !app.show_project_picker
+                            && !app.show_env_manager
+                            && !app.show_variables
+                        {
+                            app.open_log_viewer();
+                        }
+                    }
                     Action::Help => app.show_help = !app.show_help,
                     Action::OpenVariables => {
                         app.show_variables = true;
@@ -701,6 +713,144 @@ fn handle_env_manager_action(app: &mut App, action: &Action) {
         Action::CharInput('d') | Action::DeleteItem => {
             if env_count > 0 {
                 app.env_manager_request_delete();
+            }
+        }
+        Action::Quit => app.should_quit = true,
+        _ => {}
+    }
+}
+
+fn handle_log_viewer_action(app: &mut App, action: &Action) {
+    // Filter editing mode
+    if app.log_viewer_editing_filter {
+        match action {
+            Action::Enter => {
+                app.log_viewer_filter = app.log_viewer_filter_input.content().to_string();
+                app.log_viewer_editing_filter = false;
+                app.input_mode = app::InputMode::Normal;
+            }
+            Action::Cancel => {
+                app.log_viewer_editing_filter = false;
+                app.input_mode = app::InputMode::Normal;
+            }
+            Action::CharInput(c) => app.log_viewer_filter_input.insert_char(*c),
+            Action::Backspace => { app.log_viewer_filter_input.delete_char_before(); }
+            Action::Delete => { app.log_viewer_filter_input.delete_char_after(); }
+            Action::CursorLeft => { app.log_viewer_filter_input.move_left(); }
+            Action::CursorRight => { app.log_viewer_filter_input.move_right(); }
+            Action::Home => { app.log_viewer_filter_input.move_home(); }
+            Action::End => { app.log_viewer_filter_input.move_end(); }
+            Action::Quit => app.should_quit = true,
+            _ => {}
+        }
+        return;
+    }
+
+    // Search editing mode
+    if app.log_viewer_editing_search {
+        match action {
+            Action::Enter => {
+                app.log_viewer_search = app.log_viewer_search_input.content().to_string();
+                app.log_viewer_editing_search = false;
+                app.input_mode = app::InputMode::Normal;
+            }
+            Action::Cancel => {
+                app.log_viewer_editing_search = false;
+                app.input_mode = app::InputMode::Normal;
+            }
+            Action::CharInput(c) => app.log_viewer_search_input.insert_char(*c),
+            Action::Backspace => { app.log_viewer_search_input.delete_char_before(); }
+            Action::Delete => { app.log_viewer_search_input.delete_char_after(); }
+            Action::CursorLeft => { app.log_viewer_search_input.move_left(); }
+            Action::CursorRight => { app.log_viewer_search_input.move_right(); }
+            Action::Home => { app.log_viewer_search_input.move_home(); }
+            Action::End => { app.log_viewer_search_input.move_end(); }
+            Action::Quit => app.should_quit = true,
+            _ => {}
+        }
+        return;
+    }
+
+    // Normal log viewer mode
+    let entry_count = app.filtered_log_entries().len();
+
+    match action {
+        Action::OpenLogViewer | Action::Cancel => {
+            if app.log_viewer_show_detail {
+                app.log_viewer_show_detail = false;
+            } else {
+                app.show_log_viewer = false;
+            }
+        }
+        Action::MoveUp => {
+            if app.log_viewer_cursor > 0 {
+                app.log_viewer_cursor -= 1;
+            }
+        }
+        Action::MoveDown => {
+            if entry_count > 0 && app.log_viewer_cursor + 1 < entry_count {
+                app.log_viewer_cursor += 1;
+            }
+        }
+        Action::Enter => {
+            app.log_viewer_show_detail = !app.log_viewer_show_detail;
+        }
+        Action::CharInput('f') => {
+            app.log_viewer_editing_filter = true;
+            app.log_viewer_filter_input.set_content(&app.log_viewer_filter);
+            app.input_mode = app::InputMode::Editing;
+            app.log_viewer_search.clear();
+        }
+        Action::CharInput('/') | Action::Search => {
+            app.log_viewer_editing_search = true;
+            app.log_viewer_search_input.set_content(&app.log_viewer_search);
+            app.input_mode = app::InputMode::Editing;
+        }
+        Action::CharInput('r') => {
+            let filtered = app.filtered_log_entries();
+            if let Some(entry) = filtered.get(app.log_viewer_cursor) {
+                app.load_log_entry_into_editor(entry.clone());
+                app.show_log_viewer = false;
+            }
+        }
+        Action::CharInput('y') => {
+            let filtered = app.filtered_log_entries();
+            if let Some(entry) = filtered.get(app.log_viewer_cursor) {
+                let time = entry.timestamp.format("%H:%M:%S").to_string();
+                let method = entry.request.method.to_string();
+                let status = entry.response.as_ref()
+                    .map(|r| r.status_code.to_string())
+                    .unwrap_or_else(|| "ERR".to_string());
+                let duration = entry.response.as_ref()
+                    .map(|r| format!("{}ms", r.time_ms))
+                    .unwrap_or_else(|| "---".to_string());
+                let line = format!("{}  {}  {}  {}  {}", time, method, status, duration, entry.request.url);
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    let _ = clipboard.set_text(&line);
+                    app.status_message = Some("Copied to clipboard".to_string());
+                }
+            }
+        }
+        Action::CharInput('Y') => {
+            let logs_path = lazycurl_core::logging::logs_dir();
+            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                let _ = clipboard.set_text(logs_path.to_string_lossy().to_string());
+                app.status_message = Some(format!("Copied: {}", logs_path.display()));
+            }
+        }
+        Action::CharInput('e') => {
+            let filtered = app.filtered_log_entries();
+            let now = chrono::Utc::now().format("%Y-%m-%d-%H%M%S").to_string();
+            let filename = format!("lazycurl-export-{}.jsonl", now);
+            let path = std::env::current_dir().unwrap_or_default().join(&filename);
+            if let Ok(mut file) = std::fs::File::create(&path) {
+                use std::io::Write;
+                for entry in &filtered {
+                    if let Ok(line) = serde_json::to_string(entry) {
+                        let _ = writeln!(file, "{}", line);
+                    }
+                }
+                app.status_message = Some(format!("Exported to {}", path.display()));
             }
         }
         Action::Quit => app.should_quit = true,
