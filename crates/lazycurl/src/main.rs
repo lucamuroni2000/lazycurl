@@ -30,6 +30,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_path = config_root.join("config.json");
     let config = AppConfig::load_from(&config_path)?;
 
+    // Clean up expired log files
+    let logs_path = lazycurl_core::logging::logs_dir();
+    let _ = lazycurl_core::logging::cleanup_expired_logs(&logs_path, config.log_retention_days);
+
+    // Parse --debug CLI flag
+    let debug_enabled = config.debug_logging || std::env::args().any(|a| a == "--debug");
+
+    // Initialize debug logger if enabled
+    if debug_enabled {
+        let logs_path = lazycurl_core::logging::logs_dir();
+        std::fs::create_dir_all(&logs_path).ok();
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let log_file_path = logs_path.join(format!("debug-{}.log", today));
+        if let Ok(log_file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_file_path)
+        {
+            let _ = simplelog::WriteLogger::init(
+                simplelog::LevelFilter::Debug,
+                simplelog::ConfigBuilder::new()
+                    .set_time_format_rfc3339()
+                    .build(),
+                log_file,
+            );
+        }
+    }
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
