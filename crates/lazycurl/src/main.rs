@@ -19,6 +19,8 @@ use ratatui::Terminal;
 use app::{Action, App, EditField};
 use lazycurl_core::config::{config_dir, AppConfig};
 use lazycurl_core::export::{self, ExportFormat};
+use lazycurl_core::types::{Auth, Body};
+use lazycurl_core::variable::FileVariableResolver;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -1180,9 +1182,15 @@ fn handle_export_picker_action(app: &mut App, action: &Action) {
 fn execute_export(app: &mut App, format: ExportFormat) {
     match format {
         ExportFormat::Curl => {
-            if let Some(req) = app.current_request() {
-                let req = req.clone();
-                let curl_str = export::export_curl(&req, &[]);
+            if let Some(req) = app.current_request().cloned() {
+                let (resolved_req, secrets) = match resolve_request(app, &req) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        app.status_message = Some(format!("Variable error: {}", e));
+                        return;
+                    }
+                };
+                let curl_str = export::export_curl(&resolved_req, &secrets);
                 if let Ok(mut clipboard) = arboard::Clipboard::new() {
                     let _ = clipboard.set_text(&curl_str);
                 }
@@ -1248,4 +1256,140 @@ fn execute_export(app: &mut App, format: ExportFormat) {
             }
         }
     }
+}
+
+/// Build a FileVariableResolver from the app's current variable stores
+/// and resolve all fields of a Request, returning the resolved request
+/// and a list of secret values for redaction.
+fn resolve_request(
+    app: &App,
+    req: &lazycurl_core::types::Request,
+) -> Result<(lazycurl_core::types::Request, Vec<String>), lazycurl_core::variable::ResolveError> {
+    let ws = app.active_workspace();
+    let global_vars = app.config.variables.clone();
+    let env_vars = ws.and_then(|ws| {
+        ws.data
+            .active_environment
+            .and_then(|i| ws.data.environments.get(i))
+            .map(|e| e.variables.clone())
+    });
+    let col_vars = ws.and_then(|ws| {
+        ws.data
+            .selected_collection
+            .and_then(|i| ws.data.collections.get(i))
+            .map(|c| c.variables.clone())
+    });
+
+    let resolver = FileVariableResolver::new(global_vars, env_vars, col_vars);
+    let mut secrets = Vec::new();
+
+    // Resolve URL
+    let (resolved_url, s) = resolver.resolve(&req.url)?;
+    secrets.extend(s);
+
+    // Resolve headers
+    let mut resolved_headers = Vec::new();
+    for header in &req.headers {
+        if header.enabled {
+            let (resolved_val, s) = resolver.resolve(&header.value)?;
+            secrets.extend(s);
+            resolved_headers.push(lazycurl_core::types::Header {
+                key: header.key.clone(),
+                value: resolved_val,
+                enabled: true,
+            });
+        }
+    }
+
+    // Resolve params
+    let mut resolved_params = Vec::new();
+    for param in &req.params {
+        if param.enabled {
+            let (resolved_val, s) = resolver.resolve(&param.value)?;
+            secrets.extend(s);
+            resolved_params.push(lazycurl_core::types::Param {
+                key: param.key.clone(),
+                value: resolved_val,
+                enabled: true,
+            });
+        }
+    }
+
+    // Resolve body
+    let resolved_body = match &req.body {
+        Some(Body::Json { content }) => {
+            let (resolved, s) = resolver.resolve(content)?;
+            secrets.extend(s);
+            Some(Body::Json { content: resolved })
+        }
+        Some(Body::Text { content }) => {
+            let (resolved, s) = resolver.resolve(content)?;
+            secrets.extend(s);
+            Some(Body::Text { content: resolved })
+        }
+        Some(Body::Form { fields }) => {
+            let mut resolved_fields = Vec::new();
+            for field in fields {
+                if field.enabled {
+                    let (resolved_val, s) = resolver.resolve(&field.value)?;
+                    secrets.extend(s);
+                    resolved_fields.push(lazycurl_core::types::FormField {
+                        key: field.key.clone(),
+                        value: resolved_val,
+                        enabled: true,
+                    });
+                }
+            }
+            Some(Body::Form {
+                fields: resolved_fields,
+            })
+        }
+        other => other.clone(),
+    };
+
+    // Resolve auth
+    let resolved_auth = match &req.auth {
+        Some(Auth::Bearer { token }) => {
+            let (resolved, s) = resolver.resolve(token)?;
+            secrets.extend(s);
+            Some(Auth::Bearer { token: resolved })
+        }
+        Some(Auth::Basic { username, password }) => {
+            let (resolved_user, s) = resolver.resolve(username)?;
+            secrets.extend(s);
+            let (resolved_pass, s) = resolver.resolve(password)?;
+            secrets.extend(s);
+            Some(Auth::Basic {
+                username: resolved_user,
+                password: resolved_pass,
+            })
+        }
+        Some(Auth::ApiKey {
+            key,
+            value,
+            location,
+        }) => {
+            let (resolved_val, s) = resolver.resolve(value)?;
+            secrets.extend(s);
+            Some(Auth::ApiKey {
+                key: key.clone(),
+                value: resolved_val,
+                location: location.clone(),
+            })
+        }
+        other => other.clone(),
+    };
+
+    let resolved_req = lazycurl_core::types::Request {
+        id: req.id,
+        name: req.name.clone(),
+        method: req.method,
+        url: resolved_url,
+        headers: resolved_headers,
+        params: resolved_params,
+        body: resolved_body,
+        auth: resolved_auth,
+    };
+
+    Ok((resolved_req, secrets))
 }
