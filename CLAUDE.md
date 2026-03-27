@@ -104,6 +104,7 @@ Legacy flat layouts (collections/environments at root) are auto-migrated to proj
 - All public types derive `Serialize, Deserialize, Debug, Clone, PartialEq`.
 - Use `#[cfg(test)]` inline modules for unit tests in each source file.
 - Follow TDD: write failing test first, then implement.
+- **Always run `/verify-rust` after completing any fix, feature, or refactor** — before presenting results to the user. Do not skip this step.
 
 ## Security Rules
 
