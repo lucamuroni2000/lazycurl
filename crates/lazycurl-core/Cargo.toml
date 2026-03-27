@@ -14,7 +14,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 dirs = "6"
-tokio = { version = "1", features = ["process", "fs", "rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["process", "fs", "rt-multi-thread", "macros", "net", "io-util"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 tempfile = "3"
@@ -30,3 +30,5 @@ rand = "0.8"
 url = "2"
 
 [dev-dependencies]
+reqwest = { version = "0.12", features = ["rustls-tls"] }
+tokio = { version = "1", features = ["full"] }

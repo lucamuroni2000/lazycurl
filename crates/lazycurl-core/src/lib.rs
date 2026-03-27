@@ -9,6 +9,7 @@ pub mod init;
 pub mod logging;
 pub mod migration;
 pub mod oauth1;
+pub mod oauth2;
 pub mod project;
 pub mod secret;
 pub mod types;
