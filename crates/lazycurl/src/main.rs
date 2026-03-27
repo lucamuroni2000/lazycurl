@@ -212,6 +212,30 @@ async fn run_loop(
                     Action::Quit => app.should_quit = true,
                     _ => {}
                 }
+            // Auth type picker intercepts when open
+            } else if app.show_auth_picker {
+                match action {
+                    Action::Cancel => {
+                        app.show_auth_picker = false;
+                    }
+                    Action::MoveUp => {
+                        if app.auth_picker_cursor > 0 {
+                            app.auth_picker_cursor -= 1;
+                        }
+                    }
+                    Action::MoveDown => {
+                        if app.auth_picker_cursor < app::AUTH_TYPE_LABELS.len() - 1 {
+                            app.auth_picker_cursor += 1;
+                        }
+                    }
+                    Action::Enter => {
+                        app.select_auth_type(app.auth_picker_cursor);
+                    }
+                    Action::Quit => {
+                        app.should_quit = true;
+                    }
+                    _ => {}
+                }
             // Export picker intercepts when open
             } else if app.show_export_picker {
                 handle_export_picker_action(app, &action);

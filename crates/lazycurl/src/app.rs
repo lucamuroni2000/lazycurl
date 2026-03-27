@@ -10,6 +10,18 @@ use lazycurl_core::types::{
 };
 use lazycurl_core::variable::FileVariableResolver;
 
+pub const AUTH_TYPE_LABELS: &[&str] = &[
+    "No Auth",
+    "Basic Auth",
+    "Bearer Token",
+    "Digest Auth",
+    "OAuth 1.0",
+    "OAuth 2.0",
+    "API Key",
+    "AWS Signature V4",
+    "ASAP (Atlassian)",
+];
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InputMode {
     /// Keybindings are active — keypresses map to actions
@@ -192,6 +204,9 @@ pub struct App {
     // Method picker
     pub show_method_picker: bool,
     pub method_picker_cursor: usize,
+    // Auth type picker
+    pub show_auth_picker: bool,
+    pub auth_picker_cursor: usize,
     // Delete confirmation for collections pane
     pub confirm_delete: bool,
     // Environment Manager state
@@ -280,6 +295,8 @@ impl App {
             project_picker_name_input: crate::text_input::TextInput::new(""),
             show_method_picker: false,
             method_picker_cursor: 0,
+            show_auth_picker: false,
+            auth_picker_cursor: 0,
             confirm_delete: false,
             show_env_manager: false,
             env_manager_cursor: 0,
@@ -1995,12 +2012,32 @@ impl App {
                 RequestTab::Body => {
                     self.start_editing(EditField::BodyContent);
                 }
-                _ => {
-                    self.start_editing(EditField::Url);
+                RequestTab::Auth => {
+                    self.open_auth_picker();
                 }
             },
             _ => {}
         }
+    }
+
+    /// Open the auth type picker dropdown
+    pub fn open_auth_picker(&mut self) {
+        if self.current_request().is_none() {
+            return;
+        }
+        let current_auth = self.current_request().and_then(|r| r.auth.as_ref());
+        self.auth_picker_cursor = match current_auth {
+            None | Some(Auth::None) => 0,
+            Some(Auth::Basic { .. }) => 1,
+            Some(Auth::Bearer { .. }) => 2,
+            Some(Auth::Digest { .. }) => 3,
+            Some(Auth::OAuth1 { .. }) => 4,
+            Some(Auth::OAuth2 { .. }) => 5,
+            Some(Auth::ApiKey { .. }) => 6,
+            Some(Auth::AwsV4 { .. }) => 7,
+            Some(Auth::Asap { .. }) => 8,
+        };
+        self.show_auth_picker = true;
     }
 
     /// Open the method picker dropdown
@@ -2020,6 +2057,93 @@ impl App {
             }
         }
         self.show_method_picker = false;
+    }
+
+    /// Set the current request's auth type from the picker
+    pub fn select_auth_type(&mut self, index: usize) {
+        use lazycurl_core::types::*;
+        let new_auth = match index {
+            0 => Some(Auth::None),
+            1 => Some(Auth::Basic {
+                username: String::new(),
+                password: String::new(),
+            }),
+            2 => Some(Auth::Bearer {
+                token: String::new(),
+            }),
+            3 => Some(Auth::Digest {
+                username: String::new(),
+                password: String::new(),
+                realm: String::new(),
+                nonce: String::new(),
+                algorithm: DigestAlgorithm::MD5,
+                qop: String::new(),
+                nonce_count: String::new(),
+                client_nonce: String::new(),
+                opaque: String::new(),
+            }),
+            4 => Some(Auth::OAuth1 {
+                signature_method: OAuth1SignatureMethod::HmacSha1,
+                consumer_key: String::new(),
+                consumer_secret: String::new(),
+                access_token: String::new(),
+                token_secret: String::new(),
+                callback_url: String::new(),
+                version: "1.0".to_string(),
+                realm: String::new(),
+                timestamp: String::new(),
+                nonce: String::new(),
+                include_body_hash: false,
+                add_to: OAuth1AddTo::Header,
+            }),
+            5 => Some(Auth::OAuth2 {
+                grant: OAuth2Grant::AuthorizationCode {
+                    auth_url: String::new(),
+                    token_url: String::new(),
+                    client_id: String::new(),
+                    client_secret: String::new(),
+                },
+                token_name: String::new(),
+                callback_url: String::new(),
+                scope: String::new(),
+                state: String::new(),
+                client_authentication: ClientAuthentication::BasicHeader,
+                access_token: String::new(),
+                refresh_token: String::new(),
+            }),
+            6 => Some(Auth::ApiKey {
+                key: String::new(),
+                value: String::new(),
+                location: ApiKeyLocation::Header,
+            }),
+            7 => Some(Auth::AwsV4 {
+                access_key: String::new(),
+                secret_key: String::new(),
+                region: "us-east-1".to_string(),
+                service: String::new(),
+                session_token: String::new(),
+                add_to: AwsAddTo::Headers,
+            }),
+            8 => Some(Auth::Asap {
+                algorithm: AsapAlgorithm::RS256,
+                issuer: String::new(),
+                audience: String::new(),
+                key_id: String::new(),
+                private_key: String::new(),
+                subject: String::new(),
+                expiry: "3600".to_string(),
+                additional_claims: String::new(),
+            }),
+            _ => None,
+        };
+        if let Some(auth) = new_auth {
+            if let Some(ws) = self.active_workspace_mut() {
+                if let Some(ref mut req) = ws.data.current_request {
+                    req.auth = Some(auth);
+                }
+            }
+            self.show_auth_picker = false;
+        }
     }
 
     /// Handle MoveUp in Normal mode based on active pane

@@ -43,6 +43,13 @@ pub fn draw(frame: &mut Frame, app: &App) {
         }
     }
 
+    // Auth type picker (rendered relative to request pane)
+    if app.show_auth_picker {
+        if let Some(area) = pane_layout.request {
+            request::draw_auth_picker(frame, app, area);
+        }
+    }
+
     // Overlays (on top of everything)
     if app.show_export_picker {
         export_picker::draw(frame, app);

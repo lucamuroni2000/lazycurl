@@ -534,6 +534,46 @@ pub fn draw_method_picker(frame: &mut Frame, app: &App, request_area: Rect) {
     frame.render_widget(list, area);
 }
 
+pub fn draw_auth_picker(frame: &mut Frame, app: &App, request_area: Rect) {
+    use ratatui::widgets::{Clear, List, ListItem};
+
+    let items: Vec<ListItem> = crate::app::AUTH_TYPE_LABELS
+        .iter()
+        .enumerate()
+        .map(|(i, label)| {
+            let style = if i == app.auth_picker_cursor {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            ListItem::new(format!(" {} ", label)).style(style)
+        })
+        .collect();
+
+    let width = 24u16;
+    let height = crate::app::AUTH_TYPE_LABELS.len() as u16 + 2;
+    let x = request_area.x + 1;
+    let y = request_area.y + 3;
+    let area = Rect::new(
+        x,
+        y,
+        width.min(request_area.width),
+        height.min(request_area.height.saturating_sub(3)),
+    );
+
+    frame.render_widget(Clear, area);
+    let list = List::new(items).block(
+        Block::default()
+            .title(" Auth Type ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
+    frame.render_widget(list, area);
+}
+
 fn method_color(method: lazycurl_core::types::Method) -> Color {
     match method {
         lazycurl_core::types::Method::Get => Color::Green,
