@@ -256,6 +256,10 @@ pub struct App {
     pub export_format_cursor: usize,
     pub export_scope_is_collection: bool,
     pub export_collection_available: bool,
+    // OAuth 2.0 browser flow
+    pub oauth_flow_active: bool,
+    #[allow(dead_code)]
+    pub oauth_flow_status: Option<String>,
 }
 
 impl App {
@@ -332,6 +336,8 @@ impl App {
             export_format_cursor: 0,
             export_scope_is_collection: false,
             export_collection_available: false,
+            oauth_flow_active: false,
+            oauth_flow_status: None,
         }
     }
 
@@ -3484,6 +3490,255 @@ impl App {
                     }
                 }
             }
+        }
+    }
+
+    // ── OAuth 2.0 browser flow ─────────────────────────────────────
+
+    pub async fn trigger_oauth2_flow(&mut self) {
+        let req = match self.current_request() {
+            Some(r) => r.clone(),
+            None => return,
+        };
+
+        let auth = match &req.auth {
+            Some(Auth::OAuth2 { .. }) => req.auth.clone().unwrap(),
+            _ => {
+                self.status_message = Some("Not an OAuth 2.0 request".to_string());
+                return;
+            }
+        };
+
+        if let Auth::OAuth2 {
+            grant,
+            callback_url: _,
+            scope,
+            state,
+            client_authentication,
+            ..
+        } = &auth
+        {
+            self.oauth_flow_active = true;
+            self.status_message = Some("Starting OAuth 2.0 flow...".to_string());
+
+            match grant {
+                lazycurl_core::types::OAuth2Grant::AuthorizationCode {
+                    auth_url,
+                    token_url,
+                    client_id,
+                    client_secret,
+                }
+                | lazycurl_core::types::OAuth2Grant::Pkce {
+                    auth_url,
+                    token_url,
+                    client_id,
+                    client_secret,
+                    ..
+                } => {
+                    // Bind listener
+                    let listener = match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+                        Ok(l) => l,
+                        Err(e) => {
+                            self.status_message = Some(format!("Failed to bind: {}", e));
+                            self.oauth_flow_active = false;
+                            return;
+                        }
+                    };
+                    let port = listener.local_addr().unwrap().port();
+                    let redirect_uri = format!("http://localhost:{}/callback", port);
+
+                    // Build PKCE challenge if applicable
+                    let pkce = if let lazycurl_core::types::OAuth2Grant::Pkce {
+                        code_challenge_method,
+                        code_verifier,
+                        ..
+                    } = grant
+                    {
+                        let challenge = match code_challenge_method {
+                            lazycurl_core::types::PkceMethod::SHA256 => {
+                                lazycurl_core::oauth2::code_challenge_sha256(code_verifier)
+                            }
+                            lazycurl_core::types::PkceMethod::Plain => code_verifier.clone(),
+                        };
+                        let method = match code_challenge_method {
+                            lazycurl_core::types::PkceMethod::SHA256 => "S256",
+                            lazycurl_core::types::PkceMethod::Plain => "plain",
+                        };
+                        Some((challenge, method.to_string()))
+                    } else {
+                        None
+                    };
+
+                    let url = lazycurl_core::oauth2::build_authorization_url(
+                        auth_url,
+                        client_id,
+                        &redirect_uri,
+                        scope,
+                        state,
+                        pkce.as_ref().map(|(c, m)| (c.as_str(), m.as_str())),
+                    );
+
+                    // Open browser
+                    if open::that(&url).is_err() {
+                        self.status_message = Some(format!("Open this URL: {}", url));
+                    } else {
+                        self.status_message =
+                            Some("Waiting for authorization in browser...".to_string());
+                    }
+
+                    // Wait for callback with timeout
+                    let result = tokio::time::timeout(
+                        std::time::Duration::from_secs(120),
+                        lazycurl_core::oauth2::handle_callback(listener),
+                    )
+                    .await;
+
+                    match result {
+                        Ok(Ok(cb)) => {
+                            // Verify state if provided
+                            if !state.is_empty() && cb.state != *state {
+                                self.status_message =
+                                    Some("OAuth error: state mismatch".to_string());
+                                self.oauth_flow_active = false;
+                                return;
+                            }
+
+                            // Get PKCE verifier if applicable
+                            let verifier = if let lazycurl_core::types::OAuth2Grant::Pkce {
+                                code_verifier,
+                                ..
+                            } = grant
+                            {
+                                Some(code_verifier.as_str())
+                            } else {
+                                None
+                            };
+
+                            let args = lazycurl_core::oauth2::build_token_exchange_args(
+                                token_url,
+                                client_id,
+                                client_secret,
+                                &cb.code,
+                                &redirect_uri,
+                                verifier,
+                                client_authentication,
+                            );
+
+                            // Execute curl for token exchange
+                            match tokio::process::Command::new(
+                                lazycurl_core::command::curl_binary(),
+                            )
+                            .args(&args)
+                            .output()
+                            .await
+                            {
+                                Ok(output) => {
+                                    let body = String::from_utf8_lossy(&output.stdout).to_string();
+                                    self.handle_token_response(&body);
+                                }
+                                Err(e) => {
+                                    self.status_message =
+                                        Some(format!("Token exchange failed: {}", e));
+                                }
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            self.status_message = Some(format!("Callback error: {}", e));
+                        }
+                        Err(_) => {
+                            self.status_message = Some("OAuth timeout (120s)".to_string());
+                        }
+                    }
+                }
+                lazycurl_core::types::OAuth2Grant::ClientCredentials {
+                    token_url,
+                    client_id,
+                    client_secret,
+                } => {
+                    let args = lazycurl_core::oauth2::build_client_credentials_args(
+                        token_url,
+                        client_id,
+                        client_secret,
+                        scope,
+                        client_authentication,
+                    );
+                    match tokio::process::Command::new(lazycurl_core::command::curl_binary())
+                        .args(&args)
+                        .output()
+                        .await
+                    {
+                        Ok(output) => {
+                            let body = String::from_utf8_lossy(&output.stdout).to_string();
+                            self.handle_token_response(&body);
+                        }
+                        Err(e) => {
+                            self.status_message = Some(format!("Token request failed: {}", e));
+                        }
+                    }
+                }
+                lazycurl_core::types::OAuth2Grant::Password {
+                    token_url,
+                    username,
+                    password,
+                    client_id,
+                    client_secret,
+                } => {
+                    let args = lazycurl_core::oauth2::build_password_grant_args(
+                        token_url,
+                        username,
+                        password,
+                        client_id,
+                        client_secret,
+                        scope,
+                        client_authentication,
+                    );
+                    match tokio::process::Command::new(lazycurl_core::command::curl_binary())
+                        .args(&args)
+                        .output()
+                        .await
+                    {
+                        Ok(output) => {
+                            let body = String::from_utf8_lossy(&output.stdout).to_string();
+                            self.handle_token_response(&body);
+                        }
+                        Err(e) => {
+                            self.status_message = Some(format!("Token request failed: {}", e));
+                        }
+                    }
+                }
+            }
+        }
+
+        self.oauth_flow_active = false;
+    }
+
+    fn handle_token_response(&mut self, body: &str) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
+            let access = json["access_token"].as_str().unwrap_or("").to_string();
+            let refresh = json["refresh_token"].as_str().unwrap_or("").to_string();
+
+            if access.is_empty() {
+                self.status_message = Some(format!("No access_token in response: {}", body));
+                return;
+            }
+
+            if let Some(ws) = self.active_workspace_mut() {
+                if let Some(ref mut req) = ws.data.current_request {
+                    if let Some(Auth::OAuth2 {
+                        access_token,
+                        refresh_token,
+                        ..
+                    }) = req.auth.as_mut()
+                    {
+                        *access_token = access;
+                        *refresh_token = refresh;
+                    }
+                }
+            }
+            self.load_auth_inputs();
+            self.status_message = Some("Token received successfully".to_string());
+        } else {
+            self.status_message = Some(format!("Token exchange failed: {}", body));
         }
     }
 

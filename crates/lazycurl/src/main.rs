@@ -423,6 +423,15 @@ async fn run_loop(
                         if app.input_mode == app::InputMode::Editing {
                             app.stop_editing();
                         }
+                        // If on Auth tab with OAuth 2.0, trigger the OAuth flow instead
+                        if app.request_tab() == app::RequestTab::Auth {
+                            if let Some(req) = app.current_request() {
+                                if matches!(req.auth, Some(Auth::OAuth2 { .. })) {
+                                    app.trigger_oauth2_flow().await;
+                                    continue;
+                                }
+                            }
+                        }
                         app.send_request().await;
                     }
                     Action::SaveRequest => app.save_current_request(),
