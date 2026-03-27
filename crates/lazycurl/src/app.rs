@@ -883,11 +883,239 @@ impl App {
                     }
                 }
                 Auth::None => {}
-                Auth::Digest { .. }
-                | Auth::OAuth1 { .. }
-                | Auth::OAuth2 { .. }
-                | Auth::AwsV4 { .. }
-                | Auth::Asap { .. } => {}
+                Auth::Digest {
+                    username, password, ..
+                } => {
+                    let (user, _) = match resolver.resolve(username) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            self.status_message = Some(format!("Auth variable error: {}", e));
+                            return;
+                        }
+                    };
+                    let (pass, s) = match resolver.resolve(password) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            self.status_message = Some(format!("Auth variable error: {}", e));
+                            return;
+                        }
+                    };
+                    secrets.extend(s);
+                    builder = builder.digest_auth(&user, &pass);
+                }
+                Auth::OAuth1 {
+                    signature_method,
+                    consumer_key,
+                    consumer_secret,
+                    access_token,
+                    token_secret,
+                    timestamp,
+                    nonce,
+                    version,
+                    realm,
+                    include_body_hash,
+                    ..
+                } => {
+                    let (ck, _) = match resolver.resolve(consumer_key) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            self.status_message = Some(format!("Auth variable error: {}", e));
+                            return;
+                        }
+                    };
+                    let (cs, s1) = match resolver.resolve(consumer_secret) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            self.status_message = Some(format!("Auth variable error: {}", e));
+                            return;
+                        }
+                    };
+                    secrets.extend(s1);
+                    let (at, _) = match resolver.resolve(access_token) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            self.status_message = Some(format!("Auth variable error: {}", e));
+                            return;
+                        }
+                    };
+                    let (ts, s2) = match resolver.resolve(token_secret) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            self.status_message = Some(format!("Auth variable error: {}", e));
+                            return;
+                        }
+                    };
+                    secrets.extend(s2);
+
+                    let ts_val = if timestamp.is_empty() {
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs()
+                            .to_string()
+                    } else {
+                        timestamp.clone()
+                    };
+                    let nonce_val = if nonce.is_empty() {
+                        uuid::Uuid::new_v4().to_string().replace('-', "")
+                    } else {
+                        nonce.clone()
+                    };
+
+                    let method_str = request.method.to_string();
+                    let header_val = lazycurl_core::oauth1::build_authorization_header(
+                        &method_str,
+                        &resolved_url,
+                        signature_method,
+                        &ck,
+                        &cs,
+                        &at,
+                        &ts,
+                        &ts_val,
+                        &nonce_val,
+                        version,
+                        realm,
+                        *include_body_hash,
+                        &[],
+                    );
+                    builder = builder.header("Authorization", &header_val);
+                }
+                Auth::OAuth2 { access_token, .. } => {
+                    if !access_token.is_empty() {
+                        let (token, s) = match resolver.resolve(access_token) {
+                            Ok(r) => r,
+                            Err(e) => {
+                                self.status_message = Some(format!("Auth variable error: {}", e));
+                                return;
+                            }
+                        };
+                        secrets.extend(s);
+                        builder = builder.header("Authorization", &format!("Bearer {}", token));
+                    }
+                }
+                Auth::AwsV4 {
+                    access_key,
+                    secret_key,
+                    region,
+                    service,
+                    session_token,
+                    ..
+                } => {
+                    let (ak, _) = match resolver.resolve(access_key) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            self.status_message = Some(format!("Auth variable error: {}", e));
+                            return;
+                        }
+                    };
+                    let (sk, s1) = match resolver.resolve(secret_key) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            self.status_message = Some(format!("Auth variable error: {}", e));
+                            return;
+                        }
+                    };
+                    secrets.extend(s1);
+
+                    let session_tok = if session_token.is_empty() {
+                        None
+                    } else {
+                        let (st, s2) = match resolver.resolve(session_token) {
+                            Ok(r) => r,
+                            Err(e) => {
+                                self.status_message = Some(format!("Auth variable error: {}", e));
+                                return;
+                            }
+                        };
+                        secrets.extend(s2);
+                        Some(st)
+                    };
+
+                    let datetime = chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+                    let svc = if service.is_empty() {
+                        "execute-api".to_string()
+                    } else {
+                        service.clone()
+                    };
+
+                    let host = url::Url::parse(&resolved_url)
+                        .ok()
+                        .and_then(|u| u.host_str().map(|s| s.to_string()))
+                        .unwrap_or_default();
+
+                    let uri_path = url::Url::parse(&resolved_url)
+                        .map(|u| u.path().to_string())
+                        .unwrap_or_else(|_| "/".to_string());
+                    let query = url::Url::parse(&resolved_url)
+                        .ok()
+                        .and_then(|u| u.query().map(|q| q.to_string()))
+                        .unwrap_or_default();
+
+                    let headers = vec![("host", host.as_str()), ("x-amz-date", datetime.as_str())];
+
+                    let auth_header = lazycurl_core::aws_v4::build_authorization_header(
+                        &request.method.to_string(),
+                        &uri_path,
+                        &query,
+                        &headers,
+                        "",
+                        &ak,
+                        &sk,
+                        region,
+                        &svc,
+                        &datetime,
+                        session_tok.as_deref(),
+                    );
+
+                    builder = builder.header("Authorization", &auth_header);
+                    builder = builder.header("X-Amz-Date", &datetime);
+                    if let Some(st) = &session_tok {
+                        if !st.is_empty() {
+                            builder = builder.header("X-Amz-Security-Token", st);
+                        }
+                    }
+                }
+                Auth::Asap {
+                    algorithm,
+                    issuer,
+                    audience,
+                    key_id,
+                    private_key,
+                    subject,
+                    expiry,
+                    additional_claims,
+                } => {
+                    let (pk, s) = match resolver.resolve(private_key) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            self.status_message = Some(format!("Auth variable error: {}", e));
+                            return;
+                        }
+                    };
+                    secrets.extend(s);
+                    let expiry_secs: u64 = expiry.parse().unwrap_or(3600);
+                    match lazycurl_core::asap::build_and_sign_jwt(
+                        algorithm,
+                        issuer,
+                        audience,
+                        key_id,
+                        subject,
+                        expiry_secs,
+                        additional_claims,
+                        &pk,
+                        0,
+                        "",
+                    ) {
+                        Ok(jwt) => {
+                            secrets.push(jwt.clone());
+                            builder = builder.header("Authorization", &format!("Bearer {}", jwt));
+                        }
+                        Err(e) => {
+                            self.status_message = Some(format!("ASAP JWT error: {}", e));
+                            return;
+                        }
+                    }
+                }
             }
         }
 
