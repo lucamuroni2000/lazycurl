@@ -116,6 +116,11 @@ pub fn export_curl(request: &Request, secrets: &[String]) -> String {
                 }
             },
             Auth::None => {}
+            Auth::Digest { .. }
+            | Auth::OAuth1 { .. }
+            | Auth::OAuth2 { .. }
+            | Auth::AwsV4 { .. }
+            | Auth::Asap { .. } => {}
         }
     }
 
@@ -273,6 +278,11 @@ fn postman_auth(request: &Request) -> Option<serde_json::Value> {
                 ]
             }))
         }
+        Some(Auth::Digest { .. })
+        | Some(Auth::OAuth1 { .. })
+        | Some(Auth::OAuth2 { .. })
+        | Some(Auth::AwsV4 { .. })
+        | Some(Auth::Asap { .. }) => None,
         Some(Auth::None) | None => None,
     }
 }
@@ -450,6 +460,11 @@ fn openapi_operation(request: &Request) -> serde_json::Value {
             Auth::Bearer { .. } => Some("bearerAuth"),
             Auth::Basic { .. } => Some("basicAuth"),
             Auth::ApiKey { .. } => Some("apiKeyAuth"),
+            Auth::Digest { .. }
+            | Auth::OAuth1 { .. }
+            | Auth::OAuth2 { .. }
+            | Auth::AwsV4 { .. }
+            | Auth::Asap { .. } => None,
             Auth::None => None,
         };
         if let Some(name) = security_name {
@@ -485,6 +500,11 @@ fn collect_security_schemes(requests: &[Request]) -> serde_json::Map<String, ser
                     );
                 }
                 Auth::None => {}
+                Auth::Digest { .. }
+                | Auth::OAuth1 { .. }
+                | Auth::OAuth2 { .. }
+                | Auth::AwsV4 { .. }
+                | Auth::Asap { .. } => {}
             }
         }
     }

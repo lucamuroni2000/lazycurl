@@ -883,6 +883,11 @@ impl App {
                     }
                 }
                 Auth::None => {}
+                Auth::Digest { .. }
+                | Auth::OAuth1 { .. }
+                | Auth::OAuth2 { .. }
+                | Auth::AwsV4 { .. }
+                | Auth::Asap { .. } => {}
             }
         }
 

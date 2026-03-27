@@ -334,6 +334,34 @@ fn draw_auth(frame: &mut Frame, app: &App, area: Rect) {
             " Type: API Key\n Key: {}\n Value: {}\n In: {:?}",
             key, value, location
         ),
+        Some(lazycurl_core::types::Auth::Digest { username, .. }) => {
+            format!(" Type: Digest\n Username: {}", username)
+        }
+        Some(lazycurl_core::types::Auth::OAuth1 { consumer_key, .. }) => {
+            format!(" Type: OAuth 1.0\n Consumer Key: {}", consumer_key)
+        }
+        Some(lazycurl_core::types::Auth::OAuth2 { grant, .. }) => {
+            let grant_type = match grant {
+                lazycurl_core::types::OAuth2Grant::AuthorizationCode { .. } => "Authorization Code",
+                lazycurl_core::types::OAuth2Grant::Pkce { .. } => "PKCE",
+                lazycurl_core::types::OAuth2Grant::ClientCredentials { .. } => "Client Credentials",
+                lazycurl_core::types::OAuth2Grant::Password { .. } => "Password",
+            };
+            format!(" Type: OAuth 2.0\n Grant: {}", grant_type)
+        }
+        Some(lazycurl_core::types::Auth::AwsV4 {
+            region, service, ..
+        }) => {
+            format!(
+                " Type: AWS Signature v4\n Region: {}\n Service: {}",
+                region, service
+            )
+        }
+        Some(lazycurl_core::types::Auth::Asap {
+            issuer, audience, ..
+        }) => {
+            format!(" Type: ASAP\n Issuer: {}\n Audience: {}", issuer, audience)
+        }
         Some(lazycurl_core::types::Auth::None) | None => {
             " No authentication configured.".to_string()
         }
