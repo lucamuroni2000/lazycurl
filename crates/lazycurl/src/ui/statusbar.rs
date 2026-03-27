@@ -214,7 +214,26 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                         hints.push(Span::styled(":toggle ", hint_style));
                     }
                     RequestTab::Body => {}
-                    RequestTab::Auth => {}
+                    RequestTab::Auth => {
+                        if app.auth_inputs.is_empty() {
+                            hints.push(Span::styled("Enter", key_style));
+                            hints.push(Span::styled(":select auth type ", hint_style));
+                        } else {
+                            hints.push(Span::styled("Up/Down", key_style));
+                            hints.push(Span::styled(":navigate ", hint_style));
+                            hints.push(Span::styled("Enter", key_style));
+                            hints.push(Span::styled(":edit ", hint_style));
+                            hints.push(Span::styled("t", key_style));
+                            hints.push(Span::styled(":change type ", hint_style));
+                            if matches!(
+                                app.current_request().and_then(|r| r.auth.as_ref()),
+                                Some(lazycurl_core::types::Auth::OAuth2 { .. })
+                            ) {
+                                hints.push(Span::styled("F5", key_style));
+                                hints.push(Span::styled(":get token ", hint_style));
+                            }
+                        }
+                    }
                     RequestTab::Params => {
                         hints.push(Span::styled("Up/Down", key_style));
                         hints.push(Span::styled(":navigate ", hint_style));
