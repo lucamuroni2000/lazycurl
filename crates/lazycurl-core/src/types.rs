@@ -288,6 +288,16 @@ impl ProjectWorkspaceData {
             .and_then(|i| self.environments.get(i))
             .map(|env| env.name.clone());
     }
+
+    /// Restore `active_environment` index from the saved `project.active_environment` name.
+    /// Call this after loading environments for a project.
+    pub fn restore_active_environment(&mut self) {
+        self.active_environment = self
+            .project
+            .active_environment
+            .as_ref()
+            .and_then(|name| self.environments.iter().position(|e| &e.name == name));
+    }
 }
 
 fn default_true() -> bool {
@@ -594,5 +604,63 @@ mod tests {
         ws.active_environment = Some(99);
         ws.sync_active_environment_name();
         assert_eq!(ws.project.active_environment, None);
+    }
+
+    #[test]
+    fn test_restore_active_environment_from_name() {
+        let project = Project {
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
+            active_environment: Some("Production".to_string()),
+        };
+        let mut ws = ProjectWorkspaceData::new(project, "test".to_string());
+        ws.environments = vec![
+            Environment {
+                id: uuid::Uuid::new_v4(),
+                name: "Development".to_string(),
+                variables: HashMap::new(),
+            },
+            Environment {
+                id: uuid::Uuid::new_v4(),
+                name: "Production".to_string(),
+                variables: HashMap::new(),
+            },
+        ];
+        ws.restore_active_environment();
+        assert_eq!(ws.active_environment, Some(1));
+    }
+
+    #[test]
+    fn test_restore_active_environment_none_when_no_match() {
+        let project = Project {
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
+            active_environment: Some("Staging".to_string()),
+        };
+        let mut ws = ProjectWorkspaceData::new(project, "test".to_string());
+        ws.environments = vec![Environment {
+            id: uuid::Uuid::new_v4(),
+            name: "Development".to_string(),
+            variables: HashMap::new(),
+        }];
+        ws.restore_active_environment();
+        assert_eq!(ws.active_environment, None);
+    }
+
+    #[test]
+    fn test_restore_active_environment_none_when_not_set() {
+        let project = Project {
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
+            active_environment: None,
+        };
+        let mut ws = ProjectWorkspaceData::new(project, "test".to_string());
+        ws.environments = vec![Environment {
+            id: uuid::Uuid::new_v4(),
+            name: "Development".to_string(),
+            variables: HashMap::new(),
+        }];
+        ws.restore_active_environment();
+        assert_eq!(ws.active_environment, None);
     }
 }

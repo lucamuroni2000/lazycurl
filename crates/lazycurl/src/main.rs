@@ -94,10 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &projects_dir.join(&slug).join("environments"),
                 )
                 .unwrap_or_default();
-                if let Some(env_name) = app.config.active_environment.clone() {
-                    ws.data.active_environment =
-                        ws.data.environments.iter().position(|e| e.name == env_name);
-                }
+                ws.data.restore_active_environment();
                 app.open_projects.push(ws);
                 app.active_project_idx = Some(0);
             }
@@ -114,10 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &projects_dir.join(&slug).join("environments"),
             )
             .unwrap_or_default();
-            if let Some(env_name) = app.config.active_environment.clone() {
-                ws.data.active_environment =
-                    ws.data.environments.iter().position(|e| e.name == env_name);
-            }
+            ws.data.restore_active_environment();
             app.open_projects.push(ws);
             app.active_project_idx = Some(0);
         }
@@ -1125,6 +1119,7 @@ fn handle_project_picker_action(app: &mut App, action: &Action) {
                     ws.data.environments =
                         lazycurl_core::environment::list_environments(&path.join("environments"))
                             .unwrap_or_default();
+                    ws.data.restore_active_environment();
                     app.open_projects.push(ws);
                     let idx = app.open_projects.len() - 1;
                     app.switch_project(idx);
