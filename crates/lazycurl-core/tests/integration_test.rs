@@ -478,3 +478,179 @@ fn test_export_collection_as_openapi() {
     assert!(items_path["get"].is_object());
     assert!(items_path["post"].is_object());
 }
+
+#[test]
+fn test_collection_with_oauth2_auth_roundtrip() {
+    let dir = tempfile::tempdir().unwrap();
+    let collection = Collection {
+        id: uuid::Uuid::new_v4(),
+        name: "Auth Test".to_string(),
+        variables: HashMap::new(),
+        requests: vec![Request {
+            id: uuid::Uuid::new_v4(),
+            name: "OAuth Request".to_string(),
+            method: Method::Post,
+            url: "https://api.example.com/data".to_string(),
+            headers: vec![],
+            params: vec![],
+            body: None,
+            auth: Some(Auth::OAuth2 {
+                grant: OAuth2Grant::AuthorizationCode {
+                    auth_url: "https://auth.example.com/authorize".to_string(),
+                    token_url: "https://auth.example.com/token".to_string(),
+                    client_id: "{{client_id}}".to_string(),
+                    client_secret: "{{client_secret}}".to_string(),
+                },
+                token_name: "My Token".to_string(),
+                callback_url: "http://localhost:9876/callback".to_string(),
+                scope: "read write".to_string(),
+                state: "".to_string(),
+                client_authentication: ClientAuthentication::BasicHeader,
+                access_token: "stored-token-123".to_string(),
+                refresh_token: "refresh-456".to_string(),
+            }),
+        }],
+    };
+
+    lazycurl_core::collection::save_collection(dir.path(), &collection).unwrap();
+    let loaded = lazycurl_core::collection::list_collections(dir.path()).unwrap();
+    assert_eq!(loaded.len(), 1);
+    let loaded_req = &loaded[0].requests[0];
+    match &loaded_req.auth {
+        Some(Auth::OAuth2 {
+            grant,
+            access_token,
+            scope,
+            ..
+        }) => {
+            assert_eq!(access_token, "stored-token-123");
+            assert_eq!(scope, "read write");
+            match grant {
+                OAuth2Grant::AuthorizationCode { client_id, .. } => {
+                    assert_eq!(client_id, "{{client_id}}");
+                }
+                _ => panic!("Wrong grant type"),
+            }
+        }
+        _ => panic!("Wrong auth type"),
+    }
+}
+
+#[test]
+fn test_variable_resolution_in_auth_fields() {
+    let mut global_vars = HashMap::new();
+    global_vars.insert(
+        "aws_key".to_string(),
+        Variable {
+            value: "AKIATEST".to_string(),
+            secret: false,
+        },
+    );
+    global_vars.insert(
+        "aws_secret".to_string(),
+        Variable {
+            value: "secretkey".to_string(),
+            secret: true,
+        },
+    );
+
+    let resolver = FileVariableResolver::new(global_vars, None, None);
+
+    let (resolved, _) = resolver.resolve("{{aws_key}}").unwrap();
+    assert_eq!(resolved, "AKIATEST");
+
+    let (resolved, secrets) = resolver.resolve("{{aws_secret}}").unwrap();
+    assert_eq!(resolved, "secretkey");
+    assert!(secrets.contains(&"secretkey".to_string()));
+}
+
+#[test]
+fn test_collection_with_digest_auth_roundtrip() {
+    let dir = tempfile::tempdir().unwrap();
+    let collection = Collection {
+        id: uuid::Uuid::new_v4(),
+        name: "Digest Auth Test".to_string(),
+        variables: HashMap::new(),
+        requests: vec![Request {
+            id: uuid::Uuid::new_v4(),
+            name: "Digest Request".to_string(),
+            method: Method::Get,
+            url: "https://example.com/protected".to_string(),
+            headers: vec![],
+            params: vec![],
+            body: None,
+            auth: Some(Auth::Digest {
+                username: "admin".to_string(),
+                password: "{{password}}".to_string(),
+                realm: String::new(),
+                nonce: String::new(),
+                algorithm: DigestAlgorithm::SHA256,
+                qop: String::new(),
+                nonce_count: String::new(),
+                client_nonce: String::new(),
+                opaque: String::new(),
+            }),
+        }],
+    };
+
+    lazycurl_core::collection::save_collection(dir.path(), &collection).unwrap();
+    let loaded = lazycurl_core::collection::list_collections(dir.path()).unwrap();
+    assert_eq!(loaded.len(), 1);
+    match &loaded[0].requests[0].auth {
+        Some(Auth::Digest {
+            username,
+            password,
+            algorithm,
+            ..
+        }) => {
+            assert_eq!(username, "admin");
+            assert_eq!(password, "{{password}}");
+            assert_eq!(*algorithm, DigestAlgorithm::SHA256);
+        }
+        _ => panic!("Wrong auth type"),
+    }
+}
+
+#[test]
+fn test_collection_with_awsv4_auth_roundtrip() {
+    let dir = tempfile::tempdir().unwrap();
+    let collection = Collection {
+        id: uuid::Uuid::new_v4(),
+        name: "AWS Auth Test".to_string(),
+        variables: HashMap::new(),
+        requests: vec![Request {
+            id: uuid::Uuid::new_v4(),
+            name: "AWS Request".to_string(),
+            method: Method::Get,
+            url: "https://s3.amazonaws.com/bucket".to_string(),
+            headers: vec![],
+            params: vec![],
+            body: None,
+            auth: Some(Auth::AwsV4 {
+                access_key: "{{aws_key}}".to_string(),
+                secret_key: "{{aws_secret}}".to_string(),
+                region: "us-west-2".to_string(),
+                service: "s3".to_string(),
+                session_token: String::new(),
+                add_to: AwsAddTo::Headers,
+            }),
+        }],
+    };
+
+    lazycurl_core::collection::save_collection(dir.path(), &collection).unwrap();
+    let loaded = lazycurl_core::collection::list_collections(dir.path()).unwrap();
+    assert_eq!(loaded.len(), 1);
+    match &loaded[0].requests[0].auth {
+        Some(Auth::AwsV4 {
+            access_key,
+            region,
+            service,
+            ..
+        }) => {
+            assert_eq!(access_key, "{{aws_key}}");
+            assert_eq!(region, "us-west-2");
+            assert_eq!(service, "s3");
+        }
+        _ => panic!("Wrong auth type"),
+    }
+}
