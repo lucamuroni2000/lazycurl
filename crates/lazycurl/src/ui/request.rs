@@ -316,61 +316,110 @@ fn draw_auth(frame: &mut Frame, app: &App, area: Rect) {
         return;
     };
 
-    let text = match &req.auth {
-        Some(lazycurl_core::types::Auth::Bearer { token }) => {
-            format!(" Type: Bearer\n Token: {}", token)
-        }
-        Some(lazycurl_core::types::Auth::Basic { username, password }) => {
-            format!(
-                " Type: Basic\n Username: {}\n Password: {}",
-                username, password
-            )
-        }
-        Some(lazycurl_core::types::Auth::ApiKey {
-            key,
-            value,
-            location,
-        }) => format!(
-            " Type: API Key\n Key: {}\n Value: {}\n In: {:?}",
-            key, value, location
-        ),
-        Some(lazycurl_core::types::Auth::Digest { username, .. }) => {
-            format!(" Type: Digest\n Username: {}", username)
-        }
-        Some(lazycurl_core::types::Auth::OAuth1 { consumer_key, .. }) => {
-            format!(" Type: OAuth 1.0\n Consumer Key: {}", consumer_key)
-        }
-        Some(lazycurl_core::types::Auth::OAuth2 { grant, .. }) => {
-            let grant_type = match grant {
-                lazycurl_core::types::OAuth2Grant::AuthorizationCode { .. } => "Authorization Code",
-                lazycurl_core::types::OAuth2Grant::Pkce { .. } => "PKCE",
-                lazycurl_core::types::OAuth2Grant::ClientCredentials { .. } => "Client Credentials",
-                lazycurl_core::types::OAuth2Grant::Password { .. } => "Password",
-            };
-            format!(" Type: OAuth 2.0\n Grant: {}", grant_type)
-        }
-        Some(lazycurl_core::types::Auth::AwsV4 {
-            region, service, ..
-        }) => {
-            format!(
-                " Type: AWS Signature v4\n Region: {}\n Service: {}",
-                region, service
-            )
-        }
-        Some(lazycurl_core::types::Auth::Asap {
-            issuer, audience, ..
-        }) => {
-            format!(" Type: ASAP\n Issuer: {}\n Audience: {}", issuer, audience)
-        }
-        Some(lazycurl_core::types::Auth::None) | None => {
-            " No authentication configured.".to_string()
-        }
+    let is_no_auth = matches!(req.auth, None | Some(lazycurl_core::types::Auth::None));
+
+    if is_no_auth {
+        let text = " No authentication configured. Press Enter to select an auth type.";
+        frame.render_widget(
+            Paragraph::new(text).style(Style::default().fg(Color::DarkGray)),
+            area,
+        );
+        return;
+    }
+
+    // Show auth type label at top
+    let auth_type_label = match &req.auth {
+        Some(lazycurl_core::types::Auth::Basic { .. }) => "Basic Auth",
+        Some(lazycurl_core::types::Auth::Bearer { .. }) => "Bearer Token",
+        Some(lazycurl_core::types::Auth::Digest { .. }) => "Digest Auth",
+        Some(lazycurl_core::types::Auth::OAuth1 { .. }) => "OAuth 1.0",
+        Some(lazycurl_core::types::Auth::OAuth2 { .. }) => "OAuth 2.0",
+        Some(lazycurl_core::types::Auth::ApiKey { .. }) => "API Key",
+        Some(lazycurl_core::types::Auth::AwsV4 { .. }) => "AWS Signature V4",
+        Some(lazycurl_core::types::Auth::Asap { .. }) => "ASAP (Atlassian)",
+        _ => "Unknown",
     };
 
-    frame.render_widget(
-        Paragraph::new(text).style(Style::default().fg(Color::White)),
-        area,
-    );
+    let mut lines = Vec::new();
+    lines.push(Line::from(vec![
+        Span::styled(" Type: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            auth_type_label,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("  (t: change type)", Style::default().fg(Color::DarkGray)),
+    ]));
+    lines.push(Line::from(""));
+
+    let is_auth_tab = app.request_tab() == RequestTab::Auth;
+    let is_request_pane = app.active_pane == Pane::Request;
+    let mut cursor_pos: Option<(u16, u16)> = None;
+
+    for (i, label) in app.auth_field_labels.iter().enumerate() {
+        let is_secret = app.auth_field_secrets.get(i).copied().unwrap_or(false);
+        let is_focused = is_auth_tab
+            && is_request_pane
+            && app.auth_field_cursor == i
+            && app.input_mode == InputMode::Normal;
+        let is_editing =
+            app.input_mode == InputMode::Editing && app.edit_field == Some(EditField::AuthField(i));
+
+        let raw_value = app
+            .auth_inputs
+            .get(i)
+            .map(|inp| inp.content().to_string())
+            .unwrap_or_default();
+
+        let display_value = if is_secret && !is_editing && !raw_value.is_empty() {
+            "••••••".to_string()
+        } else {
+            raw_value.clone()
+        };
+
+        let value_style = if is_editing {
+            Style::default().fg(Color::Yellow).bg(Color::DarkGray)
+        } else if is_focused {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        let label_style = if is_focused || is_editing {
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
+        let label_text = format!(" {:>18}: ", label);
+        lines.push(Line::from(vec![
+            Span::styled(label_text.clone(), label_style),
+            Span::styled(display_value, value_style),
+        ]));
+
+        if is_editing {
+            if let Some(inp) = app.auth_inputs.get(i) {
+                let row = i + 2; // offset by 2 header lines
+                let prefix_len = label_text.len() as u16;
+                let cx = area.x + prefix_len + inp.cursor() as u16;
+                let cy = area.y + row as u16;
+                if cx < area.x + area.width && cy < area.y + area.height {
+                    cursor_pos = Some((cx, cy));
+                }
+            }
+        }
+    }
+
+    frame.render_widget(Paragraph::new(lines), area);
+
+    if let Some((cx, cy)) = cursor_pos {
+        frame.set_cursor_position((cx, cy));
+    }
 }
 
 fn draw_params(frame: &mut Frame, app: &App, area: Rect) {

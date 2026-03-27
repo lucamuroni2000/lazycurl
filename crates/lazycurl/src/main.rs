@@ -522,6 +522,14 @@ async fn run_loop(
                         }
                     }
                     Action::Rename => app.handle_rename(),
+                    // 't' on Auth tab opens the auth type picker when fields are showing
+                    Action::CharInput('t')
+                        if app.active_pane == app::Pane::Request
+                            && app.request_tab() == app::RequestTab::Auth
+                            && app.input_mode == app::InputMode::Normal =>
+                    {
+                        app.open_auth_picker();
+                    }
                     // Copy response body to clipboard (y in Response pane)
                     Action::CharInput('y')
                         if app.active_pane == app::Pane::Response

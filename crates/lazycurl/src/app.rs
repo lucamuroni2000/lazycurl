@@ -47,6 +47,8 @@ pub enum EditField {
     NewCollectionName,
     /// Editing name for a new project being created
     NewProjectName,
+    /// Editing an auth field by index into auth_inputs
+    AuthField(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -178,6 +180,11 @@ pub struct App {
     pub param_key_inputs: Vec<crate::text_input::TextInput>,
     pub param_value_inputs: Vec<crate::text_input::TextInput>,
     pub name_input: crate::text_input::TextInput,
+    // Auth field inputs
+    pub auth_inputs: Vec<crate::text_input::TextInput>,
+    pub auth_field_cursor: usize,
+    pub auth_field_labels: Vec<String>,
+    pub auth_field_secrets: Vec<bool>,
     // Header/Param row cursors
     pub header_cursor: usize,
     pub param_cursor: usize,
@@ -274,6 +281,10 @@ impl App {
             param_key_inputs: Vec::new(),
             param_value_inputs: Vec::new(),
             name_input: crate::text_input::TextInput::new(""),
+            auth_inputs: Vec::new(),
+            auth_field_cursor: 0,
+            auth_field_labels: Vec::new(),
+            auth_field_secrets: Vec::new(),
             header_cursor: 0,
             param_cursor: 0,
             show_collection_picker: false,
@@ -1507,6 +1518,8 @@ impl App {
                 self.finalize_new_collection();
             } else if field == EditField::NewProjectName {
                 self.finalize_new_project();
+            } else if matches!(field, EditField::AuthField(_)) {
+                self.sync_auth_to_request();
             } else {
                 self.sync_field_to_request(field);
             }
@@ -1589,6 +1602,7 @@ impl App {
             EditField::HeaderValue(i) => self.header_value_inputs.get_mut(i),
             EditField::ParamKey(i) => self.param_key_inputs.get_mut(i),
             EditField::ParamValue(i) => self.param_value_inputs.get_mut(i),
+            EditField::AuthField(i) => self.auth_inputs.get_mut(i),
             EditField::RequestName
             | EditField::CollectionName(_)
             | EditField::NewCollectionName
@@ -1748,6 +1762,9 @@ impl App {
             EditField::NewCollectionName | EditField::NewProjectName => {
                 // Handled separately — sync is a no-op here
             }
+            EditField::AuthField(_) => {
+                // Handled via sync_auth_to_request in stop_editing — no-op here
+            }
         }
     }
 
@@ -1791,6 +1808,329 @@ impl App {
                 .iter()
                 .map(|p| crate::text_input::TextInput::new(&p.value))
                 .collect();
+        }
+        self.load_auth_inputs();
+    }
+
+    /// Populate auth_inputs from the current request's auth fields
+    pub fn load_auth_inputs(&mut self) {
+        self.auth_inputs.clear();
+        self.auth_field_labels.clear();
+        self.auth_field_secrets.clear();
+        self.auth_field_cursor = 0;
+
+        let auth = self.current_request().and_then(|r| r.auth.clone());
+        let Some(auth) = auth else { return };
+
+        let mut labels: Vec<String> = Vec::new();
+        let mut secrets: Vec<bool> = Vec::new();
+        let mut inputs: Vec<crate::text_input::TextInput> = Vec::new();
+
+        macro_rules! add_field {
+            ($label:expr, $value:expr, $secret:expr) => {
+                labels.push($label.to_string());
+                secrets.push($secret);
+                inputs.push(crate::text_input::TextInput::new($value));
+            };
+        }
+
+        match &auth {
+            Auth::None => {}
+            Auth::Basic { username, password } => {
+                add_field!("Username", username.as_str(), false);
+                add_field!("Password", password.as_str(), true);
+            }
+            Auth::Bearer { token } => {
+                add_field!("Token", token.as_str(), true);
+            }
+            Auth::Digest {
+                username, password, ..
+            } => {
+                add_field!("Username", username.as_str(), false);
+                add_field!("Password", password.as_str(), true);
+            }
+            Auth::OAuth1 {
+                consumer_key,
+                consumer_secret,
+                access_token,
+                token_secret,
+                callback_url,
+                version,
+                realm,
+                ..
+            } => {
+                add_field!("Consumer Key", consumer_key.as_str(), false);
+                add_field!("Consumer Secret", consumer_secret.as_str(), true);
+                add_field!("Access Token", access_token.as_str(), false);
+                add_field!("Token Secret", token_secret.as_str(), true);
+                add_field!("Callback URL", callback_url.as_str(), false);
+                add_field!("Version", version.as_str(), false);
+                add_field!("Realm", realm.as_str(), false);
+            }
+            Auth::OAuth2 {
+                grant,
+                callback_url,
+                scope,
+                state,
+                access_token,
+                refresh_token,
+                ..
+            } => {
+                match grant {
+                    lazycurl_core::types::OAuth2Grant::AuthorizationCode {
+                        auth_url,
+                        token_url,
+                        client_id,
+                        client_secret,
+                    } => {
+                        add_field!("Auth URL", auth_url.as_str(), false);
+                        add_field!("Token URL", token_url.as_str(), false);
+                        add_field!("Client ID", client_id.as_str(), false);
+                        add_field!("Client Secret", client_secret.as_str(), true);
+                    }
+                    lazycurl_core::types::OAuth2Grant::Pkce {
+                        auth_url,
+                        token_url,
+                        client_id,
+                        client_secret,
+                        code_verifier,
+                        ..
+                    } => {
+                        add_field!("Auth URL", auth_url.as_str(), false);
+                        add_field!("Token URL", token_url.as_str(), false);
+                        add_field!("Client ID", client_id.as_str(), false);
+                        add_field!("Client Secret", client_secret.as_str(), true);
+                        add_field!("Code Verifier", code_verifier.as_str(), false);
+                    }
+                    lazycurl_core::types::OAuth2Grant::ClientCredentials {
+                        token_url,
+                        client_id,
+                        client_secret,
+                    } => {
+                        add_field!("Token URL", token_url.as_str(), false);
+                        add_field!("Client ID", client_id.as_str(), false);
+                        add_field!("Client Secret", client_secret.as_str(), true);
+                    }
+                    lazycurl_core::types::OAuth2Grant::Password {
+                        token_url,
+                        username,
+                        password,
+                        client_id,
+                        client_secret,
+                    } => {
+                        add_field!("Token URL", token_url.as_str(), false);
+                        add_field!("Username", username.as_str(), false);
+                        add_field!("Password", password.as_str(), true);
+                        add_field!("Client ID", client_id.as_str(), false);
+                        add_field!("Client Secret", client_secret.as_str(), true);
+                    }
+                }
+                add_field!("Callback URL", callback_url.as_str(), false);
+                add_field!("Scope", scope.as_str(), false);
+                add_field!("State", state.as_str(), false);
+                add_field!("Access Token", access_token.as_str(), false);
+                add_field!("Refresh Token", refresh_token.as_str(), false);
+            }
+            Auth::ApiKey { key, value, .. } => {
+                add_field!("Key", key.as_str(), false);
+                add_field!("Value", value.as_str(), true);
+            }
+            Auth::AwsV4 {
+                access_key,
+                secret_key,
+                region,
+                service,
+                session_token,
+                ..
+            } => {
+                add_field!("Access Key", access_key.as_str(), false);
+                add_field!("Secret Key", secret_key.as_str(), true);
+                add_field!("Region", region.as_str(), false);
+                add_field!("Service", service.as_str(), false);
+                add_field!("Session Token", session_token.as_str(), true);
+            }
+            Auth::Asap {
+                issuer,
+                audience,
+                key_id,
+                private_key,
+                subject,
+                expiry,
+                additional_claims,
+                ..
+            } => {
+                add_field!("Issuer", issuer.as_str(), false);
+                add_field!("Audience", audience.as_str(), false);
+                add_field!("Key ID", key_id.as_str(), false);
+                add_field!("Private Key", private_key.as_str(), true);
+                add_field!("Subject", subject.as_str(), false);
+                add_field!("Expiry (seconds)", expiry.as_str(), false);
+                add_field!("Additional Claims", additional_claims.as_str(), false);
+            }
+        }
+
+        self.auth_field_labels = labels;
+        self.auth_field_secrets = secrets;
+        self.auth_inputs = inputs;
+    }
+
+    /// Write auth_inputs back into the current request's auth fields
+    pub fn sync_auth_to_request(&mut self) {
+        let values: Vec<String> = self
+            .auth_inputs
+            .iter()
+            .map(|i| i.content().to_string())
+            .collect();
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        let Some(ref mut req) = ws.data.current_request else {
+            return;
+        };
+        let Some(auth) = req.auth.as_mut() else {
+            return;
+        };
+
+        let mut idx = 0;
+        let get = |values: &Vec<String>, idx: &mut usize| -> String {
+            let v = values.get(*idx).cloned().unwrap_or_default();
+            *idx += 1;
+            v
+        };
+
+        match auth {
+            Auth::None => {}
+            Auth::Basic { username, password } => {
+                *username = get(&values, &mut idx);
+                *password = get(&values, &mut idx);
+            }
+            Auth::Bearer { token } => {
+                *token = get(&values, &mut idx);
+            }
+            Auth::Digest {
+                username, password, ..
+            } => {
+                *username = get(&values, &mut idx);
+                *password = get(&values, &mut idx);
+            }
+            Auth::OAuth1 {
+                consumer_key,
+                consumer_secret,
+                access_token,
+                token_secret,
+                callback_url,
+                version,
+                realm,
+                ..
+            } => {
+                *consumer_key = get(&values, &mut idx);
+                *consumer_secret = get(&values, &mut idx);
+                *access_token = get(&values, &mut idx);
+                *token_secret = get(&values, &mut idx);
+                *callback_url = get(&values, &mut idx);
+                *version = get(&values, &mut idx);
+                *realm = get(&values, &mut idx);
+            }
+            Auth::OAuth2 {
+                grant,
+                callback_url,
+                scope,
+                state,
+                access_token,
+                refresh_token,
+                ..
+            } => {
+                match grant {
+                    lazycurl_core::types::OAuth2Grant::AuthorizationCode {
+                        auth_url,
+                        token_url,
+                        client_id,
+                        client_secret,
+                    } => {
+                        *auth_url = get(&values, &mut idx);
+                        *token_url = get(&values, &mut idx);
+                        *client_id = get(&values, &mut idx);
+                        *client_secret = get(&values, &mut idx);
+                    }
+                    lazycurl_core::types::OAuth2Grant::Pkce {
+                        auth_url,
+                        token_url,
+                        client_id,
+                        client_secret,
+                        code_verifier,
+                        ..
+                    } => {
+                        *auth_url = get(&values, &mut idx);
+                        *token_url = get(&values, &mut idx);
+                        *client_id = get(&values, &mut idx);
+                        *client_secret = get(&values, &mut idx);
+                        *code_verifier = get(&values, &mut idx);
+                    }
+                    lazycurl_core::types::OAuth2Grant::ClientCredentials {
+                        token_url,
+                        client_id,
+                        client_secret,
+                    } => {
+                        *token_url = get(&values, &mut idx);
+                        *client_id = get(&values, &mut idx);
+                        *client_secret = get(&values, &mut idx);
+                    }
+                    lazycurl_core::types::OAuth2Grant::Password {
+                        token_url,
+                        username,
+                        password,
+                        client_id,
+                        client_secret,
+                    } => {
+                        *token_url = get(&values, &mut idx);
+                        *username = get(&values, &mut idx);
+                        *password = get(&values, &mut idx);
+                        *client_id = get(&values, &mut idx);
+                        *client_secret = get(&values, &mut idx);
+                    }
+                }
+                *callback_url = get(&values, &mut idx);
+                *scope = get(&values, &mut idx);
+                *state = get(&values, &mut idx);
+                *access_token = get(&values, &mut idx);
+                *refresh_token = get(&values, &mut idx);
+            }
+            Auth::ApiKey { key, value, .. } => {
+                *key = get(&values, &mut idx);
+                *value = get(&values, &mut idx);
+            }
+            Auth::AwsV4 {
+                access_key,
+                secret_key,
+                region,
+                service,
+                session_token,
+                ..
+            } => {
+                *access_key = get(&values, &mut idx);
+                *secret_key = get(&values, &mut idx);
+                *region = get(&values, &mut idx);
+                *service = get(&values, &mut idx);
+                *session_token = get(&values, &mut idx);
+            }
+            Auth::Asap {
+                issuer,
+                audience,
+                key_id,
+                private_key,
+                subject,
+                expiry,
+                additional_claims,
+                ..
+            } => {
+                *issuer = get(&values, &mut idx);
+                *audience = get(&values, &mut idx);
+                *key_id = get(&values, &mut idx);
+                *private_key = get(&values, &mut idx);
+                *subject = get(&values, &mut idx);
+                *expiry = get(&values, &mut idx);
+                *additional_claims = get(&values, &mut idx);
+            }
         }
     }
 
@@ -2013,7 +2353,11 @@ impl App {
                     self.start_editing(EditField::BodyContent);
                 }
                 RequestTab::Auth => {
-                    self.open_auth_picker();
+                    if self.auth_inputs.is_empty() {
+                        self.open_auth_picker();
+                    } else {
+                        self.start_editing(EditField::AuthField(self.auth_field_cursor));
+                    }
                 }
             },
             _ => {}
@@ -2143,6 +2487,7 @@ impl App {
                 }
             }
             self.show_auth_picker = false;
+            self.load_auth_inputs();
         }
     }
 
@@ -2162,6 +2507,11 @@ impl App {
                 RequestTab::Params => {
                     if self.param_cursor > 0 {
                         self.param_cursor -= 1;
+                    }
+                }
+                RequestTab::Auth => {
+                    if self.auth_field_cursor > 0 {
+                        self.auth_field_cursor -= 1;
                     }
                 }
                 _ => {}
@@ -2191,6 +2541,7 @@ impl App {
                     RequestTab::Params => {
                         self.current_request().map(|r| r.params.len()).unwrap_or(0)
                     }
+                    RequestTab::Auth => self.auth_inputs.len(),
                     _ => 0,
                 };
                 match self.request_tab() {
@@ -2202,6 +2553,11 @@ impl App {
                     RequestTab::Params => {
                         if max > 0 && self.param_cursor + 1 < max {
                             self.param_cursor += 1;
+                        }
+                    }
+                    RequestTab::Auth => {
+                        if max > 0 && self.auth_field_cursor + 1 < max {
+                            self.auth_field_cursor += 1;
                         }
                     }
                     _ => {}
