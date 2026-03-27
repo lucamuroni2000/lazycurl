@@ -3569,14 +3569,21 @@ impl App {
                         None
                     };
 
-                    let url = lazycurl_core::oauth2::build_authorization_url(
+                    let url = match lazycurl_core::oauth2::build_authorization_url(
                         auth_url,
                         client_id,
                         &redirect_uri,
                         scope,
                         state,
                         pkce.as_ref().map(|(c, m)| (c.as_str(), m.as_str())),
-                    );
+                    ) {
+                        Ok(u) => u,
+                        Err(e) => {
+                            self.status_message = Some(format!("Invalid auth URL: {}", e));
+                            self.oauth_flow_active = false;
+                            return;
+                        }
+                    };
 
                     // Open browser
                     if open::that(&url).is_err() {

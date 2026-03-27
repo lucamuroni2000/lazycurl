@@ -31,8 +31,8 @@ pub fn build_authorization_url(
     scope: &str,
     state: &str,
     pkce: Option<(&str, &str)>, // (code_challenge, method)
-) -> String {
-    let mut url = Url::parse(auth_url).expect("Invalid auth URL");
+) -> Result<String, url::ParseError> {
+    let mut url = Url::parse(auth_url)?;
     {
         let mut q = url.query_pairs_mut();
         q.append_pair("response_type", "code");
@@ -49,7 +49,7 @@ pub fn build_authorization_url(
             q.append_pair("code_challenge_method", method);
         }
     }
-    url.to_string()
+    Ok(url.to_string())
 }
 
 pub struct CallbackResult {
@@ -94,6 +94,13 @@ pub async fn handle_callback(
     Ok(CallbackResult { code, state })
 }
 
+/// Encode form body pairs using proper percent-encoding per RFC 3986.
+fn encode_form_body(pairs: &[(&str, &str)]) -> String {
+    url::form_urlencoded::Serializer::new(String::new())
+        .extend_pairs(pairs)
+        .finish()
+}
+
 /// Build curl args for the token exchange POST request.
 pub fn build_token_exchange_args(
     token_url: &str,
@@ -106,14 +113,14 @@ pub fn build_token_exchange_args(
 ) -> Vec<String> {
     let mut args = vec!["-s".to_string(), "-X".to_string(), "POST".to_string()];
 
-    let mut body_parts = vec![
-        "grant_type=authorization_code".to_string(),
-        format!("code={}", code),
-        format!("redirect_uri={}", redirect_uri),
+    let mut pairs: Vec<(&str, &str)> = vec![
+        ("grant_type", "authorization_code"),
+        ("code", code),
+        ("redirect_uri", redirect_uri),
     ];
 
     if let Some(verifier) = code_verifier {
-        body_parts.push(format!("code_verifier={}", verifier));
+        pairs.push(("code_verifier", verifier));
     }
 
     match client_auth {
@@ -122,13 +129,13 @@ pub fn build_token_exchange_args(
             args.push(format!("{}:{}", client_id, client_secret));
         }
         ClientAuthentication::Body => {
-            body_parts.push(format!("client_id={}", client_id));
-            body_parts.push(format!("client_secret={}", client_secret));
+            pairs.push(("client_id", client_id));
+            pairs.push(("client_secret", client_secret));
         }
     }
 
     args.push("-d".to_string());
-    args.push(body_parts.join("&"));
+    args.push(encode_form_body(&pairs));
 
     args.push("-H".to_string());
     args.push("Content-Type: application/x-www-form-urlencoded".to_string());
@@ -147,10 +154,10 @@ pub fn build_client_credentials_args(
 ) -> Vec<String> {
     let mut args = vec!["-s".to_string(), "-X".to_string(), "POST".to_string()];
 
-    let mut body_parts = vec!["grant_type=client_credentials".to_string()];
+    let mut pairs: Vec<(&str, &str)> = vec![("grant_type", "client_credentials")];
 
     if !scope.is_empty() {
-        body_parts.push(format!("scope={}", scope));
+        pairs.push(("scope", scope));
     }
 
     match client_auth {
@@ -159,13 +166,13 @@ pub fn build_client_credentials_args(
             args.push(format!("{}:{}", client_id, client_secret));
         }
         ClientAuthentication::Body => {
-            body_parts.push(format!("client_id={}", client_id));
-            body_parts.push(format!("client_secret={}", client_secret));
+            pairs.push(("client_id", client_id));
+            pairs.push(("client_secret", client_secret));
         }
     }
 
     args.push("-d".to_string());
-    args.push(body_parts.join("&"));
+    args.push(encode_form_body(&pairs));
 
     args.push("-H".to_string());
     args.push("Content-Type: application/x-www-form-urlencoded".to_string());
@@ -186,14 +193,14 @@ pub fn build_password_grant_args(
 ) -> Vec<String> {
     let mut args = vec!["-s".to_string(), "-X".to_string(), "POST".to_string()];
 
-    let mut body_parts = vec![
-        "grant_type=password".to_string(),
-        format!("username={}", username),
-        format!("password={}", password),
+    let mut pairs: Vec<(&str, &str)> = vec![
+        ("grant_type", "password"),
+        ("username", username),
+        ("password", password),
     ];
 
     if !scope.is_empty() {
-        body_parts.push(format!("scope={}", scope));
+        pairs.push(("scope", scope));
     }
 
     match client_auth {
@@ -202,13 +209,13 @@ pub fn build_password_grant_args(
             args.push(format!("{}:{}", client_id, client_secret));
         }
         ClientAuthentication::Body => {
-            body_parts.push(format!("client_id={}", client_id));
-            body_parts.push(format!("client_secret={}", client_secret));
+            pairs.push(("client_id", client_id));
+            pairs.push(("client_secret", client_secret));
         }
     }
 
     args.push("-d".to_string());
-    args.push(body_parts.join("&"));
+    args.push(encode_form_body(&pairs));
 
     args.push("-H".to_string());
     args.push("Content-Type: application/x-www-form-urlencoded".to_string());
@@ -227,9 +234,9 @@ pub fn build_refresh_token_args(
 ) -> Vec<String> {
     let mut args = vec!["-s".to_string(), "-X".to_string(), "POST".to_string()];
 
-    let mut body_parts = vec![
-        "grant_type=refresh_token".to_string(),
-        format!("refresh_token={}", refresh_token),
+    let mut pairs: Vec<(&str, &str)> = vec![
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh_token),
     ];
 
     match client_auth {
@@ -238,13 +245,13 @@ pub fn build_refresh_token_args(
             args.push(format!("{}:{}", client_id, client_secret));
         }
         ClientAuthentication::Body => {
-            body_parts.push(format!("client_id={}", client_id));
-            body_parts.push(format!("client_secret={}", client_secret));
+            pairs.push(("client_id", client_id));
+            pairs.push(("client_secret", client_secret));
         }
     }
 
     args.push("-d".to_string());
-    args.push(body_parts.join("&"));
+    args.push(encode_form_body(&pairs));
 
     args.push("-H".to_string());
     args.push("Content-Type: application/x-www-form-urlencoded".to_string());
@@ -286,7 +293,8 @@ mod tests {
             "read write",
             "state123",
             None, // No PKCE
-        );
+        )
+        .unwrap();
         assert!(url.contains("response_type=code"));
         assert!(url.contains("client_id=my-client-id"));
         assert!(url.contains("redirect_uri=http"));
@@ -303,9 +311,23 @@ mod tests {
             "read",
             "state123",
             Some(("challenge_value", "S256")),
-        );
+        )
+        .unwrap();
         assert!(url.contains("code_challenge=challenge_value"));
         assert!(url.contains("code_challenge_method=S256"));
+    }
+
+    #[test]
+    fn test_build_auth_url_invalid_url_returns_error() {
+        let result = build_authorization_url(
+            "not a valid url",
+            "client-id",
+            "http://localhost/callback",
+            "",
+            "",
+            None,
+        );
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -408,7 +430,8 @@ mod tests {
         let body_idx = args.iter().position(|a| a == "-d").unwrap();
         let body = &args[body_idx + 1];
         assert!(body.contains("grant_type=client_credentials"));
-        assert!(body.contains("scope=read+write") || body.contains("scope=read write"));
+        // form_urlencoded encodes spaces as +
+        assert!(body.contains("scope=read+write"));
         assert!(args.contains(&"-u".to_string()));
     }
 
@@ -445,10 +468,29 @@ mod tests {
         let body_idx = args.iter().position(|a| a == "-d").unwrap();
         let body = &args[body_idx + 1];
         assert!(body.contains("grant_type=password"));
-        assert!(body.contains("username=user@example.com"));
-        assert!(body.contains("password=p@ssw0rd"));
+        // Values are now percent-encoded
+        assert!(body.contains("username=user%40example.com"));
+        assert!(body.contains("password=p%40ssw0rd"));
         assert!(body.contains("scope=read"));
         assert!(args.contains(&"-u".to_string()));
+    }
+
+    #[test]
+    fn test_form_body_encodes_special_characters() {
+        let args = build_password_grant_args(
+            "https://auth.example.com/token",
+            "user",
+            "p&ss=word+test",
+            "client",
+            "secret",
+            "",
+            &ClientAuthentication::BasicHeader,
+        );
+        let body_idx = args.iter().position(|a| a == "-d").unwrap();
+        let body = &args[body_idx + 1];
+        // & and = in password must be encoded so they don't corrupt the body
+        assert!(!body.contains("p&ss=word"));
+        assert!(body.contains("password=p%26ss%3Dword%2Btest"));
     }
 
     #[test]
