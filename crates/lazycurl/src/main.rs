@@ -1170,10 +1170,13 @@ fn open_in_file_explorer(path: &std::path::Path) {
     if let Some(parent) = path.parent() {
         #[cfg(target_os = "windows")]
         {
-            let _ = std::process::Command::new("explorer").arg(parent).spawn();
+            if !is_explorer_open_for(parent) {
+                let _ = std::process::Command::new("explorer").arg(parent).spawn();
+            }
         }
         #[cfg(target_os = "macos")]
         {
+            // `open` on macOS reuses an existing Finder window for the same folder
             let _ = std::process::Command::new("open").arg(parent).spawn();
         }
         #[cfg(target_os = "linux")]
@@ -1181,6 +1184,54 @@ fn open_in_file_explorer(path: &std::path::Path) {
             let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
         }
     }
+}
+
+#[cfg(target_os = "windows")]
+fn is_explorer_open_for(dir: &std::path::Path) -> bool {
+    // Query open Explorer windows via the Shell.Application COM object.
+    // The PowerShell snippet lists the LocationURL of every open window;
+    // we check if any of them matches the target directory.
+    let dir_str = dir.to_string_lossy().replace('\\', "/");
+    let script =
+        "(New-Object -ComObject Shell.Application).Windows() | ForEach-Object { $_.LocationURL }";
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", script])
+        .output();
+    match output {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            // LocationURL is a file:/// URI, e.g. "file:///C:/Users/foo/bar"
+            let target = format!("file:///{}", dir_str.trim_start_matches('/'));
+            stdout.lines().any(|line| {
+                let decoded = urldecode(line.trim());
+                decoded.eq_ignore_ascii_case(&target)
+            })
+        }
+        Err(_) => false,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn urldecode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.bytes();
+    while let Some(b) = chars.next() {
+        if b == b'%' {
+            let hi = chars.next();
+            let lo = chars.next();
+            if let (Some(h), Some(l)) = (hi, lo) {
+                let hex = [h, l];
+                if let Ok(val) = u8::from_str_radix(&String::from_utf8_lossy(&hex), 16) {
+                    result.push(val as char);
+                    continue;
+                }
+            }
+            result.push(b as char);
+        } else {
+            result.push(b as char);
+        }
+    }
+    result
 }
 
 fn handle_export_picker_action(app: &mut App, action: &Action) {
