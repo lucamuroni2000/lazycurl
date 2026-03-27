@@ -1,7 +1,7 @@
 use crate::collection::slugify;
 use crate::command::CurlCommandBuilder;
 use crate::config::config_dir;
-use crate::types::{ApiKeyLocation, Auth, Body, Collection, Request};
+use crate::types::{ApiKeyLocation, Auth, Body, Collection, OAuth2Grant, Request};
 
 use std::path::PathBuf;
 
@@ -116,11 +116,36 @@ pub fn export_curl(request: &Request, secrets: &[String]) -> String {
                 }
             },
             Auth::None => {}
-            Auth::Digest { .. }
-            | Auth::OAuth1 { .. }
-            | Auth::OAuth2 { .. }
-            | Auth::AwsV4 { .. }
-            | Auth::Asap { .. } => {}
+            Auth::Digest {
+                username, password, ..
+            } => {
+                builder = builder.digest_auth(username, password);
+            }
+            Auth::OAuth1 { .. } => {
+                // OAuth 1.0 requires runtime signing; can't compute at export time
+                builder = builder.header("Authorization", "OAuth <requires runtime signing>");
+            }
+            Auth::OAuth2 { access_token, .. } => {
+                if !access_token.is_empty() {
+                    builder = builder.header("Authorization", &format!("Bearer {}", access_token));
+                }
+            }
+            Auth::AwsV4 {
+                region, service, ..
+            } => {
+                // curl supports --aws-sigv4 natively since 7.75.0
+                // Use a comment-style header since CurlCommandBuilder may not have raw arg support
+                builder = builder.header(
+                    "Authorization",
+                    &format!(
+                        "AWS4-HMAC-SHA256 (aws-sigv4 provider:amz:{}:{})",
+                        region, service
+                    ),
+                );
+            }
+            Auth::Asap { .. } => {
+                builder = builder.header("Authorization", "Bearer <requires runtime JWT signing>");
+            }
         }
     }
 
@@ -278,11 +303,83 @@ fn postman_auth(request: &Request) -> Option<serde_json::Value> {
                 ]
             }))
         }
-        Some(Auth::Digest { .. })
-        | Some(Auth::OAuth1 { .. })
-        | Some(Auth::OAuth2 { .. })
-        | Some(Auth::AwsV4 { .. })
-        | Some(Auth::Asap { .. }) => None,
+        Some(Auth::Digest {
+            username, password, ..
+        }) => Some(serde_json::json!({
+            "type": "digest",
+            "digest": [
+                {"key": "username", "value": username, "type": "string"},
+                {"key": "password", "value": password, "type": "string"},
+            ]
+        })),
+        Some(Auth::OAuth1 {
+            consumer_key,
+            consumer_secret,
+            access_token,
+            token_secret,
+            signature_method,
+            ..
+        }) => {
+            let sig_method = match signature_method {
+                crate::types::OAuth1SignatureMethod::HmacSha1 => "HMAC-SHA1",
+                crate::types::OAuth1SignatureMethod::HmacSha256 => "HMAC-SHA256",
+                crate::types::OAuth1SignatureMethod::Plaintext => "PLAINTEXT",
+            };
+            Some(serde_json::json!({
+                "type": "oauth1",
+                "oauth1": [
+                    {"key": "consumerKey", "value": consumer_key, "type": "string"},
+                    {"key": "consumerSecret", "value": consumer_secret, "type": "string"},
+                    {"key": "token", "value": access_token, "type": "string"},
+                    {"key": "tokenSecret", "value": token_secret, "type": "string"},
+                    {"key": "signatureMethod", "value": sig_method, "type": "string"},
+                ]
+            }))
+        }
+        Some(Auth::OAuth2 {
+            grant,
+            scope,
+            access_token,
+            ..
+        }) => {
+            let grant_type = match grant {
+                crate::types::OAuth2Grant::AuthorizationCode { .. } => "authorization_code",
+                crate::types::OAuth2Grant::Pkce { .. } => "authorization_code_with_pkce",
+                crate::types::OAuth2Grant::ClientCredentials { .. } => "client_credentials",
+                crate::types::OAuth2Grant::Password { .. } => "password",
+            };
+            Some(serde_json::json!({
+                "type": "oauth2",
+                "oauth2": [
+                    {"key": "grant_type", "value": grant_type, "type": "string"},
+                    {"key": "accessToken", "value": access_token, "type": "string"},
+                    {"key": "scope", "value": scope, "type": "string"},
+                ]
+            }))
+        }
+        Some(Auth::AwsV4 {
+            access_key,
+            secret_key,
+            region,
+            service,
+            ..
+        }) => Some(serde_json::json!({
+            "type": "awsv4",
+            "awsv4": [
+                {"key": "accessKey", "value": access_key, "type": "string"},
+                {"key": "secretKey", "value": secret_key, "type": "string"},
+                {"key": "region", "value": region, "type": "string"},
+                {"key": "service", "value": service, "type": "string"},
+            ]
+        })),
+        Some(Auth::Asap {
+            issuer, audience, ..
+        }) => Some(serde_json::json!({
+            "type": "bearer",
+            "bearer": [
+                {"key": "token", "value": format!("<ASAP JWT - iss:{} aud:{}>", issuer, audience), "type": "string"},
+            ]
+        })),
         Some(Auth::None) | None => None,
     }
 }
@@ -460,11 +557,11 @@ fn openapi_operation(request: &Request) -> serde_json::Value {
             Auth::Bearer { .. } => Some("bearerAuth"),
             Auth::Basic { .. } => Some("basicAuth"),
             Auth::ApiKey { .. } => Some("apiKeyAuth"),
-            Auth::Digest { .. }
-            | Auth::OAuth1 { .. }
-            | Auth::OAuth2 { .. }
-            | Auth::AwsV4 { .. }
-            | Auth::Asap { .. } => None,
+            Auth::Digest { .. } => Some("digestAuth"),
+            Auth::OAuth1 { .. } => Some("oauth1Auth"),
+            Auth::OAuth2 { .. } => Some("oauth2Auth"),
+            Auth::AwsV4 { .. } => Some("awsV4Auth"),
+            Auth::Asap { .. } => Some("asapAuth"),
             Auth::None => None,
         };
         if let Some(name) = security_name {
@@ -500,11 +597,82 @@ fn collect_security_schemes(requests: &[Request]) -> serde_json::Map<String, ser
                     );
                 }
                 Auth::None => {}
-                Auth::Digest { .. }
-                | Auth::OAuth1 { .. }
-                | Auth::OAuth2 { .. }
-                | Auth::AwsV4 { .. }
-                | Auth::Asap { .. } => {}
+                Auth::Digest { .. } => {
+                    schemes.insert(
+                        "digestAuth".to_string(),
+                        serde_json::json!({"type": "http", "scheme": "digest"}),
+                    );
+                }
+                Auth::OAuth1 { .. } => {
+                    schemes.insert(
+                        "oauth1Auth".to_string(),
+                        serde_json::json!({
+                            "type": "apiKey",
+                            "in": "header",
+                            "name": "Authorization",
+                            "description": "OAuth 1.0 (not natively supported in OpenAPI 3.0)"
+                        }),
+                    );
+                }
+                Auth::OAuth2 { grant, .. } => {
+                    let flow = match grant {
+                        OAuth2Grant::AuthorizationCode {
+                            auth_url,
+                            token_url,
+                            ..
+                        }
+                        | OAuth2Grant::Pkce {
+                            auth_url,
+                            token_url,
+                            ..
+                        } => {
+                            serde_json::json!({
+                                "authorizationCode": {
+                                    "authorizationUrl": auth_url,
+                                    "tokenUrl": token_url,
+                                    "scopes": {}
+                                }
+                            })
+                        }
+                        OAuth2Grant::ClientCredentials { token_url, .. } => {
+                            serde_json::json!({
+                                "clientCredentials": {
+                                    "tokenUrl": token_url,
+                                    "scopes": {}
+                                }
+                            })
+                        }
+                        OAuth2Grant::Password { token_url, .. } => {
+                            serde_json::json!({
+                                "password": {
+                                    "tokenUrl": token_url,
+                                    "scopes": {}
+                                }
+                            })
+                        }
+                    };
+                    schemes.insert(
+                        "oauth2Auth".to_string(),
+                        serde_json::json!({"type": "oauth2", "flows": flow}),
+                    );
+                }
+                Auth::AwsV4 { .. } => {
+                    schemes.insert(
+                        "awsV4Auth".to_string(),
+                        serde_json::json!({
+                            "type": "apiKey",
+                            "in": "header",
+                            "name": "Authorization",
+                            "description": "AWS Signature V4"
+                        }),
+                    );
+                }
+                Auth::Asap { .. } => {
+                    schemes.insert(
+                        "asapAuth".to_string(),
+                        serde_json::json!({"type": "http", "scheme": "bearer", "bearerFormat": "ASAP"}),
+                    );
+                }
             }
         }
     }
@@ -521,7 +689,10 @@ pub fn export_filename(name: &str, format: ExportFormat) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Collection, FormField, Header, Method, Param, Variable};
+    use crate::types::{
+        ClientAuthentication, Collection, DigestAlgorithm, FormField, Header, Method, OAuth2Grant,
+        Param, Variable,
+    };
     use std::collections::HashMap;
 
     fn make_request() -> Request {
@@ -959,5 +1130,63 @@ mod tests {
             servers[0]["url"].as_str().unwrap(),
             "https://api.example.com"
         );
+    }
+
+    #[test]
+    fn test_export_curl_digest_auth() {
+        let request = Request {
+            id: uuid::Uuid::new_v4(),
+            name: "Digest Test".to_string(),
+            method: Method::Get,
+            url: "https://example.com".to_string(),
+            headers: vec![],
+            params: vec![],
+            body: None,
+            auth: Some(Auth::Digest {
+                username: "user".to_string(),
+                password: "pass".to_string(),
+                realm: String::new(),
+                nonce: String::new(),
+                algorithm: DigestAlgorithm::MD5,
+                qop: String::new(),
+                nonce_count: String::new(),
+                client_nonce: String::new(),
+                opaque: String::new(),
+            }),
+        };
+        let result = export_curl(&request, &[]);
+        assert!(result.contains("--digest"));
+        assert!(result.contains("-u"));
+        assert!(result.contains("user:pass"));
+    }
+
+    #[test]
+    fn test_export_curl_oauth2_with_token() {
+        let request = Request {
+            id: uuid::Uuid::new_v4(),
+            name: "OAuth2 Test".to_string(),
+            method: Method::Get,
+            url: "https://api.example.com".to_string(),
+            headers: vec![],
+            params: vec![],
+            body: None,
+            auth: Some(Auth::OAuth2 {
+                grant: OAuth2Grant::AuthorizationCode {
+                    auth_url: "https://auth.example.com/authorize".to_string(),
+                    token_url: "https://auth.example.com/token".to_string(),
+                    client_id: "cid".to_string(),
+                    client_secret: "csecret".to_string(),
+                },
+                token_name: String::new(),
+                callback_url: String::new(),
+                scope: "read".to_string(),
+                state: String::new(),
+                client_authentication: ClientAuthentication::BasicHeader,
+                access_token: "my-token-123".to_string(),
+                refresh_token: String::new(),
+            }),
+        };
+        let result = export_curl(&request, &[]);
+        assert!(result.contains("Bearer my-token-123"));
     }
 }
