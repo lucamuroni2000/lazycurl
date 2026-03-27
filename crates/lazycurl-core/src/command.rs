@@ -21,6 +21,7 @@ pub struct CurlCommand {
     multipart_files: Vec<(String, String)>,
     timeout: Option<u32>,
     basic_auth: Option<(String, String)>,
+    digest_auth: Option<(String, String)>,
     cookies: Vec<String>,
     follow_redirects: bool,
     query_params: Vec<(String, String)>,
@@ -80,6 +81,13 @@ impl CurlCommand {
 
         // Basic auth
         if let Some((user, pass)) = &self.basic_auth {
+            args.push("-u".to_string());
+            args.push(format!("{}:{}", user, pass));
+        }
+
+        // Digest auth
+        if let Some((user, pass)) = &self.digest_auth {
+            args.push("--digest".to_string());
             args.push("-u".to_string());
             args.push(format!("{}:{}", user, pass));
         }
@@ -229,6 +237,7 @@ pub struct CurlCommandBuilder {
     multipart_files: Vec<(String, String)>,
     timeout: Option<u32>,
     basic_auth: Option<(String, String)>,
+    digest_auth: Option<(String, String)>,
     cookies: Vec<String>,
     follow_redirects: bool,
     query_params: Vec<(String, String)>,
@@ -246,6 +255,7 @@ impl CurlCommandBuilder {
             multipart_files: Vec::new(),
             timeout: None,
             basic_auth: None,
+            digest_auth: None,
             cookies: Vec::new(),
             follow_redirects: false,
             query_params: Vec::new(),
@@ -299,6 +309,11 @@ impl CurlCommandBuilder {
         self
     }
 
+    pub fn digest_auth(mut self, user: &str, pass: &str) -> Self {
+        self.digest_auth = Some((user.to_string(), pass.to_string()));
+        self
+    }
+
     pub fn cookie(mut self, cookie: &str) -> Self {
         self.cookies.push(cookie.to_string());
         self
@@ -325,6 +340,7 @@ impl CurlCommandBuilder {
             multipart_files: self.multipart_files,
             timeout: self.timeout,
             basic_auth: self.basic_auth,
+            digest_auth: self.digest_auth,
             cookies: self.cookies,
             follow_redirects: self.follow_redirects,
             query_params: self.query_params,
@@ -506,5 +522,16 @@ mod tests {
         } else {
             assert_eq!(name, "curl");
         }
+    }
+
+    #[test]
+    fn test_digest_auth() {
+        let cmd = CurlCommandBuilder::new("https://example.com")
+            .digest_auth("user", "pass")
+            .build();
+        let args = cmd.to_args();
+        assert!(args.contains(&"--digest".to_string()));
+        assert!(args.contains(&"-u".to_string()));
+        assert!(args.contains(&"user:pass".to_string()));
     }
 }
