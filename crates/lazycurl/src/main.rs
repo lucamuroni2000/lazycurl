@@ -176,15 +176,7 @@ async fn run_loop(
                 input::resolve_editing(key)
             } else {
                 match app.input_mode {
-                    app::InputMode::Normal => {
-                        // First try keymap, then navigation fallback
-                        let mapped = input::resolve_action(key, keymap);
-                        if matches!(mapped, Action::None) {
-                            input::resolve_navigation(key)
-                        } else {
-                            mapped
-                        }
-                    }
+                    app::InputMode::Normal => input::resolve_action(key, keymap),
                     app::InputMode::Editing => input::resolve_editing(key),
                 }
             };

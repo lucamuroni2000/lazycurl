@@ -61,24 +61,42 @@ pub fn build_keymap(
     let mut map = HashMap::new();
 
     let action_map: Vec<(&str, Action)> = vec![
+        // Global commands
+        ("quit", Action::Quit),
         ("send_request", Action::SendRequest),
         ("save_request", Action::SaveRequest),
+        ("cancel", Action::Cancel),
+        ("help", Action::Help),
+        ("search", Action::Search),
+        ("new_request", Action::NewRequest),
         ("switch_env", Action::SwitchEnvironment),
         ("manage_envs", Action::ManageEnvironments),
-        ("copy_curl", Action::OpenExportPicker),
-        ("new_request", Action::NewRequest),
-        ("cycle_panes", Action::CyclePaneForward),
-        ("search", Action::Search),
-        ("help", Action::Help),
-        ("cancel", Action::Cancel),
-        ("toggle_collections", Action::FocusCollections),
-        ("toggle_request", Action::FocusRequest),
-        ("toggle_response", Action::FocusResponse),
+        ("open_variables", Action::OpenVariables),
+        ("open_export", Action::OpenExportPicker),
+        ("open_log_viewer", Action::OpenLogViewer),
+        ("open_project_picker", Action::OpenProjectPicker),
         ("reveal_secrets", Action::RevealSecrets),
+        // Navigation
+        ("move_up", Action::MoveUp),
+        ("move_down", Action::MoveDown),
+        ("enter", Action::Enter),
+        ("next_tab", Action::NextTab),
+        ("prev_tab", Action::PrevTab),
+        ("cycle_pane_forward", Action::CyclePaneForward),
+        ("cycle_pane_backward", Action::CyclePaneBackward),
         ("next_project", Action::NextProject),
         ("prev_project", Action::PrevProject),
-        ("open_project", Action::OpenProjectPicker),
-        ("open_log_viewer", Action::OpenLogViewer),
+        // Pane focus
+        ("focus_collections", Action::FocusCollections),
+        ("focus_request", Action::FocusRequest),
+        ("focus_response", Action::FocusResponse),
+        // Item manipulation
+        ("add_item", Action::AddItem),
+        ("delete_item", Action::DeleteItem),
+        ("rename", Action::Rename),
+        ("cycle_method", Action::CycleMethod),
+        ("toggle_enabled", Action::ToggleEnabled),
+        ("copy", Action::Copy),
     ];
 
     for (key, action) in action_map {
@@ -89,25 +107,20 @@ pub fn build_keymap(
         }
     }
 
-    // Secondary project switching bindings (Ctrl+Tab may not work on all terminals)
-    map.entry((KeyModifiers::CONTROL, KeyCode::Tab))
-        .or_insert(Action::NextProject);
-    map.entry((
-        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-        KeyCode::BackTab,
-    ))
-    .or_insert(Action::PrevProject);
-
-    // Always register Ctrl+Q as quit (not remappable)
-    map.insert((KeyModifiers::CONTROL, KeyCode::Char('q')), Action::Quit);
+    // Universal fallbacks — arrow keys always work regardless of preset
+    map.entry((KeyModifiers::NONE, KeyCode::Up))
+        .or_insert(Action::MoveUp);
+    map.entry((KeyModifiers::NONE, KeyCode::Down))
+        .or_insert(Action::MoveDown);
+    map.entry((KeyModifiers::NONE, KeyCode::Left))
+        .or_insert(Action::PrevTab);
+    map.entry((KeyModifiers::NONE, KeyCode::Right))
+        .or_insert(Action::NextTab);
+    map.entry((KeyModifiers::NONE, KeyCode::Enter))
+        .or_insert(Action::Enter);
     // F5 as fallback for send (Ctrl+Enter compatibility)
     map.entry((KeyModifiers::NONE, KeyCode::F(5)))
         .or_insert(Action::SendRequest);
-    // Shift+Tab for backward cycling
-    map.insert(
-        (KeyModifiers::SHIFT, KeyCode::BackTab),
-        Action::CyclePaneBackward,
-    );
 
     map
 }
@@ -152,35 +165,12 @@ pub fn resolve_action(key: KeyEvent, keymap: &HashMap<(KeyModifiers, KeyCode), A
                 return action.clone();
             }
         }
+
+        // 4. Unbound character — pass through so overlays can handle it
+        return Action::CharInput(c);
     }
 
     Action::None
-}
-
-/// Resolve a key event when in Normal mode but not bound in the keymap.
-/// Handles arrow keys, Enter, tab switching, etc.
-pub fn resolve_navigation(key: KeyEvent) -> Action {
-    if key.kind != KeyEventKind::Press {
-        return Action::None;
-    }
-    match (key.modifiers, key.code) {
-        (KeyModifiers::NONE, KeyCode::Up) => Action::MoveUp,
-        (KeyModifiers::NONE, KeyCode::Down) => Action::MoveDown,
-        (KeyModifiers::NONE, KeyCode::Enter) => Action::Enter,
-        (KeyModifiers::NONE, KeyCode::Left) => Action::PrevTab,
-        (KeyModifiers::NONE, KeyCode::Right) => Action::NextTab,
-        (KeyModifiers::NONE, KeyCode::Char('a')) => Action::AddItem,
-        (KeyModifiers::NONE, KeyCode::Char('d')) => Action::DeleteItem,
-        (KeyModifiers::NONE, KeyCode::Char('r')) => Action::Rename,
-        (KeyModifiers::NONE, KeyCode::Char('v')) => Action::OpenVariables,
-        (KeyModifiers::NONE, KeyCode::Char('m')) => Action::CycleMethod,
-        (KeyModifiers::NONE, KeyCode::Char('s')) => Action::ToggleEnabled,
-        (KeyModifiers::NONE, KeyCode::Char('j')) => Action::MoveDown,
-        (KeyModifiers::NONE, KeyCode::Char('k')) => Action::MoveUp,
-        // Pass through unrecognized characters so overlays can handle them
-        (_, KeyCode::Char(c)) => Action::CharInput(c),
-        _ => Action::None,
-    }
 }
 
 /// Resolve a key event when in Editing mode.
