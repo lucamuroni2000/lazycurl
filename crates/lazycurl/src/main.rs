@@ -253,8 +253,8 @@ async fn run_loop(
                         app.show_collection_picker = false;
                         app.save_request_to_collection(idx);
                     }
-                    Action::NewRequest | Action::CharInput('n') => {
-                        // 'n' or Ctrl+N — create new collection and save there
+                    Action::NewRequest => {
+                        // create new collection and save there
                         app.show_collection_picker = false;
                         app.name_input.set_content("My Collection");
                         app.start_editing(EditField::NewCollectionName);
@@ -518,7 +518,22 @@ async fn run_loop(
                         }
                     }
                     Action::Copy => {
-                        // Will be fully implemented later
+                        if app.active_pane == app::Pane::Response
+                            && app.input_mode == app::InputMode::Normal
+                        {
+                            if let Some(resp) = app.last_response() {
+                                let text = if resp.body.is_empty() {
+                                    "[no response body]".to_string()
+                                } else {
+                                    resp.body.clone()
+                                };
+                                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                                    let _ = clipboard.set_text(&text);
+                                    app.status_message =
+                                        Some("Copied response body to clipboard".to_string());
+                                }
+                            }
+                        }
                     }
                     Action::Rename => app.handle_rename(),
                     // 't' on Auth tab opens the auth type picker when fields are showing
@@ -528,24 +543,6 @@ async fn run_loop(
                             && app.input_mode == app::InputMode::Normal =>
                     {
                         app.open_auth_picker();
-                    }
-                    // Copy response body to clipboard (y in Response pane)
-                    Action::CharInput('y')
-                        if app.active_pane == app::Pane::Response
-                            && app.input_mode == app::InputMode::Normal =>
-                    {
-                        if let Some(resp) = app.last_response() {
-                            let text = if resp.body.is_empty() {
-                                "[no response body]".to_string()
-                            } else {
-                                resp.body.clone()
-                            };
-                            if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                                let _ = clipboard.set_text(&text);
-                                app.status_message =
-                                    Some("Copied response body to clipboard".to_string());
-                            }
-                        }
                     }
                     // Editing actions
                     Action::CharInput(c) => {
@@ -790,15 +787,15 @@ fn handle_env_manager_action(app: &mut App, action: &Action) {
                 app.env_manager_activate();
             }
         }
-        Action::CharInput('n') => {
+        Action::NewRequest => {
             app.env_manager_create();
         }
-        Action::CharInput('r') | Action::Rename => {
+        Action::Rename => {
             if env_count > 0 {
                 app.env_manager_start_rename();
             }
         }
-        Action::CharInput('d') | Action::DeleteItem => {
+        Action::DeleteItem => {
             if env_count > 0 {
                 app.env_manager_request_delete();
             }
@@ -1158,14 +1155,14 @@ fn handle_project_picker_action(app: &mut App, action: &Action) {
                 app.show_project_picker = false;
             }
         }
-        Action::NewRequest | Action::CharInput('n') => {
+        Action::NewRequest => {
             // Create new project
             app.show_project_picker = false;
             app.name_input.set_content("New Project");
             app.start_editing(EditField::NewProjectName);
             app.status_message = Some("Name your project".to_string());
         }
-        Action::CharInput('r') | Action::Rename => {
+        Action::Rename => {
             if !app.all_projects.is_empty() {
                 app.project_picker_start_rename();
             }
@@ -1182,7 +1179,7 @@ fn handle_project_picker_action(app: &mut App, action: &Action) {
                 }
             }
         }
-        Action::CharInput('d') | Action::DeleteItem => {
+        Action::DeleteItem => {
             if !app.all_projects.is_empty() {
                 app.project_picker_request_delete();
             }
@@ -1265,12 +1262,12 @@ fn handle_export_picker_action(app: &mut App, action: &Action) {
         Action::Cancel => {
             app.show_export_picker = false;
         }
-        Action::MoveUp | Action::CharInput('k') => {
+        Action::MoveUp => {
             if app.export_format_cursor > 0 {
                 app.export_format_cursor -= 1;
             }
         }
-        Action::MoveDown | Action::CharInput('j') => {
+        Action::MoveDown => {
             let max = app.export_formats().len().saturating_sub(1);
             if app.export_format_cursor < max {
                 app.export_format_cursor += 1;
