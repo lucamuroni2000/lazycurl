@@ -86,35 +86,43 @@ pub enum ResponseTab {
 
 #[derive(Clone)]
 pub enum Action {
-    // Existing actions
+    // Global commands
     Quit,
     Cancel,
-    CyclePaneForward,
-    CyclePaneBackward,
     SendRequest,
     SaveRequest,
-    SwitchEnvironment,
-    ManageEnvironments,
-    NewRequest,
-    OpenExportPicker,
-    ToggleCollections,
-    ToggleRequest,
-    ToggleResponse,
-    RevealSecrets,
     Help,
     Search,
-    // New actions for interactive features
+    NewRequest,
+    SwitchEnvironment,
+    ManageEnvironments,
+    OpenVariables,
+    OpenExportPicker,
+    OpenLogViewer,
+    OpenProjectPicker,
+    RevealSecrets,
+    // Navigation
     MoveUp,
     MoveDown,
     Enter,
     NextTab,
     PrevTab,
-    DeleteItem,
+    CyclePaneForward,
+    CyclePaneBackward,
+    NextProject,
+    PrevProject,
+    // Pane focus
+    FocusCollections,
+    FocusRequest,
+    FocusResponse,
+    // Item manipulation
     AddItem,
+    DeleteItem,
     Rename,
-    OpenVariables,
     CycleMethod,
-    ToggleSecretFlag,
+    ToggleEnabled,
+    Copy,
+    // Text editing (not configurable via presets)
     CharInput(char),
     Backspace,
     Delete,
@@ -122,11 +130,7 @@ pub enum Action {
     CursorRight,
     Home,
     End,
-    // Project actions
-    NextProject,
-    PrevProject,
-    OpenProjectPicker,
-    OpenLogViewer,
+    // Sentinel
     None,
 }
 

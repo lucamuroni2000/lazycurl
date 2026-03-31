@@ -381,9 +381,9 @@ async fn run_loop(
                         }
                         app.cycle_pane_backward();
                     }
-                    Action::ToggleCollections => app.toggle_pane(0),
-                    Action::ToggleRequest => app.toggle_pane(1),
-                    Action::ToggleResponse => app.toggle_pane(2),
+                    Action::FocusCollections => app.toggle_pane(0),
+                    Action::FocusRequest => app.toggle_pane(1),
+                    Action::FocusResponse => app.toggle_pane(2),
                     Action::RevealSecrets => app.secrets_revealed = !app.secrets_revealed,
                     Action::OpenLogViewer => {
                         if !app.show_method_picker
@@ -516,7 +516,7 @@ async fn run_loop(
                             app.open_method_picker();
                         }
                     }
-                    Action::ToggleSecretFlag => {
+                    Action::ToggleEnabled => {
                         if app.active_pane == app::Pane::Request {
                             match app.request_tab() {
                                 app::RequestTab::Headers => app.toggle_header_enabled(),
@@ -524,6 +524,9 @@ async fn run_loop(
                                 _ => {}
                             }
                         }
+                    }
+                    Action::Copy => {
+                        // Will be fully implemented later
                     }
                     Action::Rename => app.handle_rename(),
                     // 't' on Auth tab opens the auth type picker when fields are showing
@@ -694,7 +697,7 @@ fn handle_variables_action(app: &mut App, action: &Action) {
                 app.var_request_delete();
             }
         }
-        Action::ToggleSecretFlag => {
+        Action::ToggleEnabled => {
             if app.input_mode != app::InputMode::Editing {
                 app.var_toggle_secret();
             }
