@@ -258,8 +258,6 @@ pub struct App {
     pub export_collection_available: bool,
     // OAuth 2.0 browser flow
     pub oauth_flow_active: bool,
-    #[allow(dead_code)]
-    pub oauth_flow_status: Option<String>,
 }
 
 impl App {
@@ -337,7 +335,6 @@ impl App {
             export_scope_is_collection: false,
             export_collection_available: false,
             oauth_flow_active: false,
-            oauth_flow_status: None,
         }
     }
 
