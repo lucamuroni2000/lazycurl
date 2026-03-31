@@ -12,8 +12,8 @@ categories.workspace = true
 
 [dependencies]
 lazycurl-core = { version = "0.4.0", path = "../lazycurl-core" }
-ratatui = "0.29"
-crossterm = "0.28"
+ratatui = "0.30"
+crossterm = "0.29"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "time", "net", "io-util"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
