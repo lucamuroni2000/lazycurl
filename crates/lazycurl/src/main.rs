@@ -500,11 +500,6 @@ async fn run_loop(
                         app.project_picker_cursor = 0;
                         app.show_project_picker = true;
                     }
-                    Action::CloseProject => {
-                        if let Some(idx) = app.active_project_idx {
-                            app.close_project(idx);
-                        }
-                    }
                     Action::DeleteItem => {
                         if app.active_pane == app::Pane::Collections {
                             app.request_collection_delete();

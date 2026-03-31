@@ -35,10 +35,8 @@ pub enum InputMode {
 pub enum EditField {
     Url,
     HeaderKey(usize),
-    #[allow(dead_code)]
     HeaderValue(usize),
     ParamKey(usize),
-    #[allow(dead_code)]
     ParamValue(usize),
     BodyContent,
     RequestName,
@@ -128,9 +126,6 @@ pub enum Action {
     NextProject,
     PrevProject,
     OpenProjectPicker,
-    #[allow(dead_code)]
-    CloseProject,
-    #[allow(dead_code)]
     OpenLogViewer,
     None,
 }
@@ -223,34 +218,19 @@ pub struct App {
     pub env_manager_confirm_delete: Option<usize>,
     pub env_manager_name_input: crate::text_input::TextInput,
     // Log viewer
-    #[allow(dead_code)]
     pub show_log_viewer: bool,
-    #[allow(dead_code)]
     pub log_viewer_entries: Vec<lazycurl_core::types::RequestLogEntry>,
-    #[allow(dead_code)]
     pub log_viewer_cursor: usize,
-    #[allow(dead_code)]
     pub log_viewer_show_detail: bool,
-    #[allow(dead_code)]
     pub log_viewer_detail_focused: bool,
-    #[allow(dead_code)]
     pub log_viewer_detail_scroll: usize,
-    #[allow(dead_code)]
     pub log_viewer_filter: String,
-    #[allow(dead_code)]
     pub log_viewer_search: String,
-    #[allow(dead_code)]
     pub log_viewer_editing_filter: bool,
-    #[allow(dead_code)]
     pub log_viewer_editing_search: bool,
-    #[allow(dead_code)]
     pub log_viewer_filter_input: crate::text_input::TextInput,
-    #[allow(dead_code)]
     pub log_viewer_search_input: crate::text_input::TextInput,
-    #[allow(dead_code)]
     pub log_viewer_loaded_dates: Vec<String>,
-    #[allow(dead_code)]
-    pub log_write_failed: bool,
     // Export picker
     pub show_export_picker: bool,
     pub export_format_cursor: usize,
@@ -329,7 +309,6 @@ impl App {
             log_viewer_filter_input: crate::text_input::TextInput::new(""),
             log_viewer_search_input: crate::text_input::TextInput::new(""),
             log_viewer_loaded_dates: Vec::new(),
-            log_write_failed: false,
             show_export_picker: false,
             export_format_cursor: 0,
             export_scope_is_collection: false,
@@ -543,7 +522,6 @@ impl App {
     // ── Log viewer ───────────────────────────────────────────────
 
     /// Open the log viewer, loading today's entries.
-    #[allow(dead_code)]
     pub fn open_log_viewer(&mut self) {
         let logs_path = lazycurl_core::logging::logs_dir();
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
@@ -561,7 +539,6 @@ impl App {
     }
 
     /// Return filtered log entries based on the current filter string.
-    #[allow(dead_code)]
     pub fn filtered_log_entries(&self) -> Vec<lazycurl_core::types::RequestLogEntry> {
         if self.log_viewer_filter.is_empty() {
             return self.log_viewer_entries.clone();
@@ -611,7 +588,6 @@ impl App {
     }
 
     /// Load a log entry back into the request editor for re-sending.
-    #[allow(dead_code)]
     pub fn load_log_entry_into_editor(&mut self, entry: lazycurl_core::types::RequestLogEntry) {
         let url = entry.request.url_template.unwrap_or(entry.request.url);
         let headers: Vec<lazycurl_core::types::Header> = entry
