@@ -88,12 +88,45 @@ fn default_keybindings() -> HashMap<String, String> {
     default_preset_keybindings()
 }
 
+fn default_keymap_preset() -> String {
+    "default".to_string()
+}
+
+/// Intermediate struct used only for deserialization so we can distinguish
+/// between "user provided no keybindings" and "user provided an empty map".
+#[derive(Deserialize)]
+struct RawAppConfig {
+    #[serde(default)]
+    variables: HashMap<String, Variable>,
+    keybindings: Option<HashMap<String, String>>,
+    #[serde(default = "default_keymap_preset")]
+    keymap_preset: String,
+    #[serde(default)]
+    active_environment: Option<String>,
+    #[serde(default = "default_timeout")]
+    default_timeout: u32,
+    #[serde(default = "default_max_body_size")]
+    max_response_body_size_bytes: u64,
+    #[serde(default)]
+    debug_logging: bool,
+    #[serde(default = "default_log_retention_days")]
+    log_retention_days: u32,
+    #[serde(default = "default_max_log_body_size")]
+    max_log_body_size_bytes: u64,
+    #[serde(default)]
+    open_projects: Vec<String>,
+    #[serde(default)]
+    active_project: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub variables: HashMap<String, Variable>,
     #[serde(default = "default_keybindings")]
     pub keybindings: HashMap<String, String>,
+    #[serde(default = "default_keymap_preset")]
+    pub keymap_preset: String,
     #[serde(default)]
     pub active_environment: Option<String>,
     #[serde(default = "default_timeout")]
@@ -117,6 +150,7 @@ impl Default for AppConfig {
         Self {
             variables: HashMap::new(),
             keybindings: default_keybindings(),
+            keymap_preset: default_keymap_preset(),
             active_environment: None,
             default_timeout: default_timeout(),
             max_response_body_size_bytes: default_max_body_size(),
@@ -129,15 +163,44 @@ impl Default for AppConfig {
     }
 }
 
+fn apply_key_aliases(keybindings: &mut HashMap<String, String>) {
+    let aliases = [
+        ("copy_curl", "open_export"),
+        ("toggle_collections", "focus_collections"),
+        ("toggle_request", "focus_request"),
+        ("toggle_response", "focus_response"),
+        ("open_project", "open_project_picker"),
+        ("cycle_panes", "cycle_pane_forward"),
+    ];
+    for (old, new) in aliases {
+        if let Some(value) = keybindings.remove(old) {
+            keybindings.entry(new.into()).or_insert(value);
+        }
+    }
+}
+
 impl AppConfig {
     /// Load config from a JSON string, merging keybindings over defaults.
     pub fn load_from_str(json: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let mut config: AppConfig = serde_json::from_str(json)?;
-        // Merge user keybindings over defaults so unspecified keys keep defaults
-        let mut merged = default_keybindings();
-        merged.extend(config.keybindings);
-        config.keybindings = merged;
-        Ok(config)
+        let raw: RawAppConfig = serde_json::from_str(json)?;
+        // Start from the preset, then apply any user overrides (after alias resolution)
+        let mut user_keybindings = raw.keybindings.unwrap_or_default();
+        apply_key_aliases(&mut user_keybindings);
+        let mut merged = preset_keybindings(&raw.keymap_preset);
+        merged.extend(user_keybindings);
+        Ok(AppConfig {
+            variables: raw.variables,
+            keybindings: merged,
+            keymap_preset: raw.keymap_preset,
+            active_environment: raw.active_environment,
+            default_timeout: raw.default_timeout,
+            max_response_body_size_bytes: raw.max_response_body_size_bytes,
+            debug_logging: raw.debug_logging,
+            log_retention_days: raw.log_retention_days,
+            max_log_body_size_bytes: raw.max_log_body_size_bytes,
+            open_projects: raw.open_projects,
+            active_project: raw.active_project,
+        })
     }
 
     /// Load config from a file path. Returns default if file doesn't exist.
@@ -292,6 +355,62 @@ mod tests {
         let config = AppConfig::load_from_str(json).unwrap();
         assert_eq!(config.log_retention_days, 14);
         assert_eq!(config.max_log_body_size_bytes, 131072);
+    }
+
+    #[test]
+    fn test_config_old_key_aliases_are_resolved() {
+        let json = r#"{"keybindings": {"copy_curl": "ctrl+y"}}"#;
+        let config = AppConfig::load_from_str(json).unwrap();
+        assert_eq!(config.keybindings.get("open_export").unwrap(), "ctrl+y");
+    }
+
+    #[test]
+    fn test_config_old_key_aliases_full_set() {
+        let json = r#"{"keybindings": {
+            "copy_curl": "ctrl+y",
+            "toggle_collections": "ctrl+1",
+            "toggle_request": "ctrl+2",
+            "toggle_response": "ctrl+3",
+            "open_project": "ctrl+p",
+            "cycle_panes": "tab"
+        }}"#;
+        let config = AppConfig::load_from_str(json).unwrap();
+        assert_eq!(config.keybindings.get("open_export").unwrap(), "ctrl+y");
+        assert_eq!(
+            config.keybindings.get("focus_collections").unwrap(),
+            "ctrl+1"
+        );
+        assert_eq!(config.keybindings.get("focus_request").unwrap(), "ctrl+2");
+        assert_eq!(config.keybindings.get("focus_response").unwrap(), "ctrl+3");
+        assert_eq!(
+            config.keybindings.get("open_project_picker").unwrap(),
+            "ctrl+p"
+        );
+        assert_eq!(config.keybindings.get("cycle_pane_forward").unwrap(), "tab");
+    }
+
+    #[test]
+    fn test_config_keymap_preset_defaults_to_default() {
+        let config = AppConfig::default();
+        assert_eq!(config.keymap_preset, "default");
+    }
+
+    #[test]
+    fn test_config_vim_preset_loads_vim_keybindings() {
+        let json = r#"{"keymap_preset": "vim"}"#;
+        let config = AppConfig::load_from_str(json).unwrap();
+        assert_eq!(config.keymap_preset, "vim");
+        assert_eq!(config.keybindings.get("help").unwrap(), "?");
+        assert_eq!(config.keybindings.get("move_up").unwrap(), "k");
+        assert_eq!(config.keybindings.get("cycle_pane_forward").unwrap(), "l");
+    }
+
+    #[test]
+    fn test_config_vim_preset_with_user_override() {
+        let json = r#"{"keymap_preset": "vim", "keybindings": {"help": "f1"}}"#;
+        let config = AppConfig::load_from_str(json).unwrap();
+        assert_eq!(config.keybindings.get("help").unwrap(), "f1");
+        assert_eq!(config.keybindings.get("move_up").unwrap(), "k");
     }
 
     #[test]
