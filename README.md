@@ -14,7 +14,7 @@ Built with Rust using [Ratatui](https://ratatui.rs/) and [crossterm](https://git
 ## Features
 
 - Send HTTP requests (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)
-- **Authentication** — Bearer token, Basic auth, API key (header or query)
+- **Authentication** — Bearer token, Basic auth, API key, OAuth 1.0a, OAuth 2.0 (PKCE), AWS Signature V4, ASAP (Atlassian)
 - Organize requests into **collections** and **projects**
 - **Environment variables** with three-tier resolution (Collection > Environment > Global)
 - **Secret variables** — marked values are redacted in history, logs, and exports
@@ -97,7 +97,7 @@ All logic lives in `lazycurl-core` so it can be tested without a terminal. The b
 
 ```bash
 cargo build --workspace           # Build
-cargo test --workspace            # Run tests (~149)
+cargo test --workspace            # Run tests (~236)
 cargo fmt --all --check           # Check formatting
 cargo clippy --workspace -- -D warnings  # Lint
 ```

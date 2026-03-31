@@ -7,7 +7,7 @@ Terminal-native Postman replacement built in Rust.
 ```bash
 cargo build --workspace          # Build everything
 cargo run -p lazycurl            # Launch the TUI
-cargo test --workspace           # Run all tests (~149)
+cargo test --workspace           # Run all tests (~236)
 cargo install --path crates/lazycurl  # Install to ~/.cargo/bin/
 ```
 
@@ -37,6 +37,10 @@ Cargo workspace with two crates:
 | `project.rs` | Project CRUD, slug-based directory management |
 | `migration.rs` | One-time migration from flat layout to project-based structure |
 | `export.rs` | Export requests as curl commands, code snippets, or other formats |
+| `asap.rs` | ASAP (Atlassian) JWT token signing (RSA, ECDSA P-256/P-384) |
+| `aws_v4.rs` | AWS Signature V4 request signing |
+| `oauth1.rs` | OAuth 1.0a signature generation (HMAC-SHA1, HMAC-SHA256) |
+| `oauth2.rs` | OAuth 2.0 browser flow — PKCE, local callback server, token exchange |
 
 ### TUI modules (`crates/lazycurl/src/`)
 
@@ -136,8 +140,8 @@ Every new feature or bugfix follows test-first development:
 ### Running tests
 
 ```bash
-cargo test --workspace                          # All tests (~149)
-cargo test -p lazycurl-core                     # Core library only (~127)
+cargo test --workspace                          # All tests (~236)
+cargo test -p lazycurl-core                     # Core library only (~210)
 cargo test -p lazycurl-core -- secret           # Only secret module tests
 cargo test -p lazycurl-core -- variable::tests  # Only variable module tests
 cargo test -p lazycurl                          # TUI crate tests (11 text_input tests)
