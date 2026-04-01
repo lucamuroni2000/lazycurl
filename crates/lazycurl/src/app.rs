@@ -84,15 +84,24 @@ pub enum ResponseTab {
     Timing,
 }
 
-#[derive(Clone)]
+/// Identifies the active input context for keymap resolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum InputContext {
+    Global,
+    LogViewer,
+    Variables,
+    Picker,
+}
+
+#[derive(Clone, Debug)]
 pub enum Action {
     // Global commands
     Quit,
     Cancel,
-    SendRequest,
-    SaveRequest,
     Help,
     Search,
+    SendRequest,
+    SaveRequest,
     NewRequest,
     SwitchEnvironment,
     ManageEnvironments,
@@ -101,6 +110,9 @@ pub enum Action {
     OpenLogViewer,
     OpenProjectPicker,
     RevealSecrets,
+    FocusUrl,
+    CycleMethod,
+    ChangeAuthType,
     // Navigation
     MoveUp,
     MoveDown,
@@ -119,9 +131,21 @@ pub enum Action {
     AddItem,
     DeleteItem,
     Rename,
-    CycleMethod,
     ToggleEnabled,
     Copy,
+    ConfirmYes,
+    CloseProject,
+    // Log viewer
+    LogFilter,
+    LogClearFilter,
+    LogClearSearch,
+    LogNextMatch,
+    LogPrevMatch,
+    LogExport,
+    LogCopyPath,
+    // Variables overlay
+    CycleContainerForward,
+    CycleContainerBackward,
     // Text editing (not configurable via presets)
     CharInput(char),
     Backspace,
@@ -496,6 +520,25 @@ impl App {
         };
         if !self.pane_visible[active_index] {
             self.cycle_pane_forward();
+        }
+    }
+
+    /// Returns the active input context based on current app state.
+    pub fn active_input_context(&self) -> InputContext {
+        if self.show_log_viewer {
+            InputContext::LogViewer
+        } else if self.show_variables {
+            InputContext::Variables
+        } else if self.show_method_picker
+            || self.show_auth_picker
+            || self.show_export_picker
+            || self.show_collection_picker
+            || self.show_project_picker
+            || self.show_env_manager
+        {
+            InputContext::Picker
+        } else {
+            InputContext::Global
         }
     }
 
