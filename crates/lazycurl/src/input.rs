@@ -45,9 +45,8 @@ fn parse_binding(binding: &str) -> Option<(KeyModifiers, KeyCode)> {
         "f10" => KeyCode::F(10),
         "f11" => KeyCode::F(11),
         "f12" => KeyCode::F(12),
-        "/" => KeyCode::Char('/'),
-        "?" => KeyCode::Char('?'),
-        s if s.len() == 1 => KeyCode::Char(s.chars().next().unwrap()),
+        // For single characters, preserve original case so "E" and "e" are distinct
+        _ if key_part.len() == 1 => KeyCode::Char(key_part.chars().next().unwrap()),
         _ => return None,
     };
 
@@ -166,7 +165,15 @@ pub fn resolve_action(key: KeyEvent, keymap: &HashMap<(KeyModifiers, KeyCode), A
             }
         }
 
-        // 4. Unbound character — pass through so overlays can handle it
+        // 4. Try with no modifiers — handles AltGr ({, [, ], } on non-US keyboards),
+        //    Shift+punctuation, and other modifier combos for printable chars.
+        if key.modifiers != KeyModifiers::NONE {
+            if let Some(action) = keymap.get(&(KeyModifiers::NONE, KeyCode::Char(c))) {
+                return action.clone();
+            }
+        }
+
+        // 5. Unbound character — pass through so overlays can handle it
         return Action::CharInput(c);
     }
 

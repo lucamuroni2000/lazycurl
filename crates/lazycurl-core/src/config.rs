@@ -179,6 +179,38 @@ fn apply_key_aliases(keybindings: &mut HashMap<String, String>) {
     }
 }
 
+/// One-time migration: strip keybindings whose values match the pre-refactor
+/// defaults. These were auto-saved by the old code and are NOT intentional
+/// user choices. Without this, switching to a new preset has no effect because
+/// the old defaults override it.
+fn strip_pre_refactor_defaults(keybindings: &mut HashMap<String, String>) {
+    let old_defaults: &[(&str, &str)] = &[
+        ("send_request", "ctrl+enter"),
+        ("save_request", "ctrl+s"),
+        ("switch_env", "ctrl+e"),
+        ("manage_envs", "ctrl+shift+e"),
+        ("open_export", "ctrl+y"),
+        ("new_request", "ctrl+n"),
+        ("cycle_pane_forward", "tab"),
+        ("search", "/"),
+        ("help", "?"),
+        ("cancel", "escape"),
+        ("focus_collections", "ctrl+1"),
+        ("focus_request", "ctrl+2"),
+        ("focus_response", "ctrl+3"),
+        ("reveal_secrets", "f8"),
+        ("next_project", "f6"),
+        ("prev_project", "f7"),
+        ("open_project_picker", "ctrl+o"),
+        ("open_log_viewer", "ctrl+l"),
+    ];
+    for &(key, old_value) in old_defaults {
+        if keybindings.get(key).is_some_and(|v| v == old_value) {
+            keybindings.remove(key);
+        }
+    }
+}
+
 impl AppConfig {
     /// Load config from a JSON string, merging keybindings over defaults.
     pub fn load_from_str(json: &str) -> Result<Self, Box<dyn std::error::Error>> {
@@ -186,6 +218,7 @@ impl AppConfig {
         // Start from the preset, then apply any user overrides (after alias resolution)
         let mut user_keybindings = raw.keybindings.unwrap_or_default();
         apply_key_aliases(&mut user_keybindings);
+        strip_pre_refactor_defaults(&mut user_keybindings);
         let mut merged = preset_keybindings(&raw.keymap_preset);
         merged.extend(user_keybindings);
         Ok(AppConfig {
@@ -213,11 +246,18 @@ impl AppConfig {
     }
 
     /// Save config to a file path, creating parent directories if needed.
+    /// Only persists keybindings that differ from the current preset defaults,
+    /// so switching presets later works correctly.
     pub fn save_to(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let content = serde_json::to_string_pretty(self)?;
+        let mut config_to_save = self.clone();
+        let preset_defaults = preset_keybindings(&self.keymap_preset);
+        config_to_save
+            .keybindings
+            .retain(|key, value| preset_defaults.get(key).is_none_or(|d| d != value));
+        let content = serde_json::to_string_pretty(&config_to_save)?;
         std::fs::write(path, content)?;
         Ok(())
     }
@@ -359,34 +399,144 @@ mod tests {
 
     #[test]
     fn test_config_old_key_aliases_are_resolved() {
-        let json = r#"{"keybindings": {"copy_curl": "ctrl+y"}}"#;
+        // Use a non-old-default value to verify aliasing works
+        let json = r#"{"keybindings": {"copy_curl": "ctrl+shift+y"}}"#;
         let config = AppConfig::load_from_str(json).unwrap();
-        assert_eq!(config.keybindings.get("open_export").unwrap(), "ctrl+y");
+        assert_eq!(
+            config.keybindings.get("open_export").unwrap(),
+            "ctrl+shift+y"
+        );
     }
 
     #[test]
     fn test_config_old_key_aliases_full_set() {
+        // Use non-old-default values to verify aliasing works independently of migration
         let json = r#"{"keybindings": {
-            "copy_curl": "ctrl+y",
-            "toggle_collections": "ctrl+1",
-            "toggle_request": "ctrl+2",
-            "toggle_response": "ctrl+3",
+            "copy_curl": "ctrl+shift+y",
+            "toggle_collections": "alt+1",
+            "toggle_request": "alt+2",
+            "toggle_response": "alt+3",
             "open_project": "ctrl+p",
-            "cycle_panes": "tab"
+            "cycle_panes": "shift+tab"
         }}"#;
         let config = AppConfig::load_from_str(json).unwrap();
-        assert_eq!(config.keybindings.get("open_export").unwrap(), "ctrl+y");
+        assert_eq!(
+            config.keybindings.get("open_export").unwrap(),
+            "ctrl+shift+y"
+        );
         assert_eq!(
             config.keybindings.get("focus_collections").unwrap(),
-            "ctrl+1"
+            "alt+1"
         );
-        assert_eq!(config.keybindings.get("focus_request").unwrap(), "ctrl+2");
-        assert_eq!(config.keybindings.get("focus_response").unwrap(), "ctrl+3");
+        assert_eq!(config.keybindings.get("focus_request").unwrap(), "alt+2");
+        assert_eq!(config.keybindings.get("focus_response").unwrap(), "alt+3");
         assert_eq!(
             config.keybindings.get("open_project_picker").unwrap(),
             "ctrl+p"
         );
-        assert_eq!(config.keybindings.get("cycle_pane_forward").unwrap(), "tab");
+        assert_eq!(
+            config.keybindings.get("cycle_pane_forward").unwrap(),
+            "shift+tab"
+        );
+    }
+
+    #[test]
+    fn test_pre_refactor_defaults_are_stripped() {
+        // Simulate an old config that was auto-saved with the pre-refactor defaults
+        let json = r#"{"keybindings": {
+            "focus_collections": "ctrl+1",
+            "focus_request": "ctrl+2",
+            "focus_response": "ctrl+3",
+            "open_export": "ctrl+y",
+            "next_project": "f6",
+            "prev_project": "f7",
+            "help": "?"
+        }}"#;
+        let config = AppConfig::load_from_str(json).unwrap();
+        // Old defaults should be stripped, new preset defaults take over
+        assert_eq!(config.keybindings.get("focus_collections").unwrap(), "1");
+        assert_eq!(config.keybindings.get("focus_request").unwrap(), "2");
+        assert_eq!(config.keybindings.get("focus_response").unwrap(), "3");
+        assert_eq!(config.keybindings.get("open_export").unwrap(), "x");
+        assert_eq!(
+            config.keybindings.get("next_project").unwrap(),
+            "ctrl+right"
+        );
+        assert_eq!(config.keybindings.get("prev_project").unwrap(), "ctrl+left");
+        assert_eq!(config.keybindings.get("help").unwrap(), "f1");
+    }
+
+    #[test]
+    fn test_pre_refactor_strip_then_vim_preset() {
+        // Old config with pre-refactor values + switch to vim
+        let json = r#"{
+            "keymap_preset": "vim",
+            "keybindings": {
+                "focus_collections": "ctrl+1",
+                "open_export": "ctrl+y",
+                "next_project": "f6",
+                "prev_project": "f7"
+            }
+        }"#;
+        let config = AppConfig::load_from_str(json).unwrap();
+        // Old defaults stripped, vim preset takes over
+        assert_eq!(config.keybindings.get("focus_collections").unwrap(), "1");
+        assert_eq!(config.keybindings.get("open_export").unwrap(), "x");
+        assert_eq!(config.keybindings.get("next_project").unwrap(), "}");
+        assert_eq!(config.keybindings.get("prev_project").unwrap(), "{");
+        assert_eq!(config.keybindings.get("move_up").unwrap(), "k");
+        assert_eq!(config.keybindings.get("cycle_pane_forward").unwrap(), "l");
+    }
+
+    #[test]
+    fn test_save_strips_preset_defaults_so_preset_switch_works() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.json");
+        // Save with default preset
+        let config = AppConfig::default();
+        config.save_to(&path).unwrap();
+        // Verify saved file has no keybindings (all match preset defaults)
+        let raw: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let saved_kb = raw["keybindings"].as_object().unwrap();
+        assert!(
+            saved_kb.is_empty(),
+            "saved keybindings should be empty when all match preset defaults, but got: {:?}",
+            saved_kb
+        );
+        // Now manually edit the file to switch to vim preset
+        let content = std::fs::read_to_string(&path).unwrap();
+        let content = content.replace(r#""keymap_preset": "default""#, r#""keymap_preset": "vim""#);
+        std::fs::write(&path, content).unwrap();
+        // Load — should get vim keybindings, not default
+        let loaded = AppConfig::load_from(&path).unwrap();
+        assert_eq!(loaded.keymap_preset, "vim");
+        assert_eq!(loaded.keybindings.get("help").unwrap(), "?");
+        assert_eq!(loaded.keybindings.get("move_up").unwrap(), "k");
+        assert_eq!(loaded.keybindings.get("cycle_pane_forward").unwrap(), "l");
+    }
+
+    #[test]
+    fn test_save_preserves_user_overrides() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.json");
+        let mut config = AppConfig::default();
+        // User overrides help to a non-default value
+        config.keybindings.insert("help".into(), "f2".into());
+        config.save_to(&path).unwrap();
+        // Verify saved file has ONLY the override
+        let raw: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let saved_kb = raw["keybindings"].as_object().unwrap();
+        assert_eq!(saved_kb.len(), 1);
+        assert_eq!(saved_kb["help"], "f2");
+        // Reload — override preserved, rest from preset
+        let loaded = AppConfig::load_from(&path).unwrap();
+        assert_eq!(loaded.keybindings.get("help").unwrap(), "f2");
+        assert_eq!(
+            loaded.keybindings.get("send_request").unwrap(),
+            "ctrl+enter"
+        );
     }
 
     #[test]
