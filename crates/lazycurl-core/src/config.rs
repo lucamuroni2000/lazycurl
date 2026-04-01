@@ -21,20 +21,24 @@ fn default_max_log_body_size() -> u64 {
 
 fn default_preset_keybindings() -> HashMap<String, String> {
     let mut map = HashMap::new();
+    // Global (35 keys)
     map.insert("quit".into(), "q".into());
-    map.insert("send_request".into(), "ctrl+enter".into());
-    map.insert("save_request".into(), "ctrl+s".into());
     map.insert("cancel".into(), "escape".into());
     map.insert("help".into(), "f1".into());
     map.insert("search".into(), "/".into());
+    map.insert("send_request".into(), "ctrl+enter".into());
+    map.insert("save_request".into(), "ctrl+s".into());
     map.insert("new_request".into(), "ctrl+n".into());
     map.insert("switch_env".into(), "ctrl+e".into());
     map.insert("manage_envs".into(), "ctrl+shift+e".into());
-    map.insert("open_variables".into(), "v".into());
-    map.insert("open_export".into(), "x".into());
+    map.insert("open_variables".into(), "ctrl+v".into());
+    map.insert("open_export".into(), "ctrl+x".into());
     map.insert("open_log_viewer".into(), "ctrl+l".into());
     map.insert("open_project_picker".into(), "ctrl+o".into());
     map.insert("reveal_secrets".into(), "f8".into());
+    map.insert("focus_url".into(), "ctrl+u".into());
+    map.insert("cycle_method".into(), "ctrl+m".into());
+    map.insert("change_auth_type".into(), "ctrl+a".into());
     map.insert("move_up".into(), "up".into());
     map.insert("move_down".into(), "down".into());
     map.insert("enter".into(), "enter".into());
@@ -50,15 +54,27 @@ fn default_preset_keybindings() -> HashMap<String, String> {
     map.insert("add_item".into(), "a".into());
     map.insert("delete_item".into(), "d".into());
     map.insert("rename".into(), "r".into());
-    map.insert("cycle_method".into(), "m".into());
     map.insert("toggle_enabled".into(), "s".into());
     map.insert("copy".into(), "y".into());
+    map.insert("confirm_yes".into(), "y".into());
+    map.insert("close_project".into(), "c".into());
+    // Log viewer context (7 keys)
+    map.insert("log_viewer.filter".into(), "f".into());
+    map.insert("log_viewer.clear_filter".into(), "c".into());
+    map.insert("log_viewer.clear_search".into(), "C".into());
+    map.insert("log_viewer.next_match".into(), "n".into());
+    map.insert("log_viewer.prev_match".into(), "N".into());
+    map.insert("log_viewer.export".into(), "e".into());
+    map.insert("log_viewer.copy_path".into(), "Y".into());
+    // Variables context (2 keys)
+    map.insert("variables.cycle_container_fwd".into(), "]".into());
+    map.insert("variables.cycle_container_back".into(), "[".into());
     map
 }
 
 fn vim_preset_keybindings() -> HashMap<String, String> {
     let mut map = default_preset_keybindings();
-    map.insert("quit".into(), "q".into());
+    // Global overrides
     map.insert("help".into(), "?".into());
     map.insert("new_request".into(), "o".into());
     map.insert("switch_env".into(), "e".into());
@@ -72,6 +88,9 @@ fn vim_preset_keybindings() -> HashMap<String, String> {
     map.insert("cycle_pane_backward".into(), "h".into());
     map.insert("next_project".into(), "}".into());
     map.insert("prev_project".into(), "{".into());
+    // Variables overrides ([ ] are taken by next_tab/prev_tab in vim)
+    map.insert("variables.cycle_container_fwd".into(), "ctrl+]".into());
+    map.insert("variables.cycle_container_back".into(), "ctrl+[".into());
     map
 }
 
@@ -203,6 +222,10 @@ fn strip_pre_refactor_defaults(keybindings: &mut HashMap<String, String>) {
         ("prev_project", "f7"),
         ("open_project_picker", "ctrl+o"),
         ("open_log_viewer", "ctrl+l"),
+        // v1 → v2 changes
+        ("open_variables", "v"),
+        ("open_export", "x"),
+        ("cycle_method", "m"),
     ];
     for &(key, old_value) in old_defaults {
         if keybindings.get(key).is_some_and(|v| v == old_value) {
@@ -293,6 +316,9 @@ mod tests {
         assert_eq!(config.keybindings.get("save_request").unwrap(), "ctrl+s");
         assert_eq!(config.keybindings.get("copy").unwrap(), "y");
         assert_eq!(config.keybindings.get("reveal_secrets").unwrap(), "f8");
+        assert_eq!(config.keybindings.get("open_variables").unwrap(), "ctrl+v");
+        assert_eq!(config.keybindings.get("open_export").unwrap(), "ctrl+x");
+        assert_eq!(config.keybindings.get("cycle_method").unwrap(), "ctrl+m");
     }
 
     #[test]
@@ -450,20 +476,25 @@ mod tests {
             "open_export": "ctrl+y",
             "next_project": "f6",
             "prev_project": "f7",
-            "help": "?"
+            "help": "?",
+            "open_variables": "v",
+            "cycle_method": "m"
         }}"#;
         let config = AppConfig::load_from_str(json).unwrap();
         // Old defaults should be stripped, new preset defaults take over
         assert_eq!(config.keybindings.get("focus_collections").unwrap(), "1");
         assert_eq!(config.keybindings.get("focus_request").unwrap(), "2");
         assert_eq!(config.keybindings.get("focus_response").unwrap(), "3");
-        assert_eq!(config.keybindings.get("open_export").unwrap(), "x");
+        assert_eq!(config.keybindings.get("open_export").unwrap(), "ctrl+x");
         assert_eq!(
             config.keybindings.get("next_project").unwrap(),
             "ctrl+right"
         );
         assert_eq!(config.keybindings.get("prev_project").unwrap(), "ctrl+left");
         assert_eq!(config.keybindings.get("help").unwrap(), "f1");
+        // v1 → v2 stripped
+        assert_eq!(config.keybindings.get("open_variables").unwrap(), "ctrl+v");
+        assert_eq!(config.keybindings.get("cycle_method").unwrap(), "ctrl+m");
     }
 
     #[test]
@@ -481,7 +512,7 @@ mod tests {
         let config = AppConfig::load_from_str(json).unwrap();
         // Old defaults stripped, vim preset takes over
         assert_eq!(config.keybindings.get("focus_collections").unwrap(), "1");
-        assert_eq!(config.keybindings.get("open_export").unwrap(), "x");
+        assert_eq!(config.keybindings.get("open_export").unwrap(), "ctrl+x");
         assert_eq!(config.keybindings.get("next_project").unwrap(), "}");
         assert_eq!(config.keybindings.get("prev_project").unwrap(), "{");
         assert_eq!(config.keybindings.get("move_up").unwrap(), "k");
@@ -576,11 +607,10 @@ mod tests {
     }
 
     #[test]
-    fn test_vim_preset_has_all_31_keys() {
+    fn test_vim_preset_v2_overrides() {
         let kb = vim_preset_keybindings();
-        assert_eq!(kb.len(), 32);
+        assert_eq!(kb.len(), 45);
         // vim-specific overrides
-        assert_eq!(kb["quit"], "q");
         assert_eq!(kb["help"], "?");
         assert_eq!(kb["new_request"], "o");
         assert_eq!(kb["switch_env"], "e");
@@ -594,46 +624,52 @@ mod tests {
         assert_eq!(kb["cycle_pane_backward"], "h");
         assert_eq!(kb["next_project"], "}");
         assert_eq!(kb["prev_project"], "{");
+        // variables overrides ([ ] taken by tabs in vim)
+        assert_eq!(kb["variables.cycle_container_fwd"], "ctrl+]");
+        assert_eq!(kb["variables.cycle_container_back"], "ctrl+[");
         // same as default
         assert_eq!(kb["send_request"], "ctrl+enter");
         assert_eq!(kb["save_request"], "ctrl+s");
         assert_eq!(kb["cancel"], "escape");
         assert_eq!(kb["search"], "/");
-        assert_eq!(kb["open_variables"], "v");
-        assert_eq!(kb["open_export"], "x");
+        assert_eq!(kb["open_variables"], "ctrl+v");
+        assert_eq!(kb["open_export"], "ctrl+x");
         assert_eq!(kb["open_log_viewer"], "ctrl+l");
         assert_eq!(kb["reveal_secrets"], "f8");
         assert_eq!(kb["enter"], "enter");
-        assert_eq!(kb["cycle_pane_backward"], "h");
         assert_eq!(kb["focus_collections"], "1");
         assert_eq!(kb["focus_request"], "2");
         assert_eq!(kb["focus_response"], "3");
         assert_eq!(kb["add_item"], "a");
         assert_eq!(kb["delete_item"], "d");
         assert_eq!(kb["rename"], "r");
-        assert_eq!(kb["cycle_method"], "m");
+        assert_eq!(kb["cycle_method"], "ctrl+m");
         assert_eq!(kb["toggle_enabled"], "s");
         assert_eq!(kb["copy"], "y");
     }
 
     #[test]
-    fn test_default_preset_has_all_31_keys() {
+    fn test_default_preset_v2_has_all_keys() {
         let kb = default_preset_keybindings();
-        assert_eq!(kb.len(), 32);
+        assert_eq!(kb.len(), 45);
+        // Global
         assert_eq!(kb["quit"], "q");
-        assert_eq!(kb["send_request"], "ctrl+enter");
-        assert_eq!(kb["save_request"], "ctrl+s");
         assert_eq!(kb["cancel"], "escape");
         assert_eq!(kb["help"], "f1");
         assert_eq!(kb["search"], "/");
+        assert_eq!(kb["send_request"], "ctrl+enter");
+        assert_eq!(kb["save_request"], "ctrl+s");
         assert_eq!(kb["new_request"], "ctrl+n");
         assert_eq!(kb["switch_env"], "ctrl+e");
         assert_eq!(kb["manage_envs"], "ctrl+shift+e");
-        assert_eq!(kb["open_variables"], "v");
-        assert_eq!(kb["open_export"], "x");
+        assert_eq!(kb["open_variables"], "ctrl+v");
+        assert_eq!(kb["open_export"], "ctrl+x");
         assert_eq!(kb["open_log_viewer"], "ctrl+l");
         assert_eq!(kb["open_project_picker"], "ctrl+o");
         assert_eq!(kb["reveal_secrets"], "f8");
+        assert_eq!(kb["focus_url"], "ctrl+u");
+        assert_eq!(kb["cycle_method"], "ctrl+m");
+        assert_eq!(kb["change_auth_type"], "ctrl+a");
         assert_eq!(kb["move_up"], "up");
         assert_eq!(kb["move_down"], "down");
         assert_eq!(kb["enter"], "enter");
@@ -649,8 +685,20 @@ mod tests {
         assert_eq!(kb["add_item"], "a");
         assert_eq!(kb["delete_item"], "d");
         assert_eq!(kb["rename"], "r");
-        assert_eq!(kb["cycle_method"], "m");
         assert_eq!(kb["toggle_enabled"], "s");
         assert_eq!(kb["copy"], "y");
+        assert_eq!(kb["confirm_yes"], "y");
+        assert_eq!(kb["close_project"], "c");
+        // Log viewer context
+        assert_eq!(kb["log_viewer.filter"], "f");
+        assert_eq!(kb["log_viewer.clear_filter"], "c");
+        assert_eq!(kb["log_viewer.clear_search"], "C");
+        assert_eq!(kb["log_viewer.next_match"], "n");
+        assert_eq!(kb["log_viewer.prev_match"], "N");
+        assert_eq!(kb["log_viewer.export"], "e");
+        assert_eq!(kb["log_viewer.copy_path"], "Y");
+        // Variables context
+        assert_eq!(kb["variables.cycle_container_fwd"], "]");
+        assert_eq!(kb["variables.cycle_container_back"], "[");
     }
 }
