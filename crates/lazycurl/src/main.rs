@@ -253,7 +253,7 @@ async fn run_loop(
                         app.show_collection_picker = false;
                         app.save_request_to_collection(idx);
                     }
-                    Action::NewRequest => {
+                    Action::NewRequest | Action::CharInput('n') => {
                         // create new collection and save there
                         app.show_collection_picker = false;
                         app.name_input.set_content("My Collection");
@@ -266,13 +266,13 @@ async fn run_loop(
                 }
             // Project picker overlay intercepts when open
             } else if app.show_project_picker {
-                handle_project_picker_action(app, &action);
+                handle_project_picker_action(app, &action, key);
             // Environment manager modal intercepts actions when open
             } else if app.show_env_manager {
-                handle_env_manager_action(app, &action);
+                handle_env_manager_action(app, &action, key);
             // Variables overlay intercepts actions when open
             } else if app.show_variables {
-                handle_variables_action(app, &action);
+                handle_variables_action(app, &action, key);
                 // Editing actions for variable inputs
                 match action {
                     Action::CharInput(c) => {
@@ -314,20 +314,17 @@ async fn run_loop(
                     _ => {}
                 }
             } else if app.confirm_delete {
-                // Collection/request delete confirmation
-                match action {
-                    Action::CharInput('y') => {
-                        app.confirm_delete = false;
-                        app.delete_selected_in_collections();
-                    }
-                    Action::Cancel | Action::CharInput(_) => {
-                        app.confirm_delete = false;
-                        app.status_message = None;
-                    }
-                    _ => {}
+                // Collection/request delete confirmation — check raw key
+                // because 'y' may be mapped to Copy by the keymap.
+                if matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y')) {
+                    app.confirm_delete = false;
+                    app.delete_selected_in_collections();
+                } else {
+                    app.confirm_delete = false;
+                    app.status_message = None;
                 }
             } else if app.show_log_viewer {
-                handle_log_viewer_action(app, &action);
+                handle_log_viewer_action(app, &action, key);
             } else {
                 // Normal dispatch
                 match action {
@@ -436,6 +433,7 @@ async fn run_loop(
                         }
                     }
                     Action::SwitchEnvironment => app.cycle_environment(),
+                    Action::ManageEnvironments => app.open_env_manager(),
                     Action::OpenExportPicker => {
                         if !app.show_method_picker
                             && !app.show_collection_picker
@@ -591,20 +589,20 @@ async fn run_loop(
     }
 }
 
-fn handle_variables_action(app: &mut App, action: &Action) {
-    // Variable delete confirmation
+fn handle_variables_action(app: &mut App, action: &Action, key: crossterm::event::KeyEvent) {
+    // Variable delete confirmation — check raw key for 'y'
     if app.var_confirm_delete {
-        match action {
-            Action::CharInput('y') => {
-                app.var_confirm_delete = false;
-                app.var_delete_message = None;
-                app.var_delete();
-            }
-            Action::Cancel | Action::CharInput(_) => {
-                app.var_confirm_delete = false;
-                app.var_delete_message = None;
-            }
-            _ => {}
+        if matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y')) {
+            app.var_confirm_delete = false;
+            app.var_delete_message = None;
+            app.var_delete();
+        } else if matches!(action, Action::Cancel) {
+            app.var_confirm_delete = false;
+            app.var_delete_message = None;
+        } else {
+            // Any other key cancels
+            app.var_confirm_delete = false;
+            app.var_delete_message = None;
         }
         return;
     }
@@ -711,17 +709,13 @@ fn handle_variables_action(app: &mut App, action: &Action) {
     }
 }
 
-fn handle_env_manager_action(app: &mut App, action: &Action) {
-    // Delete confirmation state takes priority
+fn handle_env_manager_action(app: &mut App, action: &Action, key: crossterm::event::KeyEvent) {
+    // Delete confirmation state — check raw key for 'y'
     if app.env_manager_confirm_delete.is_some() {
-        match action {
-            Action::CharInput('y') => {
-                app.env_manager_execute_delete();
-            }
-            Action::Cancel => {
-                app.env_manager_confirm_delete = None;
-            }
-            _ => {}
+        if matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y')) {
+            app.env_manager_execute_delete();
+        } else {
+            app.env_manager_confirm_delete = None;
         }
         return;
     }
@@ -787,7 +781,7 @@ fn handle_env_manager_action(app: &mut App, action: &Action) {
                 app.env_manager_activate();
             }
         }
-        Action::NewRequest => {
+        Action::NewRequest | Action::CharInput('n') => {
             app.env_manager_create();
         }
         Action::Rename => {
@@ -805,7 +799,7 @@ fn handle_env_manager_action(app: &mut App, action: &Action) {
     }
 }
 
-fn handle_log_viewer_action(app: &mut App, action: &Action) {
+fn handle_log_viewer_action(app: &mut App, action: &Action, key: crossterm::event::KeyEvent) {
     // Filter editing mode
     if app.log_viewer_editing_filter {
         match action {
@@ -894,22 +888,23 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
     // Normal log viewer mode
     let entry_count = app.filtered_log_entries().len();
 
+    // General actions (from keymap)
     match action {
         Action::OpenLogViewer | Action::Cancel => {
             if app.log_viewer_detail_focused {
-                // Unfocus detail, back to list
                 app.log_viewer_detail_focused = false;
             } else if app.log_viewer_show_detail {
                 app.log_viewer_show_detail = false;
             } else {
                 app.show_log_viewer = false;
             }
+            return;
         }
         Action::CyclePaneForward | Action::CyclePaneBackward => {
-            // Tab toggles focus between list and detail pane
             if app.log_viewer_show_detail {
                 app.log_viewer_detail_focused = !app.log_viewer_detail_focused;
             }
+            return;
         }
         Action::MoveUp => {
             if app.log_viewer_detail_focused {
@@ -920,6 +915,7 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
                 app.log_viewer_cursor -= 1;
                 app.log_viewer_detail_scroll = 0;
             }
+            return;
         }
         Action::MoveDown => {
             if app.log_viewer_detail_focused {
@@ -931,100 +927,36 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
                 app.log_viewer_cursor += 1;
                 app.log_viewer_detail_scroll = 0;
             }
+            return;
         }
         Action::Enter => {
             if !app.log_viewer_show_detail {
-                // Open detail and focus it
                 app.log_viewer_show_detail = true;
                 app.log_viewer_detail_focused = true;
                 app.log_viewer_detail_scroll = 0;
-            } else if !app.log_viewer_detail_focused {
-                // Already open but list is focused — focus detail
-                app.log_viewer_detail_focused = true;
             } else {
-                // Detail is focused — unfocus back to list
-                app.log_viewer_detail_focused = false;
+                app.log_viewer_detail_focused = !app.log_viewer_detail_focused;
             }
+            return;
         }
-        Action::CharInput('f') => {
-            app.log_viewer_editing_filter = true;
-            app.log_viewer_filter_input
-                .set_content(&app.log_viewer_filter);
-            app.input_mode = app::InputMode::Editing;
-        }
-        Action::CharInput('/') | Action::Search => {
+        Action::Search => {
             app.log_viewer_editing_search = true;
             app.log_viewer_search_input
                 .set_content(&app.log_viewer_search);
             app.input_mode = app::InputMode::Editing;
+            return;
         }
-        Action::CharInput('c') => {
-            // Clear filter only
-            app.log_viewer_filter.clear();
-            app.log_viewer_cursor = 0;
-        }
-        Action::CharInput('C') => {
-            // Clear search only
-            app.log_viewer_search.clear();
-        }
-        Action::CharInput('n') => {
-            // Jump to next search match
-            if !app.log_viewer_search.is_empty() {
-                let search_lower = app.log_viewer_search.to_lowercase();
-                let filtered = app.filtered_log_entries();
-                let start = app.log_viewer_cursor + 1;
-                if let Some(pos) = filtered
-                    .iter()
-                    .skip(start)
-                    .position(|e| e.request.url.to_lowercase().contains(&search_lower))
-                {
-                    app.log_viewer_cursor = start + pos;
-                } else if let Some(pos) = filtered
-                    .iter()
-                    .position(|e| e.request.url.to_lowercase().contains(&search_lower))
-                {
-                    // Wrap around
-                    app.log_viewer_cursor = pos;
-                }
-            }
-        }
-        Action::CharInput('N') => {
-            // Jump to previous search match
-            if !app.log_viewer_search.is_empty() {
-                let search_lower = app.log_viewer_search.to_lowercase();
-                let filtered = app.filtered_log_entries();
-                if app.log_viewer_cursor > 0 {
-                    if let Some(pos) = filtered[..app.log_viewer_cursor]
-                        .iter()
-                        .rposition(|e| e.request.url.to_lowercase().contains(&search_lower))
-                    {
-                        app.log_viewer_cursor = pos;
-                    } else if let Some(pos) = filtered
-                        .iter()
-                        .rposition(|e| e.request.url.to_lowercase().contains(&search_lower))
-                    {
-                        // Wrap around
-                        app.log_viewer_cursor = pos;
-                    }
-                } else {
-                    // At 0, wrap to last match
-                    if let Some(pos) = filtered
-                        .iter()
-                        .rposition(|e| e.request.url.to_lowercase().contains(&search_lower))
-                    {
-                        app.log_viewer_cursor = pos;
-                    }
-                }
-            }
-        }
-        Action::CharInput('r') | Action::Rename => {
+        Action::Rename => {
+            // Re-send: load request into editor
             let filtered = app.filtered_log_entries();
             if let Some(entry) = filtered.get(app.log_viewer_cursor) {
                 app.load_log_entry_into_editor(entry.clone());
                 app.show_log_viewer = false;
             }
+            return;
         }
-        Action::CharInput('y') => {
+        Action::Copy => {
+            // Copy response body to clipboard
             let filtered = app.filtered_log_entries();
             if let Some(entry) = filtered.get(app.log_viewer_cursor) {
                 let text = entry
@@ -1037,46 +969,137 @@ fn handle_log_viewer_action(app: &mut App, action: &Action) {
                     app.status_message = Some("Copied response body to clipboard".to_string());
                 }
             }
+            return;
         }
-        Action::CharInput('Y') => {
-            let logs_path = lazycurl_core::logging::logs_dir();
-            if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                let _ = clipboard.set_text(logs_path.to_string_lossy().to_string());
-                app.status_message = Some(format!("Copied: {}", logs_path.display()));
+        Action::Quit => {
+            app.should_quit = true;
+            return;
+        }
+        _ => {}
+    }
+
+    // Modal-specific shortcuts: check raw key so they work regardless of
+    // which preset is active (the keymap may have claimed these chars).
+    if let KeyCode::Char(c) = key.code {
+        match c {
+            '/' => {
+                app.log_viewer_editing_search = true;
+                app.log_viewer_search_input
+                    .set_content(&app.log_viewer_search);
+                app.input_mode = app::InputMode::Editing;
             }
-        }
-        Action::CharInput('e') => {
-            let filtered = app.filtered_log_entries();
-            let now = chrono::Utc::now().format("%Y-%m-%d-%H%M%S").to_string();
-            let filename = format!("lazycurl-export-{}.jsonl", now);
-            let path = std::env::current_dir().unwrap_or_default().join(&filename);
-            if let Ok(mut file) = std::fs::File::create(&path) {
-                use std::io::Write;
-                for entry in &filtered {
-                    if let Ok(line) = serde_json::to_string(entry) {
-                        let _ = writeln!(file, "{}", line);
+            'f' => {
+                app.log_viewer_editing_filter = true;
+                app.log_viewer_filter_input
+                    .set_content(&app.log_viewer_filter);
+                app.input_mode = app::InputMode::Editing;
+            }
+            'c' => {
+                app.log_viewer_filter.clear();
+                app.log_viewer_cursor = 0;
+            }
+            'C' => {
+                app.log_viewer_search.clear();
+            }
+            'n' => {
+                if !app.log_viewer_search.is_empty() {
+                    let search_lower = app.log_viewer_search.to_lowercase();
+                    let filtered = app.filtered_log_entries();
+                    let start = app.log_viewer_cursor + 1;
+                    if let Some(pos) = filtered
+                        .iter()
+                        .skip(start)
+                        .position(|e| e.request.url.to_lowercase().contains(&search_lower))
+                    {
+                        app.log_viewer_cursor = start + pos;
+                    } else if let Some(pos) = filtered
+                        .iter()
+                        .position(|e| e.request.url.to_lowercase().contains(&search_lower))
+                    {
+                        app.log_viewer_cursor = pos;
                     }
                 }
-                app.status_message = Some(format!("Exported to {}", path.display()));
-                open_in_file_explorer(&path);
             }
+            'N' => {
+                if !app.log_viewer_search.is_empty() {
+                    let search_lower = app.log_viewer_search.to_lowercase();
+                    let filtered = app.filtered_log_entries();
+                    if app.log_viewer_cursor > 0 {
+                        if let Some(pos) = filtered[..app.log_viewer_cursor]
+                            .iter()
+                            .rposition(|e| e.request.url.to_lowercase().contains(&search_lower))
+                        {
+                            app.log_viewer_cursor = pos;
+                        } else if let Some(pos) = filtered
+                            .iter()
+                            .rposition(|e| e.request.url.to_lowercase().contains(&search_lower))
+                        {
+                            app.log_viewer_cursor = pos;
+                        }
+                    } else if let Some(pos) = filtered
+                        .iter()
+                        .rposition(|e| e.request.url.to_lowercase().contains(&search_lower))
+                    {
+                        app.log_viewer_cursor = pos;
+                    }
+                }
+            }
+            'r' => {
+                let filtered = app.filtered_log_entries();
+                if let Some(entry) = filtered.get(app.log_viewer_cursor) {
+                    app.load_log_entry_into_editor(entry.clone());
+                    app.show_log_viewer = false;
+                }
+            }
+            'y' => {
+                let filtered = app.filtered_log_entries();
+                if let Some(entry) = filtered.get(app.log_viewer_cursor) {
+                    let text = entry
+                        .response
+                        .as_ref()
+                        .and_then(|r| r.body.as_deref())
+                        .unwrap_or("[no response body]");
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        let _ = clipboard.set_text(text);
+                        app.status_message = Some("Copied response body to clipboard".to_string());
+                    }
+                }
+            }
+            'Y' => {
+                let logs_path = lazycurl_core::logging::logs_dir();
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    let _ = clipboard.set_text(logs_path.to_string_lossy().to_string());
+                    app.status_message = Some(format!("Copied: {}", logs_path.display()));
+                }
+            }
+            'e' => {
+                let filtered = app.filtered_log_entries();
+                let now = chrono::Utc::now().format("%Y-%m-%d-%H%M%S").to_string();
+                let filename = format!("lazycurl-export-{}.jsonl", now);
+                let path = std::env::current_dir().unwrap_or_default().join(&filename);
+                if let Ok(mut file) = std::fs::File::create(&path) {
+                    use std::io::Write;
+                    for entry in &filtered {
+                        if let Ok(line) = serde_json::to_string(entry) {
+                            let _ = writeln!(file, "{}", line);
+                        }
+                    }
+                    app.status_message = Some(format!("Exported to {}", path.display()));
+                    open_in_file_explorer(&path);
+                }
+            }
+            _ => {}
         }
-        Action::Quit => app.should_quit = true,
-        _ => {}
     }
 }
 
-fn handle_project_picker_action(app: &mut App, action: &Action) {
-    // Delete confirmation state takes priority
+fn handle_project_picker_action(app: &mut App, action: &Action, key: crossterm::event::KeyEvent) {
+    // Delete confirmation state — check raw key for 'y'
     if app.project_picker_confirm_delete.is_some() {
-        match action {
-            Action::CharInput('y') => {
-                app.project_picker_execute_delete();
-            }
-            Action::Cancel => {
-                app.project_picker_confirm_delete = None;
-            }
-            _ => {}
+        if matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y')) {
+            app.project_picker_execute_delete();
+        } else {
+            app.project_picker_confirm_delete = None;
         }
         return;
     }
@@ -1155,7 +1178,7 @@ fn handle_project_picker_action(app: &mut App, action: &Action) {
                 app.show_project_picker = false;
             }
         }
-        Action::NewRequest => {
+        Action::NewRequest | Action::CharInput('n') => {
             // Create new project
             app.show_project_picker = false;
             app.name_input.set_content("New Project");
