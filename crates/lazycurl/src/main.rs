@@ -1,5 +1,6 @@
 mod app;
 mod events;
+mod handlers;
 mod input;
 pub mod text_input;
 mod ui;
@@ -1212,7 +1213,7 @@ fn handle_project_picker_action(app: &mut App, action: &Action, key: crossterm::
     }
 }
 
-fn open_in_file_explorer(path: &std::path::Path) {
+pub(crate) fn open_in_file_explorer(path: &std::path::Path) {
     if let Some(parent) = path.parent() {
         #[cfg(target_os = "windows")]
         {
@@ -1312,7 +1313,7 @@ fn handle_export_picker_action(app: &mut App, action: &Action) {
     }
 }
 
-fn execute_export(app: &mut App, format: ExportFormat) {
+pub(crate) fn execute_export(app: &mut App, format: ExportFormat) {
     match format {
         ExportFormat::Curl => {
             if let Some(req) = app.current_request().cloned() {
