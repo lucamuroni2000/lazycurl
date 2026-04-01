@@ -1,7 +1,10 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::collections::HashMap;
 
-use crate::app::Action;
+use crate::app::{Action, InputContext};
+
+/// Context-scoped keymaps: one inner map per InputContext.
+pub type ContextKeymaps = HashMap<InputContext, HashMap<(KeyModifiers, KeyCode), Action>>;
 
 /// Maps a string keybinding (from config) to a (modifiers, keycode) pair.
 fn parse_binding(binding: &str) -> Option<(KeyModifiers, KeyCode)> {
@@ -53,85 +56,107 @@ fn parse_binding(binding: &str) -> Option<(KeyModifiers, KeyCode)> {
     Some((modifiers, code))
 }
 
-/// Build a lookup table from (modifiers, keycode) -> Action using config keybindings.
-pub fn build_keymap(
-    keybindings: &HashMap<String, String>,
-) -> HashMap<(KeyModifiers, KeyCode), Action> {
-    let mut map = HashMap::new();
+/// Maps a config key string to an (InputContext, Action) pair.
+fn action_for_key(key: &str) -> Option<(InputContext, Action)> {
+    use InputContext::*;
+    match key {
+        // Global actions
+        "quit" => Some((Global, Action::Quit)),
+        "cancel" => Some((Global, Action::Cancel)),
+        "help" => Some((Global, Action::Help)),
+        "search" => Some((Global, Action::Search)),
+        "send_request" => Some((Global, Action::SendRequest)),
+        "save_request" => Some((Global, Action::SaveRequest)),
+        "new_request" => Some((Global, Action::NewRequest)),
+        "switch_env" => Some((Global, Action::SwitchEnvironment)),
+        "manage_envs" => Some((Global, Action::ManageEnvironments)),
+        "open_variables" => Some((Global, Action::OpenVariables)),
+        "open_export" => Some((Global, Action::OpenExportPicker)),
+        "open_log_viewer" => Some((Global, Action::OpenLogViewer)),
+        "open_project_picker" => Some((Global, Action::OpenProjectPicker)),
+        "reveal_secrets" => Some((Global, Action::RevealSecrets)),
+        "focus_url" => Some((Global, Action::FocusUrl)),
+        "cycle_method" => Some((Global, Action::CycleMethod)),
+        "change_auth_type" => Some((Global, Action::ChangeAuthType)),
+        "move_up" => Some((Global, Action::MoveUp)),
+        "move_down" => Some((Global, Action::MoveDown)),
+        "enter" => Some((Global, Action::Enter)),
+        "next_tab" => Some((Global, Action::NextTab)),
+        "prev_tab" => Some((Global, Action::PrevTab)),
+        "cycle_pane_forward" => Some((Global, Action::CyclePaneForward)),
+        "cycle_pane_backward" => Some((Global, Action::CyclePaneBackward)),
+        "next_project" => Some((Global, Action::NextProject)),
+        "prev_project" => Some((Global, Action::PrevProject)),
+        "focus_collections" => Some((Global, Action::FocusCollections)),
+        "focus_request" => Some((Global, Action::FocusRequest)),
+        "focus_response" => Some((Global, Action::FocusResponse)),
+        "add_item" => Some((Global, Action::AddItem)),
+        "delete_item" => Some((Global, Action::DeleteItem)),
+        "rename" => Some((Global, Action::Rename)),
+        "toggle_enabled" => Some((Global, Action::ToggleEnabled)),
+        "copy" => Some((Global, Action::Copy)),
+        "confirm_yes" => Some((Global, Action::ConfirmYes)),
+        "close_project" => Some((Global, Action::CloseProject)),
+        // Log viewer context
+        "log_viewer.filter" => Some((LogViewer, Action::LogFilter)),
+        "log_viewer.clear_filter" => Some((LogViewer, Action::LogClearFilter)),
+        "log_viewer.clear_search" => Some((LogViewer, Action::LogClearSearch)),
+        "log_viewer.next_match" => Some((LogViewer, Action::LogNextMatch)),
+        "log_viewer.prev_match" => Some((LogViewer, Action::LogPrevMatch)),
+        "log_viewer.export" => Some((LogViewer, Action::LogExport)),
+        "log_viewer.copy_path" => Some((LogViewer, Action::LogCopyPath)),
+        // Variables context
+        "variables.cycle_container_fwd" => Some((Variables, Action::CycleContainerForward)),
+        "variables.cycle_container_back" => Some((Variables, Action::CycleContainerBackward)),
+        _ => None,
+    }
+}
 
-    let action_map: Vec<(&str, Action)> = vec![
-        // Global commands
-        ("quit", Action::Quit),
-        ("send_request", Action::SendRequest),
-        ("save_request", Action::SaveRequest),
-        ("cancel", Action::Cancel),
-        ("help", Action::Help),
-        ("search", Action::Search),
-        ("new_request", Action::NewRequest),
-        ("switch_env", Action::SwitchEnvironment),
-        ("manage_envs", Action::ManageEnvironments),
-        ("open_variables", Action::OpenVariables),
-        ("open_export", Action::OpenExportPicker),
-        ("open_log_viewer", Action::OpenLogViewer),
-        ("open_project_picker", Action::OpenProjectPicker),
-        ("reveal_secrets", Action::RevealSecrets),
-        // Navigation
-        ("move_up", Action::MoveUp),
-        ("move_down", Action::MoveDown),
-        ("enter", Action::Enter),
-        ("next_tab", Action::NextTab),
-        ("prev_tab", Action::PrevTab),
-        ("cycle_pane_forward", Action::CyclePaneForward),
-        ("cycle_pane_backward", Action::CyclePaneBackward),
-        ("next_project", Action::NextProject),
-        ("prev_project", Action::PrevProject),
-        // Pane focus
-        ("focus_collections", Action::FocusCollections),
-        ("focus_request", Action::FocusRequest),
-        ("focus_response", Action::FocusResponse),
-        // Item manipulation
-        ("add_item", Action::AddItem),
-        ("delete_item", Action::DeleteItem),
-        ("rename", Action::Rename),
-        ("cycle_method", Action::CycleMethod),
-        ("toggle_enabled", Action::ToggleEnabled),
-        ("copy", Action::Copy),
-    ];
+/// Build context-scoped lookup tables from (modifiers, keycode) -> Action,
+/// using the flat config keybindings map.
+pub fn build_context_keymaps(keybindings: &HashMap<String, String>) -> ContextKeymaps {
+    let mut keymaps: ContextKeymaps = HashMap::new();
 
-    for (key, action) in action_map {
-        if let Some(binding) = keybindings.get(key) {
+    for (key, binding) in keybindings {
+        if let Some((context, action)) = action_for_key(key) {
             if let Some(parsed) = parse_binding(binding) {
-                map.insert(parsed, action);
+                keymaps.entry(context).or_default().insert(parsed, action);
             }
         }
     }
 
-    // Universal fallbacks — arrow keys always work regardless of preset
-    map.entry((KeyModifiers::NONE, KeyCode::Up))
+    // Universal fallbacks in Global keymap — arrow keys always work regardless of preset
+    let global = keymaps.entry(InputContext::Global).or_default();
+    global
+        .entry((KeyModifiers::NONE, KeyCode::Up))
         .or_insert(Action::MoveUp);
-    map.entry((KeyModifiers::NONE, KeyCode::Down))
+    global
+        .entry((KeyModifiers::NONE, KeyCode::Down))
         .or_insert(Action::MoveDown);
-    map.entry((KeyModifiers::NONE, KeyCode::Left))
+    global
+        .entry((KeyModifiers::NONE, KeyCode::Left))
         .or_insert(Action::PrevTab);
-    map.entry((KeyModifiers::NONE, KeyCode::Right))
+    global
+        .entry((KeyModifiers::NONE, KeyCode::Right))
         .or_insert(Action::NextTab);
-    map.entry((KeyModifiers::NONE, KeyCode::Enter))
+    global
+        .entry((KeyModifiers::NONE, KeyCode::Enter))
         .or_insert(Action::Enter);
     // F5 as fallback for send (Ctrl+Enter compatibility)
-    map.entry((KeyModifiers::NONE, KeyCode::F(5)))
+    global
+        .entry((KeyModifiers::NONE, KeyCode::F(5)))
         .or_insert(Action::SendRequest);
 
-    map
+    keymaps
 }
 
-/// Look up a key event in the keymap.
+/// Look up a key event in a single keymap with terminal normalization.
 /// Normalizes SHIFT modifier for printable characters since terminals
 /// inconsistently report SHIFT for chars like '?', '/', uppercase letters, etc.
-pub fn resolve_action(key: KeyEvent, keymap: &HashMap<(KeyModifiers, KeyCode), Action>) -> Action {
-    if key.kind != KeyEventKind::Press {
-        return Action::None;
-    }
-
+fn lookup_with_normalization(
+    key: KeyEvent,
+    keymap: &HashMap<(KeyModifiers, KeyCode), Action>,
+) -> Action {
     // Try exact match first
     if let Some(action) = keymap.get(&(key.modifiers, key.code)) {
         return action.clone();
@@ -177,6 +202,28 @@ pub fn resolve_action(key: KeyEvent, keymap: &HashMap<(KeyModifiers, KeyCode), A
         return Action::CharInput(c);
     }
 
+    Action::None
+}
+
+/// Look up a key event in the context-scoped keymaps.
+/// Checks context-specific keymap first (if not Global), then falls back to Global.
+pub fn resolve_action(key: KeyEvent, keymaps: &ContextKeymaps, context: InputContext) -> Action {
+    if key.kind != KeyEventKind::Press {
+        return Action::None;
+    }
+    // Try context-specific keymap first (if not Global)
+    if context != InputContext::Global {
+        if let Some(context_map) = keymaps.get(&context) {
+            let result = lookup_with_normalization(key, context_map);
+            if !matches!(result, Action::None | Action::CharInput(_)) {
+                return result;
+            }
+        }
+    }
+    // Fall back to Global keymap
+    if let Some(global_map) = keymaps.get(&InputContext::Global) {
+        return lookup_with_normalization(key, global_map);
+    }
     Action::None
 }
 
