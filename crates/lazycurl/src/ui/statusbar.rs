@@ -269,11 +269,9 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         hints.push(Span::styled("| ", hint_style));
 
         // Global actions (always available)
-        hints.push(Span::styled("F6", key_style));
-        hints.push(Span::styled(":project ", hint_style));
         hints.push(Span::styled("Ctrl+O", key_style));
         hints.push(Span::styled(":projects ", hint_style));
-        hints.push(Span::styled("Ctrl+Y", key_style));
+        hints.push(Span::styled("x", key_style));
         hints.push(Span::styled(":export ", hint_style));
         hints.push(Span::styled("F5", key_style));
         hints.push(Span::styled(":send ", hint_style));
@@ -281,9 +279,9 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         hints.push(Span::styled(":save ", hint_style));
         hints.push(Span::styled("v", key_style));
         hints.push(Span::styled(":vars ", hint_style));
-        hints.push(Span::styled("?", key_style));
+        hints.push(Span::styled("F1", key_style));
         hints.push(Span::styled(":help ", hint_style));
-        hints.push(Span::styled("Ctrl+Q", key_style));
+        hints.push(Span::styled("q", key_style));
         hints.push(Span::styled(":quit", hint_style));
     }
 
