@@ -253,7 +253,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<Stri
                         if app.auth_inputs.is_empty() {
                             hints.extend(hint(
                                 kb,
-                                "enter",
+                                "change_auth_type",
                                 "select auth type",
                                 key_style,
                                 hint_style,
@@ -364,7 +364,10 @@ fn format_key_display(binding: &str) -> String {
             "backtab" => "Tab".to_string(), // shift+backtab displays as Shift+Tab
             "tab" => "Tab".to_string(),
             s if s.starts_with('f') && s[1..].parse::<u8>().is_ok() => s.to_uppercase(),
-            s if s.len() == 1 => s.to_string(), // preserve case for single chars
+            s if s.len() == 1 && s.chars().next().unwrap().is_ascii_uppercase() => {
+                format!("Shift+{}", s)
+            }
+            s if s.len() == 1 => s.to_string(),
             other => other.to_string(),
         })
         .collect::<Vec<_>>()

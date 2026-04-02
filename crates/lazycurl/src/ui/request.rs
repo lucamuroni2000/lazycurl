@@ -332,7 +332,7 @@ fn draw_auth(frame: &mut Frame, app: &App, area: Rect) {
     let is_no_auth = matches!(req.auth, None | Some(lazycurl_core::types::Auth::None));
 
     if is_no_auth {
-        let text = " No authentication configured. Press Enter to select an auth type.";
+        let text = " No authentication configured. Press Ctrl+A to select an auth type.";
         frame.render_widget(
             Paragraph::new(text).style(Style::default().fg(Color::DarkGray)),
             area,
@@ -362,7 +362,10 @@ fn draw_auth(frame: &mut Frame, app: &App, area: Rect) {
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("  (t: change type)", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            "  (Ctrl+A: change type)",
+            Style::default().fg(Color::DarkGray),
+        ),
     ]));
     lines.push(Line::from(""));
 

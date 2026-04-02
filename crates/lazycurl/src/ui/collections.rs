@@ -23,7 +23,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(block, area);
 
     if app.collections().is_empty() {
-        let text = Paragraph::new(" No collections.\n Press Ctrl+N to create a request.")
+        let text = Paragraph::new(" No collections.\n Press n to create a request.")
             .style(Style::default().fg(Color::DarkGray));
         frame.render_widget(text, inner);
         return;
