@@ -88,23 +88,16 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         let url_style = if url_editing {
             Style::default().fg(Color::White).bg(Color::DarkGray)
         } else if url_selected {
-            Style::default().fg(Color::White).bg(Color::Blue)
+            Style::default().fg(Color::Cyan)
         } else if is_focused {
             Style::default().fg(Color::White)
         } else {
             Style::default().fg(Color::Gray)
         };
 
-        let method_style = if url_selected {
-            Style::default()
-                .fg(method_color(req.method))
-                .bg(Color::Blue)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
-                .fg(method_color(req.method))
-                .add_modifier(Modifier::BOLD)
-        };
+        let method_style = Style::default()
+            .fg(method_color(req.method))
+            .add_modifier(Modifier::BOLD);
 
         let url_display = if url_text.is_empty() && !url_editing {
             "Enter URL...".to_string()
@@ -113,24 +106,24 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         };
 
         let url_span = Span::styled(url_display, url_style);
-        let sep_style = if url_selected {
-            Style::default().bg(Color::Blue)
-        } else {
-            Style::default()
-        };
         let line = Line::from(vec![
             Span::styled(format!(" {} ", req.method), method_style),
-            Span::styled(" ", sep_style),
+            Span::raw(" "),
             url_span,
         ]);
         frame.render_widget(Paragraph::new(line), chunks[1]);
 
-        // Show cursor when editing URL
+        // Show cursor when URL is focused (normal or editing)
+        let url_prefix = req.method.to_string().len() as u16 + 3;
         if url_editing {
-            let cursor_x = chunks[1].x
-                + req.method.to_string().len() as u16
-                + 3
-                + app.url_input.cursor() as u16;
+            let cursor_x = chunks[1].x + url_prefix + app.url_input.cursor() as u16;
+            let cursor_y = chunks[1].y;
+            if cursor_x < chunks[1].x + chunks[1].width {
+                frame.set_cursor_position((cursor_x, cursor_y));
+            }
+        } else if url_selected {
+            // Block cursor at start of URL text
+            let cursor_x = chunks[1].x + url_prefix;
             let cursor_y = chunks[1].y;
             if cursor_x < chunks[1].x + chunks[1].width {
                 frame.set_cursor_position((cursor_x, cursor_y));
@@ -217,7 +210,7 @@ fn draw_headers(frame: &mut Frame, app: &App, area: Rect) {
         let key_style = if editing_key {
             Style::default().fg(Color::Yellow).bg(Color::DarkGray)
         } else if is_selected {
-            Style::default().fg(Color::Yellow).bg(Color::Blue)
+            Style::default().fg(Color::Black).bg(Color::Cyan)
         } else {
             Style::default().fg(Color::Yellow)
         };
@@ -225,7 +218,7 @@ fn draw_headers(frame: &mut Frame, app: &App, area: Rect) {
         let value_style = if editing_value {
             Style::default().fg(Color::White).bg(Color::DarkGray)
         } else if is_selected {
-            Style::default().fg(Color::White).bg(Color::Blue)
+            Style::default().fg(Color::Black).bg(Color::Cyan)
         } else if !header.enabled {
             Style::default().fg(Color::DarkGray)
         } else {
@@ -233,13 +226,13 @@ fn draw_headers(frame: &mut Frame, app: &App, area: Rect) {
         };
 
         let marker_style = if is_selected {
-            Style::default().fg(Color::DarkGray).bg(Color::Blue)
+            Style::default().fg(Color::Black).bg(Color::Cyan)
         } else {
             Style::default().fg(Color::DarkGray)
         };
 
         let sep_style = if is_selected {
-            Style::default().fg(Color::DarkGray).bg(Color::Blue)
+            Style::default().fg(Color::Black).bg(Color::Cyan)
         } else {
             Style::default().fg(Color::DarkGray)
         };
@@ -302,7 +295,7 @@ fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
     let style = if body_editing {
         Style::default().fg(Color::White).bg(Color::DarkGray)
     } else if body_selected {
-        Style::default().fg(Color::White).bg(Color::Blue)
+        Style::default().fg(Color::Cyan)
     } else {
         Style::default().fg(Color::White)
     };
@@ -317,6 +310,13 @@ fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
 
     if body_editing {
         let cursor_x = area.x + 1 + app.body_input.cursor() as u16;
+        let cursor_y = area.y;
+        if cursor_x < area.x + area.width {
+            frame.set_cursor_position((cursor_x, cursor_y));
+        }
+    } else if body_selected {
+        // Show cursor at start of body content
+        let cursor_x = area.x + 1;
         let cursor_y = area.y;
         if cursor_x < area.x + area.width {
             frame.set_cursor_position((cursor_x, cursor_y));
@@ -394,7 +394,7 @@ fn draw_auth(frame: &mut Frame, app: &App, area: Rect) {
         let value_style = if is_editing {
             Style::default().fg(Color::Yellow).bg(Color::DarkGray)
         } else if is_focused {
-            Style::default().fg(Color::White).bg(Color::Blue)
+            Style::default().fg(Color::Black).bg(Color::Cyan)
         } else {
             Style::default().fg(Color::White)
         };
@@ -402,7 +402,7 @@ fn draw_auth(frame: &mut Frame, app: &App, area: Rect) {
         let label_style = if is_editing {
             Style::default().fg(Color::DarkGray).bg(Color::DarkGray)
         } else if is_focused {
-            Style::default().fg(Color::DarkGray).bg(Color::Blue)
+            Style::default().fg(Color::Black).bg(Color::Cyan)
         } else {
             Style::default().fg(Color::DarkGray)
         };
@@ -479,7 +479,7 @@ fn draw_params(frame: &mut Frame, app: &App, area: Rect) {
         let key_style = if editing_key {
             Style::default().fg(Color::Yellow).bg(Color::DarkGray)
         } else if is_selected {
-            Style::default().fg(Color::Yellow).bg(Color::Blue)
+            Style::default().fg(Color::Black).bg(Color::Cyan)
         } else {
             Style::default().fg(Color::Yellow)
         };
@@ -487,7 +487,7 @@ fn draw_params(frame: &mut Frame, app: &App, area: Rect) {
         let value_style = if editing_value {
             Style::default().fg(Color::White).bg(Color::DarkGray)
         } else if is_selected {
-            Style::default().fg(Color::White).bg(Color::Blue)
+            Style::default().fg(Color::Black).bg(Color::Cyan)
         } else if !param.enabled {
             Style::default().fg(Color::DarkGray)
         } else {
@@ -495,13 +495,13 @@ fn draw_params(frame: &mut Frame, app: &App, area: Rect) {
         };
 
         let marker_style = if is_selected {
-            Style::default().fg(Color::DarkGray).bg(Color::Blue)
+            Style::default().fg(Color::Black).bg(Color::Cyan)
         } else {
             Style::default().fg(Color::DarkGray)
         };
 
         let sep_style = if is_selected {
-            Style::default().fg(Color::DarkGray).bg(Color::Blue)
+            Style::default().fg(Color::Black).bg(Color::Cyan)
         } else {
             Style::default().fg(Color::DarkGray)
         };
