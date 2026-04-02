@@ -77,29 +77,33 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         let url_editing =
             app.input_mode == InputMode::Editing && app.edit_field == Some(EditField::Url);
 
-        let method_span = Span::styled(
-            format!(" {} ", req.method),
-            Style::default()
-                .fg(method_color(req.method))
-                .add_modifier(Modifier::BOLD),
-        );
-
         let url_text = if url_editing {
             app.url_input.content()
         } else {
             &req.url
         };
 
+        let url_selected = is_focused && app.url_focused && !url_editing;
+
         let url_style = if url_editing {
             Style::default().fg(Color::White).bg(Color::DarkGray)
-        } else if is_focused && app.url_focused {
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD)
+        } else if url_selected {
+            Style::default().fg(Color::White).bg(Color::Blue)
         } else if is_focused {
             Style::default().fg(Color::White)
         } else {
             Style::default().fg(Color::Gray)
+        };
+
+        let method_style = if url_selected {
+            Style::default()
+                .fg(method_color(req.method))
+                .bg(Color::Blue)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .fg(method_color(req.method))
+                .add_modifier(Modifier::BOLD)
         };
 
         let url_display = if url_text.is_empty() && !url_editing {
@@ -109,7 +113,16 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         };
 
         let url_span = Span::styled(url_display, url_style);
-        let line = Line::from(vec![method_span, Span::raw(" "), url_span]);
+        let sep_style = if url_selected {
+            Style::default().bg(Color::Blue)
+        } else {
+            Style::default()
+        };
+        let line = Line::from(vec![
+            Span::styled(format!(" {} ", req.method), method_style),
+            Span::styled(" ", sep_style),
+            url_span,
+        ]);
         frame.render_widget(Paragraph::new(line), chunks[1]);
 
         // Show cursor when editing URL
@@ -170,7 +183,7 @@ fn draw_headers(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let is_focused = app.active_pane == Pane::Request;
+    let is_focused = app.active_pane == Pane::Request && !app.url_focused;
     let mut lines = Vec::new();
     let mut cursor_pos: Option<(u16, u16)> = None;
 
@@ -201,42 +214,32 @@ fn draw_headers(frame: &mut Frame, app: &App, area: Rect) {
             header.value.clone()
         };
 
-        let base_style = if !header.enabled {
-            Style::default().fg(Color::DarkGray)
-        } else {
-            Style::default().fg(Color::White)
-        };
-
         let key_style = if editing_key {
             Style::default().fg(Color::Yellow).bg(Color::DarkGray)
         } else if is_selected {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::REVERSED)
+            Style::default().fg(Color::Yellow).bg(Color::Blue)
         } else {
             Style::default().fg(Color::Yellow)
         };
 
         let value_style = if editing_value {
-            base_style.bg(Color::DarkGray)
+            Style::default().fg(Color::White).bg(Color::DarkGray)
         } else if is_selected {
-            base_style.add_modifier(Modifier::REVERSED)
+            Style::default().fg(Color::White).bg(Color::Blue)
+        } else if !header.enabled {
+            Style::default().fg(Color::DarkGray)
         } else {
-            base_style
+            Style::default().fg(Color::White)
         };
 
         let marker_style = if is_selected {
-            Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::REVERSED)
+            Style::default().fg(Color::DarkGray).bg(Color::Blue)
         } else {
             Style::default().fg(Color::DarkGray)
         };
 
         let sep_style = if is_selected {
-            Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::REVERSED)
+            Style::default().fg(Color::DarkGray).bg(Color::Blue)
         } else {
             Style::default().fg(Color::DarkGray)
         };
@@ -279,6 +282,10 @@ fn draw_headers(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
     let body_editing =
         app.input_mode == InputMode::Editing && app.edit_field == Some(EditField::BodyContent);
+    let body_selected = app.active_pane == Pane::Request
+        && !app.url_focused
+        && app.request_tab() == RequestTab::Body
+        && !body_editing;
 
     let content = if body_editing {
         app.body_input.content().to_string()
@@ -294,6 +301,8 @@ fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
 
     let style = if body_editing {
         Style::default().fg(Color::White).bg(Color::DarkGray)
+    } else if body_selected {
+        Style::default().fg(Color::White).bg(Color::Blue)
     } else {
         Style::default().fg(Color::White)
     };
@@ -358,7 +367,7 @@ fn draw_auth(frame: &mut Frame, app: &App, area: Rect) {
     lines.push(Line::from(""));
 
     let is_auth_tab = app.request_tab() == RequestTab::Auth;
-    let is_request_pane = app.active_pane == Pane::Request;
+    let is_request_pane = app.active_pane == Pane::Request && !app.url_focused;
     let mut cursor_pos: Option<(u16, u16)> = None;
 
     for (i, label) in app.auth_field_labels.iter().enumerate() {
@@ -385,17 +394,15 @@ fn draw_auth(frame: &mut Frame, app: &App, area: Rect) {
         let value_style = if is_editing {
             Style::default().fg(Color::Yellow).bg(Color::DarkGray)
         } else if is_focused {
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::REVERSED)
+            Style::default().fg(Color::White).bg(Color::Blue)
         } else {
             Style::default().fg(Color::White)
         };
 
-        let label_style = if is_focused || is_editing {
-            Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::REVERSED)
+        let label_style = if is_editing {
+            Style::default().fg(Color::DarkGray).bg(Color::DarkGray)
+        } else if is_focused {
+            Style::default().fg(Color::DarkGray).bg(Color::Blue)
         } else {
             Style::default().fg(Color::DarkGray)
         };
@@ -438,7 +445,7 @@ fn draw_params(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let is_focused = app.active_pane == Pane::Request;
+    let is_focused = app.active_pane == Pane::Request && !app.url_focused;
     let mut lines = Vec::new();
     let mut cursor_pos: Option<(u16, u16)> = None;
 
@@ -469,42 +476,32 @@ fn draw_params(frame: &mut Frame, app: &App, area: Rect) {
             param.value.clone()
         };
 
-        let base_style = if !param.enabled {
-            Style::default().fg(Color::DarkGray)
-        } else {
-            Style::default().fg(Color::White)
-        };
-
         let key_style = if editing_key {
             Style::default().fg(Color::Yellow).bg(Color::DarkGray)
         } else if is_selected {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::REVERSED)
+            Style::default().fg(Color::Yellow).bg(Color::Blue)
         } else {
             Style::default().fg(Color::Yellow)
         };
 
         let value_style = if editing_value {
-            base_style.bg(Color::DarkGray)
+            Style::default().fg(Color::White).bg(Color::DarkGray)
         } else if is_selected {
-            base_style.add_modifier(Modifier::REVERSED)
+            Style::default().fg(Color::White).bg(Color::Blue)
+        } else if !param.enabled {
+            Style::default().fg(Color::DarkGray)
         } else {
-            base_style
+            Style::default().fg(Color::White)
         };
 
         let marker_style = if is_selected {
-            Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::REVERSED)
+            Style::default().fg(Color::DarkGray).bg(Color::Blue)
         } else {
             Style::default().fg(Color::DarkGray)
         };
 
         let sep_style = if is_selected {
-            Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::REVERSED)
+            Style::default().fg(Color::DarkGray).bg(Color::Blue)
         } else {
             Style::default().fg(Color::DarkGray)
         };
