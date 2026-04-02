@@ -113,8 +113,7 @@ pub fn handle_collection_picker(app: &mut App, action: &Action) {
             app.show_collection_picker = false;
             app.name_input.set_content("My Collection");
             app.start_editing(EditField::NewCollectionName);
-            app.status_message =
-                Some("Name your collection, then press Enter to save".to_string());
+            app.status_message = Some("Name your collection, then press Enter to save".to_string());
         }
         Action::Quit => app.should_quit = true,
         _ => {}

@@ -197,9 +197,7 @@ pub async fn handle(app: &mut App, action: &Action) {
             }
         }
         Action::Copy => {
-            if app.active_pane == app::Pane::Response
-                && app.input_mode == app::InputMode::Normal
-            {
+            if app.active_pane == app::Pane::Response && app.input_mode == app::InputMode::Normal {
                 if let Some(resp) = app.last_response() {
                     let text = if resp.body.is_empty() {
                         "[no response body]".to_string()
@@ -208,8 +206,7 @@ pub async fn handle(app: &mut App, action: &Action) {
                     };
                     if let Ok(mut clipboard) = arboard::Clipboard::new() {
                         let _ = clipboard.set_text(&text);
-                        app.status_message =
-                            Some("Copied response body to clipboard".to_string());
+                        app.status_message = Some("Copied response body to clipboard".to_string());
                     }
                 }
             }
