@@ -92,6 +92,10 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
         let url_style = if url_editing {
             Style::default().fg(Color::White).bg(Color::DarkGray)
+        } else if is_focused && app.url_focused {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else if is_focused {
             Style::default().fg(Color::White)
         } else {

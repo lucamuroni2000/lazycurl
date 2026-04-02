@@ -28,10 +28,10 @@ fn default_preset_keybindings() -> HashMap<String, String> {
     map.insert("search".into(), "/".into());
     map.insert("send_request".into(), "ctrl+enter".into());
     map.insert("save_request".into(), "ctrl+s".into());
-    map.insert("new_request".into(), "ctrl+n".into());
+    map.insert("new_request".into(), "n".into());
     map.insert("switch_env".into(), "ctrl+e".into());
     map.insert("manage_envs".into(), "ctrl+shift+e".into());
-    map.insert("open_variables".into(), "ctrl+v".into());
+    map.insert("open_variables".into(), "V".into());
     map.insert("open_export".into(), "ctrl+x".into());
     map.insert("open_log_viewer".into(), "ctrl+l".into());
     map.insert("open_project_picker".into(), "ctrl+o".into());
@@ -316,7 +316,7 @@ mod tests {
         assert_eq!(config.keybindings.get("save_request").unwrap(), "ctrl+s");
         assert_eq!(config.keybindings.get("copy").unwrap(), "y");
         assert_eq!(config.keybindings.get("reveal_secrets").unwrap(), "f8");
-        assert_eq!(config.keybindings.get("open_variables").unwrap(), "ctrl+v");
+        assert_eq!(config.keybindings.get("open_variables").unwrap(), "V");
         assert_eq!(config.keybindings.get("open_export").unwrap(), "ctrl+x");
         assert_eq!(config.keybindings.get("cycle_method").unwrap(), "ctrl+m");
     }
@@ -493,7 +493,7 @@ mod tests {
         assert_eq!(config.keybindings.get("prev_project").unwrap(), "ctrl+left");
         assert_eq!(config.keybindings.get("help").unwrap(), "f1");
         // v1 → v2 stripped
-        assert_eq!(config.keybindings.get("open_variables").unwrap(), "ctrl+v");
+        assert_eq!(config.keybindings.get("open_variables").unwrap(), "V");
         assert_eq!(config.keybindings.get("cycle_method").unwrap(), "ctrl+m");
     }
 
@@ -632,7 +632,7 @@ mod tests {
         assert_eq!(kb["save_request"], "ctrl+s");
         assert_eq!(kb["cancel"], "escape");
         assert_eq!(kb["search"], "/");
-        assert_eq!(kb["open_variables"], "ctrl+v");
+        assert_eq!(kb["open_variables"], "V");
         assert_eq!(kb["open_export"], "ctrl+x");
         assert_eq!(kb["open_log_viewer"], "ctrl+l");
         assert_eq!(kb["reveal_secrets"], "f8");
@@ -659,10 +659,10 @@ mod tests {
         assert_eq!(kb["search"], "/");
         assert_eq!(kb["send_request"], "ctrl+enter");
         assert_eq!(kb["save_request"], "ctrl+s");
-        assert_eq!(kb["new_request"], "ctrl+n");
+        assert_eq!(kb["new_request"], "n");
         assert_eq!(kb["switch_env"], "ctrl+e");
         assert_eq!(kb["manage_envs"], "ctrl+shift+e");
-        assert_eq!(kb["open_variables"], "ctrl+v");
+        assert_eq!(kb["open_variables"], "V");
         assert_eq!(kb["open_export"], "ctrl+x");
         assert_eq!(kb["open_log_viewer"], "ctrl+l");
         assert_eq!(kb["open_project_picker"], "ctrl+o");

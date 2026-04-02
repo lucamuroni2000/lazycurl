@@ -9,7 +9,7 @@ use std::io;
 use std::time::Duration;
 
 use crossterm::{
-    event::Event,
+    event::{Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -166,14 +166,26 @@ async fn run_loop(
         })?;
 
         if let Some(Event::Key(key)) = events::poll_event(Duration::from_millis(50))? {
-            let action = if app.show_env_manager && app.env_manager_renaming.is_some() {
+            // Confirmation dialogs bypass the keymap entirely: 'y'/'Y' confirms,
+            // Esc cancels, everything else is ignored. This avoids conflicts where
+            // 'y' is also bound to Copy in the global keymap.
+            let any_confirm = app.confirm_delete
+                || app.var_confirm_delete
+                || app.env_manager_confirm_delete.is_some()
+                || app.project_picker_confirm_delete.is_some();
+
+            let action = if any_confirm {
+                match key.code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') => app::Action::ConfirmYes,
+                    KeyCode::Esc => app::Action::Cancel,
+                    _ => app::Action::None,
+                }
+            } else if app.show_env_manager && app.env_manager_renaming.is_some() {
                 // Env manager rename uses editing resolver so letters aren't
                 // swallowed by navigation bindings (e.g. 'd' → DeleteItem).
                 input::resolve_editing(key)
-            } else if app.show_project_picker
-                && (app.project_picker_renaming || app.project_picker_confirm_delete.is_some())
-            {
-                // Project picker rename/delete confirmation uses editing resolver.
+            } else if app.show_project_picker && app.project_picker_renaming {
+                // Project picker rename uses editing resolver.
                 input::resolve_editing(key)
             } else {
                 match app.input_mode {

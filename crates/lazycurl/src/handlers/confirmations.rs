@@ -7,11 +7,11 @@ pub fn handle_collection_delete(app: &mut App, action: &Action) {
             app.confirm_delete = false;
             app.delete_selected_in_collections();
         }
-        _ => {
-            // Any other key cancels
+        Action::Cancel => {
             app.confirm_delete = false;
             app.status_message = None;
         }
+        _ => {} // Ignore unrecognized keys while confirmation is shown
     }
 }
 
@@ -23,11 +23,11 @@ pub fn handle_variable_delete(app: &mut App, action: &Action) {
             app.var_delete_message = None;
             app.var_delete();
         }
-        _ => {
-            // Any other key cancels (including Action::Cancel)
+        Action::Cancel => {
             app.var_confirm_delete = false;
             app.var_delete_message = None;
         }
+        _ => {}
     }
 }
 
@@ -37,9 +37,10 @@ pub fn handle_env_delete(app: &mut App, action: &Action) {
         Action::ConfirmYes => {
             app.env_manager_execute_delete();
         }
-        _ => {
+        Action::Cancel => {
             app.env_manager_confirm_delete = None;
         }
+        _ => {}
     }
 }
 
@@ -49,8 +50,9 @@ pub fn handle_project_delete(app: &mut App, action: &Action) {
         Action::ConfirmYes => {
             app.project_picker_execute_delete();
         }
-        _ => {
+        Action::Cancel => {
             app.project_picker_confirm_delete = None;
         }
+        _ => {}
     }
 }

@@ -211,6 +211,8 @@ pub struct App {
     // Header/Param row cursors
     pub header_cursor: usize,
     pub param_cursor: usize,
+    // Whether the URL bar is focused in the Request pane (above tab content)
+    pub url_focused: bool,
     // Collection picker
     pub show_collection_picker: bool,
     pub picker_cursor: usize,
@@ -297,6 +299,7 @@ impl App {
             auth_field_secrets: Vec::new(),
             header_cursor: 0,
             param_cursor: 0,
+            url_focused: true,
             show_collection_picker: false,
             picker_cursor: 0,
             show_variables: false,
@@ -549,6 +552,9 @@ impl App {
             let next = (current + i) % 3;
             if self.pane_visible[next] {
                 self.active_pane = panes[next];
+                if panes[next] == Pane::Request {
+                    self.url_focused = true;
+                }
                 return;
             }
         }
@@ -561,6 +567,9 @@ impl App {
             let prev = (current + 3 - i) % 3;
             if self.pane_visible[prev] {
                 self.active_pane = panes[prev];
+                if panes[prev] == Pane::Request {
+                    self.url_focused = true;
+                }
                 return;
             }
         }
@@ -2362,30 +2371,36 @@ impl App {
                     self.status_message = Some(format!("Loaded: {}", name));
                 }
             }
-            Pane::Request => match self.request_tab() {
-                RequestTab::Headers => {
-                    let count = self.current_request().map(|r| r.headers.len()).unwrap_or(0);
-                    if count > 0 && self.header_cursor < count {
-                        self.start_editing(EditField::HeaderKey(self.header_cursor));
+            Pane::Request => {
+                if self.url_focused {
+                    self.start_editing(EditField::Url);
+                    return;
+                }
+                match self.request_tab() {
+                    RequestTab::Headers => {
+                        let count = self.current_request().map(|r| r.headers.len()).unwrap_or(0);
+                        if count > 0 && self.header_cursor < count {
+                            self.start_editing(EditField::HeaderKey(self.header_cursor));
+                        }
+                    }
+                    RequestTab::Params => {
+                        let count = self.current_request().map(|r| r.params.len()).unwrap_or(0);
+                        if count > 0 && self.param_cursor < count {
+                            self.start_editing(EditField::ParamKey(self.param_cursor));
+                        }
+                    }
+                    RequestTab::Body => {
+                        self.start_editing(EditField::BodyContent);
+                    }
+                    RequestTab::Auth => {
+                        if self.auth_inputs.is_empty() {
+                            self.open_auth_picker();
+                        } else {
+                            self.start_editing(EditField::AuthField(self.auth_field_cursor));
+                        }
                     }
                 }
-                RequestTab::Params => {
-                    let count = self.current_request().map(|r| r.params.len()).unwrap_or(0);
-                    if count > 0 && self.param_cursor < count {
-                        self.start_editing(EditField::ParamKey(self.param_cursor));
-                    }
-                }
-                RequestTab::Body => {
-                    self.start_editing(EditField::BodyContent);
-                }
-                RequestTab::Auth => {
-                    if self.auth_inputs.is_empty() {
-                        self.open_auth_picker();
-                    } else {
-                        self.start_editing(EditField::AuthField(self.auth_field_cursor));
-                    }
-                }
-            },
+            }
             _ => {}
         }
     }
@@ -2524,24 +2539,28 @@ impl App {
                 self.move_collection_cursor_up();
                 self.adjust_collection_scroll(20); // approximate; UI will clamp
             }
-            Pane::Request => match self.request_tab() {
-                RequestTab::Headers => {
-                    if self.header_cursor > 0 {
-                        self.header_cursor -= 1;
+            Pane::Request => {
+                if self.url_focused {
+                    // Already at top — nothing to do
+                    return;
+                }
+                let at_top = match self.request_tab() {
+                    RequestTab::Headers => self.header_cursor == 0,
+                    RequestTab::Params => self.param_cursor == 0,
+                    RequestTab::Auth => self.auth_field_cursor == 0,
+                    RequestTab::Body => true,
+                };
+                if at_top {
+                    self.url_focused = true;
+                } else {
+                    match self.request_tab() {
+                        RequestTab::Headers => self.header_cursor -= 1,
+                        RequestTab::Params => self.param_cursor -= 1,
+                        RequestTab::Auth => self.auth_field_cursor -= 1,
+                        _ => {}
                     }
                 }
-                RequestTab::Params => {
-                    if self.param_cursor > 0 {
-                        self.param_cursor -= 1;
-                    }
-                }
-                RequestTab::Auth => {
-                    if self.auth_field_cursor > 0 {
-                        self.auth_field_cursor -= 1;
-                    }
-                }
-                _ => {}
-            },
+            }
             Pane::Response => {
                 if let Some(ws) = self.active_workspace_mut() {
                     if ws.response_scroll > 0 {
@@ -2560,6 +2579,10 @@ impl App {
                 self.adjust_collection_scroll(20); // approximate; UI will clamp
             }
             Pane::Request => {
+                if self.url_focused {
+                    self.url_focused = false;
+                    return;
+                }
                 let max = match self.request_tab() {
                     RequestTab::Headers => {
                         self.current_request().map(|r| r.headers.len()).unwrap_or(0)
