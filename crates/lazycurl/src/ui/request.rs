@@ -88,16 +88,23 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         let url_style = if url_editing {
             Style::default().fg(Color::White).bg(Color::DarkGray)
         } else if url_selected {
-            Style::default().fg(Color::Cyan)
+            Style::default().fg(Color::Black).bg(Color::Cyan)
         } else if is_focused {
             Style::default().fg(Color::White)
         } else {
             Style::default().fg(Color::Gray)
         };
 
-        let method_style = Style::default()
-            .fg(method_color(req.method))
-            .add_modifier(Modifier::BOLD);
+        let method_style = if url_selected {
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .fg(method_color(req.method))
+                .add_modifier(Modifier::BOLD)
+        };
 
         let url_display = if url_text.is_empty() && !url_editing {
             "Enter URL...".to_string()
@@ -105,25 +112,23 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             url_text.to_string()
         };
 
+        let sep_style = if url_selected {
+            Style::default().bg(Color::Cyan)
+        } else {
+            Style::default()
+        };
         let url_span = Span::styled(url_display, url_style);
         let line = Line::from(vec![
             Span::styled(format!(" {} ", req.method), method_style),
-            Span::raw(" "),
+            Span::styled(" ", sep_style),
             url_span,
         ]);
         frame.render_widget(Paragraph::new(line), chunks[1]);
 
-        // Show cursor when URL is focused (normal or editing)
-        let url_prefix = req.method.to_string().len() as u16 + 3;
+        // Show cursor only when editing URL
         if url_editing {
+            let url_prefix = req.method.to_string().len() as u16 + 3;
             let cursor_x = chunks[1].x + url_prefix + app.url_input.cursor() as u16;
-            let cursor_y = chunks[1].y;
-            if cursor_x < chunks[1].x + chunks[1].width {
-                frame.set_cursor_position((cursor_x, cursor_y));
-            }
-        } else if url_selected {
-            // Block cursor at start of URL text
-            let cursor_x = chunks[1].x + url_prefix;
             let cursor_y = chunks[1].y;
             if cursor_x < chunks[1].x + chunks[1].width {
                 frame.set_cursor_position((cursor_x, cursor_y));
@@ -295,7 +300,7 @@ fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
     let style = if body_editing {
         Style::default().fg(Color::White).bg(Color::DarkGray)
     } else if body_selected {
-        Style::default().fg(Color::Cyan)
+        Style::default().fg(Color::Black).bg(Color::Cyan)
     } else {
         Style::default().fg(Color::White)
     };
@@ -306,17 +311,12 @@ fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
         format!(" {}", content)
     };
 
-    frame.render_widget(Paragraph::new(display).style(style), area);
+    // Render body text as a single styled line (not filling the whole area)
+    let line = Line::from(Span::styled(display, style));
+    frame.render_widget(Paragraph::new(line), area);
 
     if body_editing {
         let cursor_x = area.x + 1 + app.body_input.cursor() as u16;
-        let cursor_y = area.y;
-        if cursor_x < area.x + area.width {
-            frame.set_cursor_position((cursor_x, cursor_y));
-        }
-    } else if body_selected {
-        // Show cursor at start of body content
-        let cursor_x = area.x + 1;
         let cursor_y = area.y;
         if cursor_x < area.x + area.width {
             frame.set_cursor_position((cursor_x, cursor_y));
