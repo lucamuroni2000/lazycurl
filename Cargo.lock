@@ -1378,7 +1378,7 @@ dependencies = [
 
 [[package]]
 name = "lazycurl"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "arboard",
  "chrono",
@@ -1396,7 +1396,7 @@ dependencies = [
 
 [[package]]
 name = "lazycurl-core"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "base64",
  "chrono",
