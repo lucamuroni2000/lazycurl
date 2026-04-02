@@ -74,21 +74,28 @@ fn default_preset_keybindings() -> HashMap<String, String> {
 
 fn vim_preset_keybindings() -> HashMap<String, String> {
     let mut map = default_preset_keybindings();
-    // Global overrides
+    // Navigation — vim-style hjkl
+    map.insert("move_up".into(), "k".into());
+    map.insert("move_down".into(), "j".into());
+    map.insert("cycle_pane_forward".into(), "l".into());
+    map.insert("cycle_pane_backward".into(), "h".into());
+    map.insert("next_tab".into(), "]".into());
+    map.insert("prev_tab".into(), "[".into());
+    map.insert("next_project".into(), "}".into());
+    map.insert("prev_project".into(), "{".into());
+    // Commands — single letters where possible
     map.insert("help".into(), "?".into());
     map.insert("new_request".into(), "o".into());
     map.insert("switch_env".into(), "e".into());
     map.insert("manage_envs".into(), "E".into());
     map.insert("open_project_picker".into(), "p".into());
-    map.insert("move_up".into(), "k".into());
-    map.insert("move_down".into(), "j".into());
-    map.insert("next_tab".into(), "]".into());
-    map.insert("prev_tab".into(), "[".into());
-    map.insert("cycle_pane_forward".into(), "l".into());
-    map.insert("cycle_pane_backward".into(), "h".into());
-    map.insert("next_project".into(), "}".into());
-    map.insert("prev_project".into(), "{".into());
-    // Variables overrides ([ ] are taken by next_tab/prev_tab in vim)
+    map.insert("open_variables".into(), "v".into());
+    map.insert("open_export".into(), "x".into());
+    map.insert("open_log_viewer".into(), "L".into());
+    map.insert("focus_url".into(), "u".into());
+    map.insert("cycle_method".into(), "m".into());
+    map.insert("change_auth_type".into(), "t".into());
+    // Variables context ([ ] are taken by next_tab/prev_tab)
     map.insert("variables.cycle_container_fwd".into(), "ctrl+]".into());
     map.insert("variables.cycle_container_back".into(), "ctrl+[".into());
     map
@@ -512,7 +519,7 @@ mod tests {
         let config = AppConfig::load_from_str(json).unwrap();
         // Old defaults stripped, vim preset takes over
         assert_eq!(config.keybindings.get("focus_collections").unwrap(), "1");
-        assert_eq!(config.keybindings.get("open_export").unwrap(), "ctrl+x");
+        assert_eq!(config.keybindings.get("open_export").unwrap(), "x");
         assert_eq!(config.keybindings.get("next_project").unwrap(), "}");
         assert_eq!(config.keybindings.get("prev_project").unwrap(), "{");
         assert_eq!(config.keybindings.get("move_up").unwrap(), "k");
@@ -610,42 +617,43 @@ mod tests {
     fn test_vim_preset_v2_overrides() {
         let kb = vim_preset_keybindings();
         assert_eq!(kb.len(), 45);
-        // vim-specific overrides
+        // Vim-specific navigation
+        assert_eq!(kb["move_up"], "k");
+        assert_eq!(kb["move_down"], "j");
+        assert_eq!(kb["cycle_pane_forward"], "l");
+        assert_eq!(kb["cycle_pane_backward"], "h");
+        assert_eq!(kb["next_tab"], "]");
+        assert_eq!(kb["prev_tab"], "[");
+        assert_eq!(kb["next_project"], "}");
+        assert_eq!(kb["prev_project"], "{");
+        // Vim-specific commands (single letters)
         assert_eq!(kb["help"], "?");
         assert_eq!(kb["new_request"], "o");
         assert_eq!(kb["switch_env"], "e");
         assert_eq!(kb["manage_envs"], "E");
         assert_eq!(kb["open_project_picker"], "p");
-        assert_eq!(kb["move_up"], "k");
-        assert_eq!(kb["move_down"], "j");
-        assert_eq!(kb["next_tab"], "]");
-        assert_eq!(kb["prev_tab"], "[");
-        assert_eq!(kb["cycle_pane_forward"], "l");
-        assert_eq!(kb["cycle_pane_backward"], "h");
-        assert_eq!(kb["next_project"], "}");
-        assert_eq!(kb["prev_project"], "{");
-        // variables overrides ([ ] taken by tabs in vim)
+        assert_eq!(kb["open_variables"], "v");
+        assert_eq!(kb["open_export"], "x");
+        assert_eq!(kb["open_log_viewer"], "L");
+        assert_eq!(kb["focus_url"], "u");
+        assert_eq!(kb["cycle_method"], "m");
+        assert_eq!(kb["change_auth_type"], "t");
+        // Variables context ([ ] taken by tabs)
         assert_eq!(kb["variables.cycle_container_fwd"], "ctrl+]");
         assert_eq!(kb["variables.cycle_container_back"], "ctrl+[");
-        // same as default
-        assert_eq!(kb["send_request"], "ctrl+enter");
-        assert_eq!(kb["save_request"], "ctrl+s");
+        // Inherited from default (unchanged)
+        assert_eq!(kb["quit"], "q");
         assert_eq!(kb["cancel"], "escape");
         assert_eq!(kb["search"], "/");
-        assert_eq!(kb["open_variables"], "V");
-        assert_eq!(kb["open_export"], "ctrl+x");
-        assert_eq!(kb["open_log_viewer"], "ctrl+l");
-        assert_eq!(kb["reveal_secrets"], "f8");
+        assert_eq!(kb["send_request"], "ctrl+enter");
+        assert_eq!(kb["save_request"], "ctrl+s");
         assert_eq!(kb["enter"], "enter");
-        assert_eq!(kb["focus_collections"], "1");
-        assert_eq!(kb["focus_request"], "2");
-        assert_eq!(kb["focus_response"], "3");
         assert_eq!(kb["add_item"], "a");
         assert_eq!(kb["delete_item"], "d");
         assert_eq!(kb["rename"], "r");
-        assert_eq!(kb["cycle_method"], "ctrl+m");
         assert_eq!(kb["toggle_enabled"], "s");
         assert_eq!(kb["copy"], "y");
+        assert_eq!(kb["confirm_yes"], "y");
     }
 
     #[test]

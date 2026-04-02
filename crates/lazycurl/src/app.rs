@@ -1546,6 +1546,16 @@ impl App {
         self.edit_field = Some(field);
     }
 
+    /// Cancel editing mode, discarding any changes.
+    /// Reloads text inputs from the saved request state.
+    pub fn cancel_editing(&mut self) {
+        self.edit_field = None;
+        self.input_mode = InputMode::Normal;
+        self.status_message = None;
+        // Reload all inputs from the saved request to discard changes
+        self.load_request_into_inputs();
+    }
+
     /// Exit editing mode, syncing text input back to request
     pub fn stop_editing(&mut self) {
         if let Some(field) = self.edit_field.take() {
