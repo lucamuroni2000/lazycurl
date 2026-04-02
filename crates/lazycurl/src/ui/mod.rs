@@ -34,7 +34,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
 
     // Status bar
-    statusbar::draw(frame, app, pane_layout.status_bar);
+    statusbar::draw(frame, app, pane_layout.status_bar, &app.config.keybindings);
 
     // Method picker (rendered relative to request pane)
     if app.show_method_picker {
@@ -64,7 +64,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         environment_manager::draw(frame, app);
     }
     if app.show_help {
-        help::draw(frame);
+        help::draw(frame, &app.config.keybindings);
     }
     if app.show_project_picker {
         project_picker::draw(frame, app);

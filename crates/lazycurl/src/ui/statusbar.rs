@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -6,7 +8,9 @@ use ratatui::Frame;
 
 use crate::app::{App, EditField, InputMode, Pane, RequestTab};
 
-pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
+pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<String, String>) {
+    let kb = keybindings;
+
     let mode_indicator = match app.input_mode {
         InputMode::Normal => Span::styled(
             " NORMAL ",
@@ -99,40 +103,75 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             // Detail pane focused
             hints.push(Span::styled(" Up/Down", key_style));
             hints.push(Span::styled(":scroll ", hint_style));
-            hints.push(Span::styled("Tab", key_style));
-            hints.push(Span::styled(":list ", hint_style));
-            hints.push(Span::styled("y", key_style));
-            hints.push(Span::styled(":body ", hint_style));
-            hints.push(Span::styled("Esc", key_style));
-            hints.push(Span::styled(":back", hint_style));
+            hints.extend(hint(
+                kb,
+                "cycle_pane_forward",
+                "list",
+                key_style,
+                hint_style,
+            ));
+            hints.extend(hint(kb, "copy", "body", key_style, hint_style));
+            hints.extend(hint(kb, "cancel", "back", key_style, hint_style));
         } else {
             // List pane focused
-            hints.push(Span::styled(" j/k", key_style));
+            hints.push(Span::styled(" Up/Down", key_style));
             hints.push(Span::styled(":nav ", hint_style));
-            hints.push(Span::styled("Enter", key_style));
-            hints.push(Span::styled(":detail ", hint_style));
+            hints.extend(hint(kb, "enter", "detail", key_style, hint_style));
             if app.log_viewer_show_detail {
-                hints.push(Span::styled("Tab", key_style));
-                hints.push(Span::styled(":detail ", hint_style));
+                hints.extend(hint(
+                    kb,
+                    "cycle_pane_forward",
+                    "detail",
+                    key_style,
+                    hint_style,
+                ));
             }
-            hints.push(Span::styled("f", key_style));
-            hints.push(Span::styled(":filter ", hint_style));
-            hints.push(Span::styled("/", key_style));
-            hints.push(Span::styled(":search ", hint_style));
-            hints.push(Span::styled("n/N", key_style));
-            hints.push(Span::styled(":next/prev ", hint_style));
-            hints.push(Span::styled("c", key_style));
-            hints.push(Span::styled(":clear filter ", hint_style));
-            hints.push(Span::styled("C", key_style));
-            hints.push(Span::styled(":clear search ", hint_style));
-            hints.push(Span::styled("r", key_style));
-            hints.push(Span::styled(":re-send ", hint_style));
-            hints.push(Span::styled("y", key_style));
-            hints.push(Span::styled(":body ", hint_style));
-            hints.push(Span::styled("e", key_style));
-            hints.push(Span::styled(":export ", hint_style));
-            hints.push(Span::styled("Esc", key_style));
-            hints.push(Span::styled(":close", hint_style));
+            hints.extend(hint(
+                kb,
+                "log_viewer.filter",
+                "filter",
+                key_style,
+                hint_style,
+            ));
+            hints.extend(hint(kb, "search", "search", key_style, hint_style));
+            hints.extend(hint(
+                kb,
+                "log_viewer.next_match",
+                "next",
+                key_style,
+                hint_style,
+            ));
+            hints.extend(hint(
+                kb,
+                "log_viewer.prev_match",
+                "prev",
+                key_style,
+                hint_style,
+            ));
+            hints.extend(hint(
+                kb,
+                "log_viewer.clear_filter",
+                "clear filter",
+                key_style,
+                hint_style,
+            ));
+            hints.extend(hint(
+                kb,
+                "log_viewer.clear_search",
+                "clear search",
+                key_style,
+                hint_style,
+            ));
+            hints.extend(hint(kb, "rename", "re-send", key_style, hint_style));
+            hints.extend(hint(kb, "copy", "body", key_style, hint_style));
+            hints.extend(hint(
+                kb,
+                "log_viewer.export",
+                "export",
+                key_style,
+                hint_style,
+            ));
+            hints.extend(hint(kb, "cancel", "close", key_style, hint_style));
         }
 
         let mut line_spans = vec![mode_indicator, Span::raw(" "), status_msg];
@@ -153,8 +192,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         }
         hints.push(Span::styled("Enter", key_style));
         hints.push(Span::styled(":export ", hint_style));
-        hints.push(Span::styled("Esc", key_style));
-        hints.push(Span::styled(":cancel", hint_style));
+        hints.extend(hint(kb, "cancel", "cancel", key_style, hint_style));
 
         let mut line_spans = vec![mode_indicator, Span::raw(" "), status_msg];
         line_spans.extend(hints);
@@ -184,47 +222,53 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             Pane::Collections => {
                 hints.push(Span::styled("Up/Down", key_style));
                 hints.push(Span::styled(":navigate ", hint_style));
-                hints.push(Span::styled("Enter", key_style));
-                hints.push(Span::styled(":load ", hint_style));
-                hints.push(Span::styled("Ctrl+N", key_style));
-                hints.push(Span::styled(":new collection ", hint_style));
-                hints.push(Span::styled("r", key_style));
-                hints.push(Span::styled(":rename ", hint_style));
-                hints.push(Span::styled("d", key_style));
-                hints.push(Span::styled(":delete ", hint_style));
+                hints.extend(hint(kb, "enter", "load", key_style, hint_style));
+                hints.extend(hint(
+                    kb,
+                    "new_request",
+                    "new collection",
+                    key_style,
+                    hint_style,
+                ));
+                hints.extend(hint(kb, "rename", "rename", key_style, hint_style));
+                hints.extend(hint(kb, "delete_item", "delete", key_style, hint_style));
             }
             Pane::Request => {
                 hints.push(Span::styled("Left/Right", key_style));
                 hints.push(Span::styled(":tab ", hint_style));
-                hints.push(Span::styled("Enter", key_style));
-                hints.push(Span::styled(":edit ", hint_style));
+                hints.extend(hint(kb, "enter", "edit", key_style, hint_style));
 
                 // Tab-specific hints
                 match app.request_tab() {
                     RequestTab::Headers => {
                         hints.push(Span::styled("Up/Down", key_style));
                         hints.push(Span::styled(":navigate ", hint_style));
-                        hints.push(Span::styled("Enter", key_style));
-                        hints.push(Span::styled(":edit ", hint_style));
-                        hints.push(Span::styled("a", key_style));
-                        hints.push(Span::styled(":add ", hint_style));
-                        hints.push(Span::styled("d", key_style));
-                        hints.push(Span::styled(":delete ", hint_style));
-                        hints.push(Span::styled("s", key_style));
-                        hints.push(Span::styled(":toggle ", hint_style));
+                        hints.extend(hint(kb, "enter", "edit", key_style, hint_style));
+                        hints.extend(hint(kb, "add_item", "add", key_style, hint_style));
+                        hints.extend(hint(kb, "delete_item", "delete", key_style, hint_style));
+                        hints.extend(hint(kb, "toggle_enabled", "toggle", key_style, hint_style));
                     }
                     RequestTab::Body => {}
                     RequestTab::Auth => {
                         if app.auth_inputs.is_empty() {
-                            hints.push(Span::styled("Enter", key_style));
-                            hints.push(Span::styled(":select auth type ", hint_style));
+                            hints.extend(hint(
+                                kb,
+                                "enter",
+                                "select auth type",
+                                key_style,
+                                hint_style,
+                            ));
                         } else {
                             hints.push(Span::styled("Up/Down", key_style));
                             hints.push(Span::styled(":navigate ", hint_style));
-                            hints.push(Span::styled("Enter", key_style));
-                            hints.push(Span::styled(":edit ", hint_style));
-                            hints.push(Span::styled("t", key_style));
-                            hints.push(Span::styled(":change type ", hint_style));
+                            hints.extend(hint(kb, "enter", "edit", key_style, hint_style));
+                            hints.extend(hint(
+                                kb,
+                                "change_auth_type",
+                                "change type",
+                                key_style,
+                                hint_style,
+                            ));
                             if matches!(
                                 app.current_request().and_then(|r| r.auth.as_ref()),
                                 Some(lazycurl_core::types::Auth::OAuth2 { .. })
@@ -237,31 +281,29 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                     RequestTab::Params => {
                         hints.push(Span::styled("Up/Down", key_style));
                         hints.push(Span::styled(":navigate ", hint_style));
-                        hints.push(Span::styled("Enter", key_style));
-                        hints.push(Span::styled(":edit ", hint_style));
-                        hints.push(Span::styled("a", key_style));
-                        hints.push(Span::styled(":add ", hint_style));
-                        hints.push(Span::styled("d", key_style));
-                        hints.push(Span::styled(":delete ", hint_style));
-                        hints.push(Span::styled("s", key_style));
-                        hints.push(Span::styled(":toggle ", hint_style));
+                        hints.extend(hint(kb, "enter", "edit", key_style, hint_style));
+                        hints.extend(hint(kb, "add_item", "add", key_style, hint_style));
+                        hints.extend(hint(kb, "delete_item", "delete", key_style, hint_style));
+                        hints.extend(hint(kb, "toggle_enabled", "toggle", key_style, hint_style));
                     }
                 }
 
-                hints.push(Span::styled("m", key_style));
-                hints.push(Span::styled(":method ", hint_style));
-                hints.push(Span::styled("r", key_style));
-                hints.push(Span::styled(":rename ", hint_style));
-                hints.push(Span::styled("Ctrl+N", key_style));
-                hints.push(Span::styled(":new request ", hint_style));
+                hints.extend(hint(kb, "cycle_method", "method", key_style, hint_style));
+                hints.extend(hint(kb, "rename", "rename", key_style, hint_style));
+                hints.extend(hint(
+                    kb,
+                    "new_request",
+                    "new request",
+                    key_style,
+                    hint_style,
+                ));
             }
             Pane::Response => {
                 hints.push(Span::styled("Left/Right", key_style));
                 hints.push(Span::styled(":tab ", hint_style));
                 hints.push(Span::styled("Up/Down", key_style));
                 hints.push(Span::styled(":scroll ", hint_style));
-                hints.push(Span::styled("y", key_style));
-                hints.push(Span::styled(":copy body ", hint_style));
+                hints.extend(hint(kb, "copy", "copy body", key_style, hint_style));
             }
         }
 
@@ -269,20 +311,19 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         hints.push(Span::styled("| ", hint_style));
 
         // Global actions (always available)
-        hints.push(Span::styled("Ctrl+O", key_style));
-        hints.push(Span::styled(":projects ", hint_style));
-        hints.push(Span::styled("x", key_style));
-        hints.push(Span::styled(":export ", hint_style));
-        hints.push(Span::styled("F5", key_style));
-        hints.push(Span::styled(":send ", hint_style));
-        hints.push(Span::styled("Ctrl+S", key_style));
-        hints.push(Span::styled(":save ", hint_style));
-        hints.push(Span::styled("v", key_style));
-        hints.push(Span::styled(":vars ", hint_style));
-        hints.push(Span::styled("F1", key_style));
-        hints.push(Span::styled(":help ", hint_style));
-        hints.push(Span::styled("q", key_style));
-        hints.push(Span::styled(":quit", hint_style));
+        hints.extend(hint(
+            kb,
+            "open_project_picker",
+            "projects",
+            key_style,
+            hint_style,
+        ));
+        hints.extend(hint(kb, "open_export", "export", key_style, hint_style));
+        hints.extend(hint(kb, "send_request", "send", key_style, hint_style));
+        hints.extend(hint(kb, "save_request", "save", key_style, hint_style));
+        hints.extend(hint(kb, "open_variables", "vars", key_style, hint_style));
+        hints.extend(hint(kb, "help", "help", key_style, hint_style));
+        hints.extend(hint(kb, "quit", "quit", key_style, hint_style));
     }
 
     let mut line_spans = vec![mode_indicator, Span::raw(" "), status_msg];
@@ -291,6 +332,43 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     let status = Paragraph::new(line).style(Style::default().bg(Color::Black));
     frame.render_widget(status, area);
+}
+
+fn hint<'a>(
+    kb: &HashMap<String, String>,
+    action: &str,
+    label: &str,
+    key_style: Style,
+    hint_style: Style,
+) -> Vec<Span<'a>> {
+    if let Some(key) = kb.get(action) {
+        vec![
+            Span::styled(format_key_display(key), key_style),
+            Span::styled(format!(":{} ", label), hint_style),
+        ]
+    } else {
+        vec![]
+    }
+}
+
+/// Format a binding string for display (e.g. "ctrl+s" → "Ctrl+S")
+fn format_key_display(binding: &str) -> String {
+    binding
+        .split('+')
+        .map(|part| match part.to_lowercase().as_str() {
+            "ctrl" => "Ctrl".to_string(),
+            "shift" => "Shift".to_string(),
+            "alt" => "Alt".to_string(),
+            "enter" => "Enter".to_string(),
+            "escape" | "esc" => "Esc".to_string(),
+            "backtab" => "Tab".to_string(), // shift+backtab displays as Shift+Tab
+            "tab" => "Tab".to_string(),
+            s if s.starts_with('f') && s[1..].parse::<u8>().is_ok() => s.to_uppercase(),
+            s if s.len() == 1 => s.to_string(), // preserve case for single chars
+            other => other.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("+")
 }
 
 fn mode_indicator_len(mode: InputMode) -> u16 {
