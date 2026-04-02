@@ -400,7 +400,7 @@ fn draw_auth(frame: &mut Frame, app: &App, area: Rect) {
         };
 
         let label_style = if is_editing {
-            Style::default().fg(Color::DarkGray).bg(Color::DarkGray)
+            Style::default().fg(Color::DarkGray)
         } else if is_focused {
             Style::default().fg(Color::Black).bg(Color::Cyan)
         } else {
