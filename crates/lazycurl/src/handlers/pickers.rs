@@ -203,11 +203,21 @@ pub fn handle_project_picker(app: &mut App, action: &Action) {
             }
         }
         Action::NewRequest => {
-            // Create new project
-            app.show_project_picker = false;
-            app.name_input.set_content("New Project");
-            app.start_editing(EditField::NewProjectName);
-            app.status_message = Some("Name your project".to_string());
+            // Create new project inline in the picker
+            let project = lazycurl_core::types::Project {
+                id: uuid::Uuid::new_v4(),
+                name: "New Project".to_string(),
+                active_environment: None,
+            };
+            let projects_dir = config_dir().join("projects");
+            if let Ok(dir) = lazycurl_core::project::create_project(&projects_dir, &project) {
+                let slug = dir.file_name().unwrap().to_string_lossy().to_string();
+                // Add to all_projects list and position cursor
+                app.all_projects.push((project, slug));
+                app.project_picker_cursor = app.all_projects.len() - 1;
+                // Start inline rename so user can name it
+                app.project_picker_start_rename();
+            }
         }
         Action::Rename => {
             if !app.all_projects.is_empty() {

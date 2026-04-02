@@ -95,7 +95,7 @@ fn action_for_key(key: &str) -> Option<(InputContext, Action)> {
         "rename" => Some((Global, Action::Rename)),
         "toggle_enabled" => Some((Global, Action::ToggleEnabled)),
         "copy" => Some((Global, Action::Copy)),
-        "confirm_yes" => Some((Global, Action::ConfirmYes)),
+        // confirm_yes is handled by raw key bypass in main.rs, not the keymap
         "close_project" => Some((Global, Action::CloseProject)),
         // Log viewer context
         "log_viewer.filter" => Some((LogViewer, Action::LogFilter)),
@@ -190,9 +190,12 @@ fn lookup_with_normalization(
             }
         }
 
-        // 4. Try with no modifiers — handles AltGr ({, [, ], } on non-US keyboards),
-        //    Shift+punctuation, and other modifier combos for printable chars.
-        if key.modifiers != KeyModifiers::NONE {
+        // 4. Try with no modifiers — handles AltGr ({, [, ], } on non-US keyboards).
+        //    AltGr is reported as CONTROL|ALT by crossterm.
+        //    Skip plain Ctrl+letter to avoid e.g. Ctrl+E matching bare 'e'.
+        let is_ctrl_without_alt = key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT);
+        if key.modifiers != KeyModifiers::NONE && !is_ctrl_without_alt {
             if let Some(action) = keymap.get(&(KeyModifiers::NONE, KeyCode::Char(c))) {
                 return action.clone();
             }

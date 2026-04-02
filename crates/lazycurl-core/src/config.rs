@@ -56,7 +56,8 @@ fn default_preset_keybindings() -> HashMap<String, String> {
     map.insert("rename".into(), "r".into());
     map.insert("toggle_enabled".into(), "s".into());
     map.insert("copy".into(), "y".into());
-    map.insert("confirm_yes".into(), "y".into());
+    // confirm_yes is NOT in the keymap — confirmations bypass the keymap
+    // and resolve raw key events directly (y/Y → confirm, Esc → cancel)
     map.insert("close_project".into(), "c".into());
     // Log viewer context (7 keys)
     map.insert("log_viewer.filter".into(), "f".into());
@@ -85,7 +86,7 @@ fn vim_preset_keybindings() -> HashMap<String, String> {
     map.insert("prev_project".into(), "{".into());
     // Commands — single letters where possible
     map.insert("help".into(), "?".into());
-    map.insert("new_request".into(), "o".into());
+    map.insert("new_request".into(), "n".into());
     map.insert("switch_env".into(), "e".into());
     map.insert("manage_envs".into(), "E".into());
     map.insert("open_project_picker".into(), "p".into());
@@ -95,9 +96,9 @@ fn vim_preset_keybindings() -> HashMap<String, String> {
     map.insert("focus_url".into(), "u".into());
     map.insert("cycle_method".into(), "m".into());
     map.insert("change_auth_type".into(), "t".into());
-    // Variables context ([ ] are taken by next_tab/prev_tab)
-    map.insert("variables.cycle_container_fwd".into(), "ctrl+]".into());
-    map.insert("variables.cycle_container_back".into(), "ctrl+[".into());
+    // Variables context ([ ] taken by next_tab/prev_tab, use { } instead)
+    map.insert("variables.cycle_container_fwd".into(), "}".into());
+    map.insert("variables.cycle_container_back".into(), "{".into());
     map
 }
 
@@ -616,7 +617,7 @@ mod tests {
     #[test]
     fn test_vim_preset_v2_overrides() {
         let kb = vim_preset_keybindings();
-        assert_eq!(kb.len(), 45);
+        assert_eq!(kb.len(), 44);
         // Vim-specific navigation
         assert_eq!(kb["move_up"], "k");
         assert_eq!(kb["move_down"], "j");
@@ -628,7 +629,7 @@ mod tests {
         assert_eq!(kb["prev_project"], "{");
         // Vim-specific commands (single letters)
         assert_eq!(kb["help"], "?");
-        assert_eq!(kb["new_request"], "o");
+        assert_eq!(kb["new_request"], "n");
         assert_eq!(kb["switch_env"], "e");
         assert_eq!(kb["manage_envs"], "E");
         assert_eq!(kb["open_project_picker"], "p");
@@ -638,9 +639,9 @@ mod tests {
         assert_eq!(kb["focus_url"], "u");
         assert_eq!(kb["cycle_method"], "m");
         assert_eq!(kb["change_auth_type"], "t");
-        // Variables context ([ ] taken by tabs)
-        assert_eq!(kb["variables.cycle_container_fwd"], "ctrl+]");
-        assert_eq!(kb["variables.cycle_container_back"], "ctrl+[");
+        // Variables context ([ ] taken by tabs, use { })
+        assert_eq!(kb["variables.cycle_container_fwd"], "}");
+        assert_eq!(kb["variables.cycle_container_back"], "{");
         // Inherited from default (unchanged)
         assert_eq!(kb["quit"], "q");
         assert_eq!(kb["cancel"], "escape");
@@ -653,13 +654,12 @@ mod tests {
         assert_eq!(kb["rename"], "r");
         assert_eq!(kb["toggle_enabled"], "s");
         assert_eq!(kb["copy"], "y");
-        assert_eq!(kb["confirm_yes"], "y");
     }
 
     #[test]
     fn test_default_preset_v2_has_all_keys() {
         let kb = default_preset_keybindings();
-        assert_eq!(kb.len(), 45);
+        assert_eq!(kb.len(), 44);
         // Global
         assert_eq!(kb["quit"], "q");
         assert_eq!(kb["cancel"], "escape");
@@ -695,7 +695,6 @@ mod tests {
         assert_eq!(kb["rename"], "r");
         assert_eq!(kb["toggle_enabled"], "s");
         assert_eq!(kb["copy"], "y");
-        assert_eq!(kb["confirm_yes"], "y");
         assert_eq!(kb["close_project"], "c");
         // Log viewer context
         assert_eq!(kb["log_viewer.filter"], "f");
