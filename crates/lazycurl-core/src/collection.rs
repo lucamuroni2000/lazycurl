@@ -90,6 +90,26 @@ pub fn delete_collection(path: &Path) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
+/// Deep-clone a request with a new UUID and " copy" appended to the name.
+pub fn duplicate_request(original: &crate::types::Request) -> crate::types::Request {
+    let mut copy = original.clone();
+    copy.id = uuid::Uuid::new_v4();
+    copy.name = format!("{} copy", original.name);
+    copy
+}
+
+/// Deep-clone a collection with new UUIDs for the collection and all its requests.
+/// The collection name gets " copy" appended; request names stay unchanged.
+pub fn duplicate_collection(original: &crate::types::Collection) -> crate::types::Collection {
+    let mut copy = original.clone();
+    copy.id = uuid::Uuid::new_v4();
+    copy.name = format!("{} copy", original.name);
+    for req in &mut copy.requests {
+        req.id = uuid::Uuid::new_v4();
+    }
+    copy
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,6 +223,83 @@ mod tests {
         // Both should exist
         assert!(dir.join("test.json").exists());
         assert!(dir.join("test-2.json").exists());
+    }
+
+    #[test]
+    fn test_duplicate_request() {
+        use crate::types::{Method, Request};
+
+        let original = Request {
+            id: uuid::Uuid::new_v4(),
+            name: "Get Users".to_string(),
+            method: Method::Get,
+            url: "https://api.example.com/users".to_string(),
+            headers: vec![crate::types::Header {
+                key: "Authorization".to_string(),
+                value: "Bearer {{token}}".to_string(),
+                enabled: true,
+            }],
+            params: vec![],
+            body: None,
+            auth: None,
+        };
+
+        let copy = duplicate_request(&original);
+
+        assert_ne!(copy.id, original.id, "must get a new UUID");
+        assert_eq!(copy.name, "Get Users copy");
+        assert_eq!(copy.method, original.method);
+        assert_eq!(copy.url, original.url);
+        assert_eq!(copy.headers.len(), 1);
+        assert_eq!(copy.headers[0].key, "Authorization");
+    }
+
+    #[test]
+    fn test_duplicate_collection() {
+        use crate::types::{Collection, Method, Request};
+        use std::collections::HashMap;
+
+        let req1 = Request {
+            id: uuid::Uuid::new_v4(),
+            name: "List".to_string(),
+            method: Method::Get,
+            url: "https://example.com".to_string(),
+            headers: vec![],
+            params: vec![],
+            body: None,
+            auth: None,
+        };
+        let req2 = Request {
+            id: uuid::Uuid::new_v4(),
+            name: "Create".to_string(),
+            method: Method::Post,
+            url: "https://example.com".to_string(),
+            headers: vec![],
+            params: vec![],
+            body: None,
+            auth: None,
+        };
+
+        let original = Collection {
+            id: uuid::Uuid::new_v4(),
+            name: "My API".to_string(),
+            variables: HashMap::new(),
+            requests: vec![req1.clone(), req2.clone()],
+        };
+
+        let copy = duplicate_collection(&original);
+
+        assert_ne!(copy.id, original.id, "collection must get a new UUID");
+        assert_eq!(copy.name, "My API copy");
+        assert_eq!(copy.requests.len(), 2);
+        // Each request must also have a new UUID
+        assert_ne!(copy.requests[0].id, req1.id);
+        assert_ne!(copy.requests[1].id, req2.id);
+        // But names stay the same (only the collection name gets " copy")
+        assert_eq!(copy.requests[0].name, "List");
+        assert_eq!(copy.requests[1].name, "Create");
+        // Variables are cloned
+        assert_eq!(copy.variables, original.variables);
     }
 
     #[test]
