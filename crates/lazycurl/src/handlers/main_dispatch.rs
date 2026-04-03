@@ -217,6 +217,11 @@ pub async fn handle(app: &mut App, action: &Action) {
                 app.toggle_collapse();
             }
         }
+        Action::DuplicateItem => {
+            if app.active_pane == app::Pane::Collections {
+                app.handle_duplicate();
+            }
+        }
         Action::ChangeAuthType => {
             if app.active_pane == app::Pane::Request
                 && app.request_tab() == app::RequestTab::Auth

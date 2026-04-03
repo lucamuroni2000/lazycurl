@@ -51,13 +51,14 @@ pub enum EditField {
 
 /// Tracks why the collection picker is open, so the confirm handler dispatches correctly.
 #[derive(Debug, Clone)]
-#[allow(clippy::enum_variant_names, dead_code)]
+#[allow(clippy::enum_variant_names)]
 pub enum PickerContext {
     SaveRequest,
     DuplicateRequest {
         source_collection: usize,
         source_request: usize,
     },
+    #[allow(dead_code)]
     MoveRequest {
         source_collection: usize,
         source_request: usize,
@@ -66,7 +67,6 @@ pub enum PickerContext {
 
 /// Tracks a duplicate-in-progress so Esc can cancel it.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum PendingDuplicate {
     Request { collection: usize, request: usize },
     Collection { collection: usize },
@@ -246,7 +246,6 @@ pub struct App {
     pub show_collection_picker: bool,
     pub picker_cursor: usize,
     pub picker_context: PickerContext,
-    #[allow(dead_code)]
     pub pending_duplicate: Option<PendingDuplicate>,
     // Variables overlay
     pub show_variables: bool,
@@ -1465,14 +1464,133 @@ impl App {
         }
     }
 
-    /// Stub — will be fully implemented in Task 6.
+    /// Clone a request into a target collection and enter rename mode.
     pub fn duplicate_request_to_collection(
         &mut self,
-        _source_col: usize,
-        _source_req: usize,
-        _target_col: usize,
+        source_col: usize,
+        source_req: usize,
+        target_col: usize,
     ) {
-        self.status_message = Some("Duplicate not implemented yet".to_string());
+        let cloned = {
+            let Some(ws) = self.active_workspace() else {
+                return;
+            };
+            let Some(collection) = ws.data.collections.get(source_col) else {
+                return;
+            };
+            let Some(request) = collection.requests.get(source_req) else {
+                return;
+            };
+            lazycurl_core::collection::duplicate_request(request)
+        };
+
+        let insert_idx = {
+            let Some(ws) = self.active_workspace_mut() else {
+                return;
+            };
+            let Some(collection) = ws.data.collections.get_mut(target_col) else {
+                return;
+            };
+
+            let idx = if source_col == target_col {
+                // Insert directly after the original
+                let pos = source_req + 1;
+                collection.requests.insert(pos, cloned.clone());
+                pos
+            } else {
+                // Append to end of target collection
+                collection.requests.push(cloned.clone());
+                collection.requests.len() - 1
+            };
+
+            // Auto-expand the target collection
+            let col_id = collection.id;
+            ws.expanded_collections.insert(col_id);
+
+            // Select the new request
+            ws.data.selected_collection = Some(target_col);
+            ws.data.selected_request = Some(idx);
+            idx
+        };
+
+        // Enter rename mode
+        self.name_input.set_content(&cloned.name);
+        self.pending_duplicate = Some(PendingDuplicate::Request {
+            collection: target_col,
+            request: insert_idx,
+        });
+        self.start_editing(EditField::RequestName);
+        self.status_message =
+            Some("Name the duplicate, Enter to confirm, Esc to cancel".to_string());
+    }
+
+    /// Handle the duplicate action based on what's currently selected.
+    pub fn handle_duplicate(&mut self) {
+        if self.active_pane != Pane::Collections {
+            return;
+        }
+        let Some(ws) = self.active_workspace() else {
+            return;
+        };
+        let Some(col_idx) = ws.data.selected_collection else {
+            return;
+        };
+
+        if let Some(req_idx) = ws.data.selected_request {
+            // Duplicating a request
+            let collections_len = ws.data.collections.len();
+            if collections_len == 1 {
+                // Only one collection — duplicate in place
+                self.duplicate_request_to_collection(col_idx, req_idx, col_idx);
+            } else {
+                // Multiple collections — show picker
+                self.picker_context = PickerContext::DuplicateRequest {
+                    source_collection: col_idx,
+                    source_request: req_idx,
+                };
+                self.picker_cursor = col_idx;
+                self.show_collection_picker = true;
+                self.status_message = Some("Choose a collection for the duplicate".to_string());
+            }
+        } else {
+            // Duplicating a collection
+            self.duplicate_collection_in_place(col_idx);
+        }
+    }
+
+    /// Clone an entire collection and enter rename mode.
+    pub fn duplicate_collection_in_place(&mut self, col_idx: usize) {
+        let cloned = {
+            let Some(ws) = self.active_workspace() else {
+                return;
+            };
+            let Some(collection) = ws.data.collections.get(col_idx) else {
+                return;
+            };
+            lazycurl_core::collection::duplicate_collection(collection)
+        };
+
+        let new_idx = {
+            let Some(ws) = self.active_workspace_mut() else {
+                return;
+            };
+            // Insert after the original
+            let pos = col_idx + 1;
+            ws.data.collections.insert(pos, cloned.clone());
+            ws.data.selected_collection = Some(pos);
+            ws.data.selected_request = None;
+            // Stays collapsed (not in expanded_collections)
+            pos
+        };
+
+        // Enter rename mode
+        self.name_input.set_content(&cloned.name);
+        self.pending_duplicate = Some(PendingDuplicate::Collection {
+            collection: new_idx,
+        });
+        self.start_editing(EditField::CollectionName(new_idx));
+        self.status_message =
+            Some("Name the duplicate, Enter to confirm, Esc to cancel".to_string());
     }
 
     /// Stub — will be fully implemented in Task 7.
@@ -1654,6 +1772,51 @@ impl App {
     /// Cancel editing mode, discarding any changes.
     /// Reloads text inputs from the saved request state.
     pub fn cancel_editing(&mut self) {
+        // If a duplicate was in progress, remove the uncommitted clone
+        if let Some(pending) = self.pending_duplicate.take() {
+            match pending {
+                PendingDuplicate::Request {
+                    collection,
+                    request,
+                } => {
+                    if let Some(ws) = self.active_workspace_mut() {
+                        if let Some(col) = ws.data.collections.get_mut(collection) {
+                            if request < col.requests.len() {
+                                col.requests.remove(request);
+                            }
+                        }
+                        // Move selection back to the original
+                        if request > 0 {
+                            ws.data.selected_request = Some(request - 1);
+                        } else {
+                            ws.data.selected_request = None;
+                        }
+                    }
+                    self.status_message = Some("Duplicate cancelled".to_string());
+                }
+                PendingDuplicate::Collection { collection } => {
+                    if let Some(ws) = self.active_workspace_mut() {
+                        if collection < ws.data.collections.len() {
+                            ws.data.collections.remove(collection);
+                        }
+                        // Move selection back
+                        if collection > 0 {
+                            ws.data.selected_collection = Some(collection - 1);
+                        } else if !ws.data.collections.is_empty() {
+                            ws.data.selected_collection = Some(0);
+                        } else {
+                            ws.data.selected_collection = None;
+                        }
+                        ws.data.selected_request = None;
+                    }
+                    self.status_message = Some("Duplicate cancelled".to_string());
+                }
+            }
+            self.edit_field = None;
+            self.input_mode = InputMode::Normal;
+            return;
+        }
+
         self.edit_field = None;
         self.input_mode = InputMode::Normal;
         self.status_message = None;
@@ -1663,6 +1826,9 @@ impl App {
 
     /// Exit editing mode, syncing text input back to request
     pub fn stop_editing(&mut self) {
+        // Clear pending duplicate — the rename was confirmed, so the duplicate is committed
+        self.pending_duplicate = None;
+
         if let Some(field) = self.edit_field.take() {
             if field == EditField::NewCollectionName {
                 self.finalize_new_collection();
