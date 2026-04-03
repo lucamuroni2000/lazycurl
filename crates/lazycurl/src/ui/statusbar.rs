@@ -6,6 +6,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
+use super::{format_key_display, key_pair_for};
 use crate::app::{App, EditField, InputMode, Pane, RequestTab};
 
 pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<String, String>) {
@@ -90,18 +91,23 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<Stri
     // Log viewer hints (checked early, before other overlays)
     if app.show_log_viewer {
         if app.log_viewer_editing_filter {
+            // Editing mode — Enter/Esc are hardcoded in resolve_editing
             hints.push(Span::styled(" Enter", key_style));
             hints.push(Span::styled(":apply ", hint_style));
             hints.push(Span::styled("Esc", key_style));
             hints.push(Span::styled(":cancel", hint_style));
         } else if app.log_viewer_editing_search {
+            // Editing mode — Enter/Esc are hardcoded in resolve_editing
             hints.push(Span::styled(" Enter", key_style));
             hints.push(Span::styled(":search ", hint_style));
             hints.push(Span::styled("Esc", key_style));
             hints.push(Span::styled(":cancel", hint_style));
         } else if app.log_viewer_detail_focused {
             // Detail pane focused
-            hints.push(Span::styled(" Up/Down", key_style));
+            hints.push(Span::styled(
+                format!(" {}", key_pair_for(kb, "move_up", "move_down")),
+                key_style,
+            ));
             hints.push(Span::styled(":scroll ", hint_style));
             hints.extend(hint(
                 kb,
@@ -114,7 +120,10 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<Stri
             hints.extend(hint(kb, "cancel", "back", key_style, hint_style));
         } else {
             // List pane focused
-            hints.push(Span::styled(" Up/Down", key_style));
+            hints.push(Span::styled(
+                format!(" {}", key_pair_for(kb, "move_up", "move_down")),
+                key_style,
+            ));
             hints.push(Span::styled(":nav ", hint_style));
             hints.extend(hint(kb, "enter", "detail", key_style, hint_style));
             if app.log_viewer_show_detail {
@@ -184,14 +193,21 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<Stri
     }
 
     if app.show_export_picker {
-        hints.push(Span::styled(" j/k", key_style));
+        hints.push(Span::styled(
+            format!(" {}", key_pair_for(kb, "move_up", "move_down")),
+            key_style,
+        ));
         hints.push(Span::styled(":select ", hint_style));
         if app.export_collection_available {
-            hints.push(Span::styled("Tab", key_style));
-            hints.push(Span::styled(":scope ", hint_style));
+            hints.extend(hint(
+                kb,
+                "cycle_pane_forward",
+                "scope",
+                key_style,
+                hint_style,
+            ));
         }
-        hints.push(Span::styled("Enter", key_style));
-        hints.push(Span::styled(":export ", hint_style));
+        hints.extend(hint(kb, "enter", "export", key_style, hint_style));
         hints.extend(hint(kb, "cancel", "cancel", key_style, hint_style));
 
         let mut line_spans = vec![mode_indicator, Span::raw(" "), status_msg];
@@ -203,7 +219,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<Stri
     }
 
     if app.input_mode == InputMode::Editing {
-        // Editing mode — show editing-specific hints
+        // Editing mode — these keys are hardcoded in resolve_editing
         hints.push(Span::styled(" Esc", key_style));
         hints.push(Span::styled(":done ", hint_style));
         hints.push(Span::styled("F5", key_style));
@@ -214,15 +230,30 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<Stri
         // Normal mode — context-sensitive hints
 
         // Always available
-        hints.push(Span::styled(" Tab", key_style));
-        hints.push(Span::styled(":pane ", hint_style));
+        hints.extend(hint(
+            kb,
+            "cycle_pane_forward",
+            "pane",
+            key_style,
+            hint_style,
+        ));
 
         // Pane-specific hints
         match app.active_pane {
             Pane::Collections => {
-                hints.push(Span::styled("Up/Down", key_style));
+                hints.push(Span::styled(
+                    key_pair_for(kb, "move_up", "move_down"),
+                    key_style,
+                ));
                 hints.push(Span::styled(":navigate ", hint_style));
                 hints.extend(hint(kb, "enter", "load", key_style, hint_style));
+                hints.extend(hint(
+                    kb,
+                    "toggle_collapse",
+                    "expand/collapse",
+                    key_style,
+                    hint_style,
+                ));
                 hints.extend(hint(
                     kb,
                     "new_request",
@@ -231,17 +262,25 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<Stri
                     hint_style,
                 ));
                 hints.extend(hint(kb, "rename", "rename", key_style, hint_style));
+                hints.extend(hint(kb, "duplicate_item", "duplicate", key_style, hint_style));
+                hints.extend(hint(kb, "move_request", "move", key_style, hint_style));
                 hints.extend(hint(kb, "delete_item", "delete", key_style, hint_style));
             }
             Pane::Request => {
-                hints.push(Span::styled("Left/Right", key_style));
+                hints.push(Span::styled(
+                    key_pair_for(kb, "prev_tab", "next_tab"),
+                    key_style,
+                ));
                 hints.push(Span::styled(":tab ", hint_style));
                 hints.extend(hint(kb, "enter", "edit", key_style, hint_style));
 
                 // Tab-specific hints
                 match app.request_tab() {
                     RequestTab::Headers => {
-                        hints.push(Span::styled("Up/Down", key_style));
+                        hints.push(Span::styled(
+                            key_pair_for(kb, "move_up", "move_down"),
+                            key_style,
+                        ));
                         hints.push(Span::styled(":navigate ", hint_style));
                         hints.extend(hint(kb, "enter", "edit", key_style, hint_style));
                         hints.extend(hint(kb, "add_item", "add", key_style, hint_style));
@@ -259,7 +298,10 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<Stri
                                 hint_style,
                             ));
                         } else {
-                            hints.push(Span::styled("Up/Down", key_style));
+                            hints.push(Span::styled(
+                                key_pair_for(kb, "move_up", "move_down"),
+                                key_style,
+                            ));
                             hints.push(Span::styled(":navigate ", hint_style));
                             hints.extend(hint(kb, "enter", "edit", key_style, hint_style));
                             hints.extend(hint(
@@ -273,13 +315,21 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<Stri
                                 app.current_request().and_then(|r| r.auth.as_ref()),
                                 Some(lazycurl_core::types::Auth::OAuth2 { .. })
                             ) {
-                                hints.push(Span::styled("F5", key_style));
-                                hints.push(Span::styled(":get token ", hint_style));
+                                hints.extend(hint(
+                                    kb,
+                                    "send_request",
+                                    "get token",
+                                    key_style,
+                                    hint_style,
+                                ));
                             }
                         }
                     }
                     RequestTab::Params => {
-                        hints.push(Span::styled("Up/Down", key_style));
+                        hints.push(Span::styled(
+                            key_pair_for(kb, "move_up", "move_down"),
+                            key_style,
+                        ));
                         hints.push(Span::styled(":navigate ", hint_style));
                         hints.extend(hint(kb, "enter", "edit", key_style, hint_style));
                         hints.extend(hint(kb, "add_item", "add", key_style, hint_style));
@@ -299,9 +349,15 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<Stri
                 ));
             }
             Pane::Response => {
-                hints.push(Span::styled("Left/Right", key_style));
+                hints.push(Span::styled(
+                    key_pair_for(kb, "prev_tab", "next_tab"),
+                    key_style,
+                ));
                 hints.push(Span::styled(":tab ", hint_style));
-                hints.push(Span::styled("Up/Down", key_style));
+                hints.push(Span::styled(
+                    key_pair_for(kb, "move_up", "move_down"),
+                    key_style,
+                ));
                 hints.push(Span::styled(":scroll ", hint_style));
                 hints.extend(hint(kb, "copy", "copy body", key_style, hint_style));
             }
@@ -349,29 +405,6 @@ fn hint<'a>(
     } else {
         vec![]
     }
-}
-
-/// Format a binding string for display (e.g. "ctrl+s" → "Ctrl+S")
-fn format_key_display(binding: &str) -> String {
-    binding
-        .split('+')
-        .map(|part| match part.to_lowercase().as_str() {
-            "ctrl" => "Ctrl".to_string(),
-            "shift" => "Shift".to_string(),
-            "alt" => "Alt".to_string(),
-            "enter" => "Enter".to_string(),
-            "escape" | "esc" => "Esc".to_string(),
-            "backtab" => "Tab".to_string(), // shift+backtab displays as Shift+Tab
-            "tab" => "Tab".to_string(),
-            s if s.starts_with('f') && s[1..].parse::<u8>().is_ok() => s.to_uppercase(),
-            s if s.len() == 1 && s.chars().next().unwrap().is_ascii_uppercase() => {
-                format!("Shift+{}", s)
-            }
-            s if s.len() == 1 => s.to_string(),
-            other => other.to_string(),
-        })
-        .collect::<Vec<_>>()
-        .join("+")
 }
 
 fn mode_indicator_len(mode: InputMode) -> u16 {

@@ -6,6 +6,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
+use super::format_key_display;
+
 pub fn draw(frame: &mut Frame, keybindings: &HashMap<String, String>) {
     let area = centered_rect(70, 80, frame.area());
     frame.render_widget(Clear, area);
@@ -157,6 +159,21 @@ pub fn draw(frame: &mut Frame, keybindings: &HashMap<String, String>) {
     lines.extend(binding_line(kb, "rename", "Rename selected item"));
     lines.extend(binding_line(
         kb,
+        "duplicate_item",
+        "Duplicate selected collection or request",
+    ));
+    lines.extend(binding_line(
+        kb,
+        "move_request",
+        "Move request to another collection",
+    ));
+    lines.extend(binding_line(
+        kb,
+        "toggle_collapse",
+        "Expand/collapse collection in sidebar",
+    ));
+    lines.extend(binding_line(
+        kb,
         "cycle_method",
         "Open HTTP method picker (in Request pane)",
     ));
@@ -210,29 +227,6 @@ pub fn draw(frame: &mut Frame, keybindings: &HashMap<String, String>) {
     lines.push(binding("Left / Right", "Move cursor within field"));
 
     frame.render_widget(Paragraph::new(lines), inner);
-}
-
-/// Format a binding string for display (e.g. "ctrl+s" → "Ctrl+S")
-fn format_key_display(binding: &str) -> String {
-    binding
-        .split('+')
-        .map(|part| match part.to_lowercase().as_str() {
-            "ctrl" => "Ctrl".to_string(),
-            "shift" => "Shift".to_string(),
-            "alt" => "Alt".to_string(),
-            "enter" => "Enter".to_string(),
-            "escape" | "esc" => "Esc".to_string(),
-            "backtab" => "Tab".to_string(),
-            "tab" => "Tab".to_string(),
-            s if s.starts_with('f') && s[1..].parse::<u8>().is_ok() => s.to_uppercase(),
-            s if s.len() == 1 && s.chars().next().unwrap().is_ascii_uppercase() => {
-                format!("Shift+{}", s)
-            }
-            s if s.len() == 1 => s.to_string(),
-            other => other.to_string(),
-        })
-        .collect::<Vec<_>>()
-        .join("+")
 }
 
 fn binding_line(kb: &HashMap<String, String>, action: &str, desc: &str) -> Option<Line<'static>> {
