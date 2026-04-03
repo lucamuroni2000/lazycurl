@@ -262,7 +262,13 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<Stri
                     hint_style,
                 ));
                 hints.extend(hint(kb, "rename", "rename", key_style, hint_style));
-                hints.extend(hint(kb, "duplicate_item", "duplicate", key_style, hint_style));
+                hints.extend(hint(
+                    kb,
+                    "duplicate_item",
+                    "duplicate",
+                    key_style,
+                    hint_style,
+                ));
                 hints.extend(hint(kb, "move_request", "move", key_style, hint_style));
                 hints.extend(hint(kb, "delete_item", "delete", key_style, hint_style));
             }
