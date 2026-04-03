@@ -222,6 +222,11 @@ pub async fn handle(app: &mut App, action: &Action) {
                 app.handle_duplicate();
             }
         }
+        Action::MoveRequest => {
+            if app.active_pane == app::Pane::Collections {
+                app.handle_move_request();
+            }
+        }
         Action::ChangeAuthType => {
             if app.active_pane == app::Pane::Request
                 && app.request_tab() == app::RequestTab::Auth

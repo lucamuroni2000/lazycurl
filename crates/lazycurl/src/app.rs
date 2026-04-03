@@ -58,7 +58,6 @@ pub enum PickerContext {
         source_collection: usize,
         source_request: usize,
     },
-    #[allow(dead_code)]
     MoveRequest {
         source_collection: usize,
         source_request: usize,
@@ -1593,14 +1592,99 @@ impl App {
             Some("Name the duplicate, Enter to confirm, Esc to cancel".to_string());
     }
 
-    /// Stub — will be fully implemented in Task 7.
+    /// Initiate moving a request to another collection.
+    pub fn handle_move_request(&mut self) {
+        if self.active_pane != Pane::Collections {
+            return;
+        }
+        let Some(ws) = self.active_workspace() else {
+            return;
+        };
+        let Some(col_idx) = ws.data.selected_collection else {
+            return;
+        };
+        let Some(req_idx) = ws.data.selected_request else {
+            // No-op on collections — only requests can be moved
+            return;
+        };
+        if ws.data.collections.len() < 2 {
+            self.status_message = Some("Need at least 2 collections to move a request".to_string());
+            return;
+        }
+
+        self.picker_context = PickerContext::MoveRequest {
+            source_collection: col_idx,
+            source_request: req_idx,
+        };
+        // Set cursor to first visible collection (skipping source)
+        self.picker_cursor = 0;
+        self.show_collection_picker = true;
+        self.status_message = Some("Choose a collection to move the request to".to_string());
+    }
+
+    /// Move a request from one collection to another.
     pub fn move_request_to_collection(
         &mut self,
-        _source_col: usize,
-        _source_req: usize,
-        _target_col: usize,
+        source_col: usize,
+        source_req: usize,
+        target_col: usize,
     ) {
-        self.status_message = Some("Move not implemented yet".to_string());
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+
+        // Remove from source
+        let request = {
+            let Some(src) = ws.data.collections.get_mut(source_col) else {
+                return;
+            };
+            if source_req >= src.requests.len() {
+                return;
+            }
+            src.requests.remove(source_req)
+        };
+
+        let req_name = request.name.clone();
+
+        // Add to target
+        let new_req_idx = {
+            let Some(dst) = ws.data.collections.get_mut(target_col) else {
+                return;
+            };
+            dst.requests.push(request);
+            dst.requests.len() - 1
+        };
+
+        // Auto-expand target
+        if let Some(col) = ws.data.collections.get(target_col) {
+            ws.expanded_collections.insert(col.id);
+        }
+
+        // Move selection to the request's new location
+        ws.data.selected_collection = Some(target_col);
+        ws.data.selected_request = Some(new_req_idx);
+
+        // Save both collections to disk
+        let collections_dir = lazycurl_core::config::config_dir()
+            .join("projects")
+            .join(&ws.data.slug)
+            .join("collections");
+
+        if let Some(src) = ws.data.collections.get(source_col) {
+            let _ = lazycurl_core::collection::save_collection(&collections_dir, src);
+        }
+        if let Some(dst) = ws.data.collections.get(target_col) {
+            let _ = lazycurl_core::collection::save_collection(&collections_dir, dst);
+        }
+
+        self.status_message = Some(format!(
+            "Moved '{}' to '{}'",
+            req_name,
+            self.active_workspace()
+                .and_then(|ws| ws.data.collections.get(target_col))
+                .map(|c| c.name.as_str())
+                .unwrap_or("?")
+        ));
     }
 
     pub fn create_new_collection(&mut self) {
