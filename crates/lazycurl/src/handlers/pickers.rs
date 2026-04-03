@@ -88,6 +88,8 @@ pub fn handle_export_picker(app: &mut App, action: &Action) {
 
 /// Handle collection picker actions.
 pub fn handle_collection_picker(app: &mut App, action: &Action) {
+    let filtered_count = app.picker_collections().len();
+
     match action {
         Action::Cancel => {
             app.show_collection_picker = false;
@@ -99,14 +101,36 @@ pub fn handle_collection_picker(app: &mut App, action: &Action) {
             }
         }
         Action::MoveDown => {
-            if app.picker_cursor + 1 < app.collections().len() {
+            if app.picker_cursor + 1 < filtered_count {
                 app.picker_cursor += 1;
             }
         }
         Action::Enter => {
-            let idx = app.picker_cursor;
-            app.show_collection_picker = false;
-            app.save_request_to_collection(idx);
+            // Map picker_cursor back to the original collection index
+            let original_idx = app
+                .picker_collections()
+                .get(app.picker_cursor)
+                .map(|&(idx, _)| idx);
+            if let Some(idx) = original_idx {
+                app.show_collection_picker = false;
+                match app.picker_context.clone() {
+                    app::PickerContext::SaveRequest => {
+                        app.save_request_to_collection(idx);
+                    }
+                    app::PickerContext::DuplicateRequest {
+                        source_collection,
+                        source_request,
+                    } => {
+                        app.duplicate_request_to_collection(source_collection, source_request, idx);
+                    }
+                    app::PickerContext::MoveRequest {
+                        source_collection,
+                        source_request,
+                    } => {
+                        app.move_request_to_collection(source_collection, source_request, idx);
+                    }
+                }
+            }
         }
         Action::NewRequest => {
             // Create new collection and save there

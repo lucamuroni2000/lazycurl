@@ -1,18 +1,34 @@
+use std::collections::HashMap;
+
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
+use super::key_for;
 use crate::app::App;
 
-pub fn draw_collection_picker(frame: &mut Frame, app: &App) {
-    let height = (app.collections().len() + 4).min(20) as u16;
+pub fn draw_collection_picker(frame: &mut Frame, app: &App, kb: &HashMap<String, String>) {
+    let filtered = app.picker_collections();
+    let height = (filtered.len() + 4).min(20) as u16;
     let area = centered_rect(50, height, frame.area());
     frame.render_widget(Clear, area);
 
+    let title_action = match &app.picker_context {
+        crate::app::PickerContext::SaveRequest => "Save to collection",
+        crate::app::PickerContext::DuplicateRequest { .. } => "Duplicate to collection",
+        crate::app::PickerContext::MoveRequest { .. } => "Move to collection",
+    };
+    let title = format!(
+        " {} \u{2014} {}: select  {}: cancel  {}: new ",
+        title_action,
+        key_for(kb, "enter"),
+        key_for(kb, "cancel"),
+        key_for(kb, "new_request"),
+    );
     let block = Block::default()
-        .title(" Save to collection — Enter: select  Esc: cancel  n: new ")
+        .title(title)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
 
@@ -21,7 +37,7 @@ pub fn draw_collection_picker(frame: &mut Frame, app: &App) {
 
     let mut lines = Vec::new();
 
-    for (i, collection) in app.collections().iter().enumerate() {
+    for (i, (_original_idx, collection)) in filtered.iter().enumerate() {
         let is_selected = i == app.picker_cursor;
         let req_count = collection.requests.len();
 

@@ -51,6 +51,7 @@ pub enum EditField {
 
 /// Tracks why the collection picker is open, so the confirm handler dispatches correctly.
 #[derive(Debug, Clone)]
+#[allow(clippy::enum_variant_names, dead_code)]
 pub enum PickerContext {
     SaveRequest,
     DuplicateRequest {
@@ -65,6 +66,7 @@ pub enum PickerContext {
 
 /// Tracks a duplicate-in-progress so Esc can cancel it.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum PendingDuplicate {
     Request { collection: usize, request: usize },
     Collection { collection: usize },
@@ -244,6 +246,7 @@ pub struct App {
     pub show_collection_picker: bool,
     pub picker_cursor: usize,
     pub picker_context: PickerContext,
+    #[allow(dead_code)]
     pub pending_duplicate: Option<PendingDuplicate>,
     // Variables overlay
     pub show_variables: bool,
@@ -442,6 +445,22 @@ impl App {
         self.active_workspace()
             .map(|ws| ws.data.collections.as_slice())
             .unwrap_or(&[])
+    }
+
+    /// Returns the list of (original_index, collection) pairs visible in the picker,
+    /// applying any filter based on the current picker context.
+    pub fn picker_collections(&self) -> Vec<(usize, &lazycurl_core::types::Collection)> {
+        let collections = self.collections();
+        match &self.picker_context {
+            PickerContext::MoveRequest {
+                source_collection, ..
+            } => collections
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| i != source_collection)
+                .collect(),
+            _ => collections.iter().enumerate().collect(),
+        }
     }
 
     pub fn environments(&self) -> &[Environment] {
@@ -1407,6 +1426,7 @@ impl App {
         } else {
             // Multiple collections or none selected — show picker
             self.picker_cursor = selected_collection.unwrap_or(0);
+            self.picker_context = PickerContext::SaveRequest;
             self.show_collection_picker = true;
             self.status_message = Some("Choose a collection to save into".to_string());
         }
@@ -1443,6 +1463,26 @@ impl App {
                 Err(e) => self.status_message = Some(format!("Save error: {}", e)),
             }
         }
+    }
+
+    /// Stub — will be fully implemented in Task 6.
+    pub fn duplicate_request_to_collection(
+        &mut self,
+        _source_col: usize,
+        _source_req: usize,
+        _target_col: usize,
+    ) {
+        self.status_message = Some("Duplicate not implemented yet".to_string());
+    }
+
+    /// Stub — will be fully implemented in Task 7.
+    pub fn move_request_to_collection(
+        &mut self,
+        _source_col: usize,
+        _source_req: usize,
+        _target_col: usize,
+    ) {
+        self.status_message = Some("Move not implemented yet".to_string());
     }
 
     pub fn create_new_collection(&mut self) {
