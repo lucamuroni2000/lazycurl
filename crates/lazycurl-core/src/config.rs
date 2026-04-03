@@ -58,7 +58,10 @@ fn default_preset_keybindings() -> HashMap<String, String> {
     map.insert("copy".into(), "y".into());
     // confirm_yes is NOT in the keymap — confirmations bypass the keymap
     // and resolve raw key events directly (y/Y → confirm, Esc → cancel)
-    map.insert("close_project".into(), "c".into());
+    map.insert("close_project".into(), "space".into());
+    map.insert("toggle_collapse".into(), "space".into());
+    map.insert("duplicate_item".into(), "c".into());
+    map.insert("move_request".into(), "m".into());
     // Log viewer context (7 keys)
     map.insert("log_viewer.filter".into(), "f".into());
     map.insert("log_viewer.clear_filter".into(), "c".into());
@@ -94,7 +97,7 @@ fn vim_preset_keybindings() -> HashMap<String, String> {
     map.insert("open_export".into(), "x".into());
     map.insert("open_log_viewer".into(), "L".into());
     map.insert("focus_url".into(), "u".into());
-    map.insert("cycle_method".into(), "m".into());
+    map.insert("cycle_method".into(), "M".into());
     map.insert("change_auth_type".into(), "t".into());
     // Variables context ([ ] taken by next_tab/prev_tab, use { } instead)
     map.insert("variables.cycle_container_fwd".into(), "}".into());
@@ -617,7 +620,7 @@ mod tests {
     #[test]
     fn test_vim_preset_v2_overrides() {
         let kb = vim_preset_keybindings();
-        assert_eq!(kb.len(), 44);
+        assert_eq!(kb.len(), 47);
         // Vim-specific navigation
         assert_eq!(kb["move_up"], "k");
         assert_eq!(kb["move_down"], "j");
@@ -637,7 +640,7 @@ mod tests {
         assert_eq!(kb["open_export"], "x");
         assert_eq!(kb["open_log_viewer"], "L");
         assert_eq!(kb["focus_url"], "u");
-        assert_eq!(kb["cycle_method"], "m");
+        assert_eq!(kb["cycle_method"], "M");
         assert_eq!(kb["change_auth_type"], "t");
         // Variables context ([ ] taken by tabs, use { })
         assert_eq!(kb["variables.cycle_container_fwd"], "}");
@@ -654,12 +657,16 @@ mod tests {
         assert_eq!(kb["rename"], "r");
         assert_eq!(kb["toggle_enabled"], "s");
         assert_eq!(kb["copy"], "y");
+        assert_eq!(kb["close_project"], "space");
+        assert_eq!(kb["toggle_collapse"], "space");
+        assert_eq!(kb["duplicate_item"], "c");
+        assert_eq!(kb["move_request"], "m");
     }
 
     #[test]
     fn test_default_preset_v2_has_all_keys() {
         let kb = default_preset_keybindings();
-        assert_eq!(kb.len(), 44);
+        assert_eq!(kb.len(), 47);
         // Global
         assert_eq!(kb["quit"], "q");
         assert_eq!(kb["cancel"], "escape");
@@ -695,7 +702,10 @@ mod tests {
         assert_eq!(kb["rename"], "r");
         assert_eq!(kb["toggle_enabled"], "s");
         assert_eq!(kb["copy"], "y");
-        assert_eq!(kb["close_project"], "c");
+        assert_eq!(kb["close_project"], "space");
+        assert_eq!(kb["toggle_collapse"], "space");
+        assert_eq!(kb["duplicate_item"], "c");
+        assert_eq!(kb["move_request"], "m");
         // Log viewer context
         assert_eq!(kb["log_viewer.filter"], "f");
         assert_eq!(kb["log_viewer.clear_filter"], "c");
@@ -707,5 +717,26 @@ mod tests {
         // Variables context
         assert_eq!(kb["variables.cycle_container_fwd"], "]");
         assert_eq!(kb["variables.cycle_container_back"], "[");
+    }
+
+    #[test]
+    fn test_default_preset_has_new_collection_actions() {
+        let kb = default_preset_keybindings();
+        assert_eq!(kb.get("toggle_collapse").unwrap(), "space");
+        assert_eq!(kb.get("duplicate_item").unwrap(), "c");
+        assert_eq!(kb.get("move_request").unwrap(), "m");
+        // close_project moved to space
+        assert_eq!(kb.get("close_project").unwrap(), "space");
+    }
+
+    #[test]
+    fn test_vim_preset_has_new_collection_actions() {
+        let kb = vim_preset_keybindings();
+        assert_eq!(kb.get("toggle_collapse").unwrap(), "space");
+        assert_eq!(kb.get("duplicate_item").unwrap(), "c");
+        assert_eq!(kb.get("move_request").unwrap(), "m");
+        assert_eq!(kb.get("close_project").unwrap(), "space");
+        // cycle_method changed to M in vim
+        assert_eq!(kb.get("cycle_method").unwrap(), "M");
     }
 }
