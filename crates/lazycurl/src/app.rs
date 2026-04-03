@@ -49,6 +49,27 @@ pub enum EditField {
     AuthField(usize),
 }
 
+/// Tracks why the collection picker is open, so the confirm handler dispatches correctly.
+#[derive(Debug, Clone)]
+pub enum PickerContext {
+    SaveRequest,
+    DuplicateRequest {
+        source_collection: usize,
+        source_request: usize,
+    },
+    MoveRequest {
+        source_collection: usize,
+        source_request: usize,
+    },
+}
+
+/// Tracks a duplicate-in-progress so Esc can cancel it.
+#[derive(Debug, Clone)]
+pub enum PendingDuplicate {
+    Request { collection: usize, request: usize },
+    Collection { collection: usize },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VarTier {
     Global,
@@ -135,6 +156,10 @@ pub enum Action {
     Copy,
     ConfirmYes,
     CloseProject,
+    // Collection-specific
+    ToggleCollapse,
+    DuplicateItem,
+    MoveRequest,
     // Log viewer
     LogFilter,
     LogClearFilter,
@@ -165,6 +190,7 @@ pub struct ProjectWorkspace {
     pub response_tab: ResponseTab,
     pub collection_scroll: usize,
     pub response_scroll: usize,
+    pub expanded_collections: std::collections::HashSet<uuid::Uuid>,
 }
 
 impl ProjectWorkspace {
@@ -175,6 +201,7 @@ impl ProjectWorkspace {
             response_tab: ResponseTab::Body,
             collection_scroll: 0,
             response_scroll: 0,
+            expanded_collections: std::collections::HashSet::new(),
         }
     }
 }
@@ -216,6 +243,8 @@ pub struct App {
     // Collection picker
     pub show_collection_picker: bool,
     pub picker_cursor: usize,
+    pub picker_context: PickerContext,
+    pub pending_duplicate: Option<PendingDuplicate>,
     // Variables overlay
     pub show_variables: bool,
     pub var_tier: VarTier,
@@ -302,6 +331,8 @@ impl App {
             url_focused: true,
             show_collection_picker: false,
             picker_cursor: 0,
+            picker_context: PickerContext::SaveRequest,
+            pending_duplicate: None,
             show_variables: false,
             var_tier: VarTier::Global,
             var_cursor: 0,
@@ -3059,8 +3090,11 @@ impl App {
             return;
         };
         if ws.data.environments.is_empty() {
-            self.status_message =
-                Some("No environments. Press Ctrl+Shift+E to manage environments.".to_string());
+            let key = crate::ui::key_for(&self.config.keybindings, "manage_envs");
+            self.status_message = Some(format!(
+                "No environments. Press {} to manage environments.",
+                key
+            ));
             return;
         }
         // Cycle: None -> 0 -> 1 -> ... -> N-1 -> None -> 0 -> ...

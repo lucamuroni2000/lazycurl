@@ -96,6 +96,9 @@ fn action_for_key(key: &str) -> Option<(InputContext, Action)> {
         "toggle_enabled" => Some((Global, Action::ToggleEnabled)),
         "copy" => Some((Global, Action::Copy)),
         // confirm_yes is handled by raw key bypass in main.rs, not the keymap
+        "toggle_collapse" => Some((Global, Action::ToggleCollapse)),
+        "duplicate_item" => Some((Global, Action::DuplicateItem)),
+        "move_request" => Some((Global, Action::MoveRequest)),
         "close_project" => Some((Global, Action::CloseProject)),
         // Log viewer context
         "log_viewer.filter" => Some((LogViewer, Action::LogFilter)),
