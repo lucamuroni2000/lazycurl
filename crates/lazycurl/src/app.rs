@@ -487,6 +487,40 @@ impl App {
             .unwrap_or(ResponseTab::Body)
     }
 
+    /// Toggle collapse/expand state for the currently selected collection.
+    pub fn toggle_collapse(&mut self) {
+        let Some(ws) = self.active_workspace_mut() else {
+            return;
+        };
+        let Some(col_idx) = ws.data.selected_collection else {
+            return;
+        };
+        // If a request is selected, move selection to its parent collection first
+        if ws.data.selected_request.is_some() {
+            ws.data.selected_request = None;
+        }
+        if let Some(collection) = ws.data.collections.get(col_idx) {
+            let id = collection.id;
+            if ws.expanded_collections.contains(&id) {
+                ws.expanded_collections.remove(&id);
+            } else {
+                ws.expanded_collections.insert(id);
+            }
+        }
+    }
+
+    /// Check whether a collection is expanded in the current workspace.
+    pub fn is_collection_expanded(&self, col_idx: usize) -> bool {
+        let Some(ws) = self.active_workspace() else {
+            return false;
+        };
+        ws.data
+            .collections
+            .get(col_idx)
+            .map(|c| ws.expanded_collections.contains(&c.id))
+            .unwrap_or(false)
+    }
+
     pub fn collection_scroll(&self) -> usize {
         self.active_workspace()
             .map(|ws| ws.collection_scroll)
@@ -2391,6 +2425,13 @@ impl App {
     pub fn handle_enter(&mut self) {
         match self.active_pane {
             Pane::Collections => {
+                if let Some(_col_idx) = self.selected_collection() {
+                    if self.selected_request().is_none() {
+                        // On a collection header — toggle expand instead of loading
+                        self.toggle_collapse();
+                        return;
+                    }
+                }
                 // Load the selected request
                 let req_clone = self.active_workspace().and_then(|ws| {
                     let col_idx = ws.data.selected_collection?;
@@ -2675,13 +2716,15 @@ impl App {
                 return idx;
             }
             idx += 1; // collection row
-            for (req_idx, _) in col.requests.iter().enumerate() {
-                if Some(col_idx) == ws.data.selected_collection
-                    && Some(req_idx) == ws.data.selected_request
-                {
-                    return idx;
+            if ws.expanded_collections.contains(&col.id) {
+                for (req_idx, _) in col.requests.iter().enumerate() {
+                    if Some(col_idx) == ws.data.selected_collection
+                        && Some(req_idx) == ws.data.selected_request
+                    {
+                        return idx;
+                    }
+                    idx += 1;
                 }
-                idx += 1;
             }
         }
         idx
@@ -2702,6 +2745,11 @@ impl App {
 
     /// Move collection cursor up through the flat list of collections and their requests
     fn move_collection_cursor_up(&mut self) {
+        let expanded: std::collections::HashSet<uuid::Uuid> = self
+            .active_workspace()
+            .map(|ws| ws.expanded_collections.clone())
+            .unwrap_or_default();
+
         let Some(ws) = self.active_workspace_mut() else {
             return;
         };
@@ -2710,15 +2758,17 @@ impl App {
                 ws.data.selected_request = Some(req_idx - 1);
             } else {
                 // Move back to collection level
-                ws.data.selected_request = Option::None;
+                ws.data.selected_request = None;
             }
         } else if let Some(col_idx) = ws.data.selected_collection {
             if col_idx > 0 {
-                ws.data.selected_collection = Some(col_idx - 1);
-                // Select last request of previous collection
-                if let Some(col) = ws.data.collections.get(col_idx - 1) {
-                    if !col.requests.is_empty() {
-                        ws.data.selected_request = Some(col.requests.len() - 1);
+                let prev_idx = col_idx - 1;
+                ws.data.selected_collection = Some(prev_idx);
+                // Select last request of previous collection if expanded
+                if let Some(prev_col) = ws.data.collections.get(prev_idx) {
+                    let prev_expanded = expanded.contains(&prev_col.id);
+                    if prev_expanded && !prev_col.requests.is_empty() {
+                        ws.data.selected_request = Some(prev_col.requests.len() - 1);
                     }
                 }
             }
@@ -2729,23 +2779,33 @@ impl App {
 
     /// Move collection cursor down through the flat list
     fn move_collection_cursor_down(&mut self) {
+        let expanded: std::collections::HashSet<uuid::Uuid> = self
+            .active_workspace()
+            .map(|ws| ws.expanded_collections.clone())
+            .unwrap_or_default();
+
         let Some(ws) = self.active_workspace_mut() else {
             return;
         };
         if let Some(col_idx) = ws.data.selected_collection {
             if let Some(collection) = ws.data.collections.get(col_idx) {
+                let is_expanded = expanded.contains(&collection.id);
                 let requests_len = collection.requests.len();
+
                 if let Some(req_idx) = ws.data.selected_request {
+                    // Currently on a request
                     if req_idx + 1 < requests_len {
                         ws.data.selected_request = Some(req_idx + 1);
                     } else if col_idx + 1 < ws.data.collections.len() {
                         // Move to next collection
                         ws.data.selected_collection = Some(col_idx + 1);
-                        ws.data.selected_request = Option::None;
+                        ws.data.selected_request = None;
                     }
-                } else if !collection.requests.is_empty() {
+                } else if is_expanded && !collection.requests.is_empty() {
+                    // On a collection header, expanded — move into first request
                     ws.data.selected_request = Some(0);
                 } else if col_idx + 1 < ws.data.collections.len() {
+                    // Collapsed or empty — skip to next collection
                     ws.data.selected_collection = Some(col_idx + 1);
                 }
             }

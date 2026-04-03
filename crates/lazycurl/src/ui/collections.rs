@@ -33,6 +33,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     for (col_idx, collection) in app.collections().iter().enumerate() {
         let is_selected_col =
             app.selected_collection() == Some(col_idx) && app.selected_request().is_none();
+        let is_expanded = app.is_collection_expanded(col_idx);
 
         let style = if is_selected_col && is_focused {
             Style::default()
@@ -44,38 +45,33 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD)
         };
 
+        let arrow = if is_expanded { "\u{25BC}" } else { "\u{25B6}" };
         lines.push(Line::from(Span::styled(
-            format!(
-                " {} {}",
-                if collection.requests.is_empty() {
-                    " "
-                } else {
-                    ">"
-                },
-                collection.name
-            ),
+            format!(" {} {}", arrow, collection.name),
             style,
         )));
 
-        // Show requests under the collection
-        for (req_idx, req) in collection.requests.iter().enumerate() {
-            let is_selected_req = app.selected_collection() == Some(col_idx)
-                && app.selected_request() == Some(req_idx);
+        // Only show requests if expanded
+        if is_expanded {
+            for (req_idx, req) in collection.requests.iter().enumerate() {
+                let is_selected_req = app.selected_collection() == Some(col_idx)
+                    && app.selected_request() == Some(req_idx);
 
-            let method_style = Style::default().fg(method_color(req.method));
-            let name_style = if is_selected_req && is_focused {
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::REVERSED)
-            } else {
-                Style::default().fg(Color::White)
-            };
+                let method_style = Style::default().fg(method_color(req.method));
+                let name_style = if is_selected_req && is_focused {
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default().fg(Color::White)
+                };
 
-            lines.push(Line::from(vec![
-                Span::raw("   "),
-                Span::styled(format!("{:7}", req.method), method_style),
-                Span::styled(&req.name, name_style),
-            ]));
+                lines.push(Line::from(vec![
+                    Span::raw("   "),
+                    Span::styled(format!("{:7}", req.method), method_style),
+                    Span::styled(&req.name, name_style),
+                ]));
+            }
         }
     }
 
