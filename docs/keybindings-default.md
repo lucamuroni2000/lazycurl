@@ -58,7 +58,7 @@
 |-----|--------|
 | `V` | Open variables editor |
 | `Ctrl+E` | Cycle active environment |
-| `Ctrl+Shift+E` | Open environment manager (available only from variables editor) |
+| `Ctrl+Shift+E` | Open environment manager |
 | `Ctrl+X` | Open export picker |
 | `Ctrl+L` | Open log viewer |
 | `Ctrl+O` | Open project picker |

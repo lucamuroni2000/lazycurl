@@ -60,7 +60,7 @@ Enable by setting `"keymap_preset": "vim"` in your config file.
 |-----|--------|
 | `v` | Open variables editor |
 | `e` | Cycle active environment |
-| `E` | Open environment manager (available only from variables editor) |
+| `E` | Open environment manager  |
 | `x` | Open export picker |
 | `L` | Open log viewer |
 | `p` | Open project picker |
