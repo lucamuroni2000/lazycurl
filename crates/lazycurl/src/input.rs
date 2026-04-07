@@ -30,6 +30,7 @@ fn parse_binding(binding: &str) -> Option<(KeyModifiers, KeyCode)> {
         "tab" => KeyCode::Tab,
         "backtab" => KeyCode::BackTab,
         "escape" | "esc" => KeyCode::Esc,
+        "space" => KeyCode::Char(' '),
         "backspace" => KeyCode::Backspace,
         "delete" | "del" => KeyCode::Delete,
         "up" => KeyCode::Up,
