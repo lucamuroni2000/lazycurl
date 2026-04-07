@@ -61,4 +61,38 @@ mod tests {
         assert!(!result.contains("admin"));
         assert!(!result.contains("s3cret"));
     }
+
+    #[test]
+    fn test_redact_secrets_empty_secrets_list() {
+        let result = redact_secrets("sensitive text", &[]);
+        assert_eq!(result, "sensitive text");
+    }
+
+    #[test]
+    fn test_redact_secrets_empty_secret_value() {
+        let result = redact_secrets("text", &["".to_string()]);
+        assert_eq!(result, "text");
+    }
+
+    #[test]
+    fn test_redact_secrets_substring_match() {
+        let result = redact_secrets("keyboard key", &["key".to_string()]);
+        assert_eq!(result, "••••••board ••••••");
+    }
+
+    #[test]
+    fn test_redact_secrets_overlapping() {
+        let secrets = vec!["secret".to_string(), "secret123".to_string()];
+        let result = redact_secrets("secret123", &secrets);
+        // "secret" is replaced first, turning "secret123" into "••••••123",
+        // then "secret123" no longer matches, so the result keeps "123".
+        assert!(!result.contains("secret123"));
+        assert_eq!(result, "••••••123");
+    }
+
+    #[test]
+    fn test_redact_secrets_no_match() {
+        let result = redact_secrets("nothing here", &["missing".to_string()]);
+        assert_eq!(result, "nothing here");
+    }
 }

@@ -749,6 +749,12 @@ impl App {
             })
             .collect();
 
+        // Try to restore auth from the original saved request
+        let auth = entry.request_id.and_then(|rid| {
+            self.active_workspace()
+                .and_then(|ws| ws.data.find_request_auth(rid))
+        });
+
         let request = Request {
             id: uuid::Uuid::new_v4(),
             name: "From Log".to_string(),
@@ -761,7 +767,7 @@ impl App {
                 .body_template
                 .or(entry.request.body)
                 .map(|content| Body::Json { content }),
-            auth: None,
+            auth,
         };
 
         if let Some(ws) = self.active_workspace_mut() {
@@ -1290,6 +1296,7 @@ impl App {
                     timestamp: chrono::Utc::now(),
                     project: project_name.clone(),
                     collection: collection_id.map(|_| request.name.clone()),
+                    request_id: collection_id.map(|_| request.id),
                     request: RequestLogData {
                         method: request.method,
                         url: resolved_url.clone(),
@@ -1367,6 +1374,7 @@ impl App {
                     timestamp: chrono::Utc::now(),
                     project: project_name.clone(),
                     collection: None,
+                    request_id: None,
                     request: RequestLogData {
                         method: request.method,
                         url: resolved_url.clone(),

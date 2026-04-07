@@ -534,4 +534,126 @@ mod tests {
         assert!(args.contains(&"-u".to_string()));
         assert!(args.contains(&"user:pass".to_string()));
     }
+
+    #[test]
+    fn test_query_params_appended_to_url_with_existing_query_string() {
+        let cmd = CurlCommandBuilder::new("https://example.com/api?existing=1")
+            .query_param("new", "2")
+            .build();
+        let args = cmd.to_args();
+        let url = args.last().unwrap();
+        assert!(
+            url.contains("existing=1&new=2"),
+            "Expected existing=1&new=2 in URL, got: {}",
+            url
+        );
+        // Only one '?' should be present
+        let question_marks: Vec<_> = url.matches('?').collect();
+        assert_eq!(
+            question_marks.len(),
+            1,
+            "Expected exactly one '?' in URL, got: {}",
+            url
+        );
+    }
+
+    #[test]
+    fn test_parse_write_out_valid_timing_json() {
+        let json = r#"{"http_code":200,"time_namelookup":0.004,"time_connect":0.012,"time_appconnect":0.045,"time_starttransfer":0.123,"time_total":0.456}"#;
+        let (status, timing) = parse_write_out(json);
+        assert_eq!(status, 200);
+        assert!((timing.dns_lookup_ms - 4.0).abs() < 0.001);
+        assert!((timing.tcp_connect_ms - 12.0).abs() < 0.001);
+        assert!((timing.tls_handshake_ms - 45.0).abs() < 0.001);
+        assert!((timing.transfer_start_ms - 123.0).abs() < 0.001);
+        assert!((timing.total_ms - 456.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_write_out_invalid_json() {
+        let (status, timing) = parse_write_out("not valid json at all");
+        assert_eq!(status, 0);
+        assert_eq!(timing.dns_lookup_ms, 0.0);
+        assert_eq!(timing.tcp_connect_ms, 0.0);
+        assert_eq!(timing.tls_handshake_ms, 0.0);
+        assert_eq!(timing.transfer_start_ms, 0.0);
+        assert_eq!(timing.total_ms, 0.0);
+    }
+
+    #[test]
+    fn test_parse_headers_colon_in_value() {
+        let raw = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\r\n";
+        let headers = parse_headers(raw);
+        assert_eq!(headers.len(), 1);
+        assert_eq!(headers[0].0, "Content-Type");
+        assert_eq!(headers[0].1, "text/html; charset=utf-8");
+    }
+
+    #[test]
+    fn test_parse_headers_multiple_http_response_lines() {
+        let raw = "HTTP/1.1 301 Moved\r\nLocation: /new\r\n\r\nHTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n";
+        let headers = parse_headers(raw);
+        assert_eq!(headers.len(), 2);
+        assert_eq!(headers[0], ("Location".to_string(), "/new".to_string()));
+        assert_eq!(
+            headers[1],
+            ("Content-Type".to_string(), "text/html".to_string())
+        );
+    }
+
+    #[test]
+    fn test_combined_builder_all_options() {
+        let cmd = CurlCommandBuilder::new("https://api.example.com/data")
+            .method(Method::Post)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .body_json(r#"{"key":"value"}"#)
+            .basic_auth("admin", "secret")
+            .query_param("version", "2")
+            .query_param("format", "json")
+            .cookie("session=tok123")
+            .timeout(60)
+            .follow_redirects(true)
+            .build();
+        let args = cmd.to_args();
+
+        // Method
+        assert!(args.contains(&"-X".to_string()));
+        assert!(args.contains(&"POST".to_string()));
+
+        // Headers
+        assert!(args.contains(&"Content-Type: application/json".to_string()));
+        assert!(args.contains(&"Accept: application/json".to_string()));
+
+        // Body
+        assert!(args.contains(&"-d".to_string()));
+        assert!(args.contains(&r#"{"key":"value"}"#.to_string()));
+
+        // Auth
+        assert!(args.contains(&"-u".to_string()));
+        assert!(args.contains(&"admin:secret".to_string()));
+
+        // Cookie
+        assert!(args.contains(&"-b".to_string()));
+        assert!(args.contains(&"session=tok123".to_string()));
+
+        // Timeout
+        assert!(args.contains(&"--max-time".to_string()));
+        assert!(args.contains(&"60".to_string()));
+
+        // Follow redirects
+        assert!(args.contains(&"-L".to_string()));
+
+        // Query params in URL
+        let url = args.last().unwrap();
+        assert!(url.contains("version=2"));
+        assert!(url.contains("format=json"));
+        assert!(url.starts_with("https://api.example.com/data?"));
+
+        // URL must be last (important for curl)
+        assert!(
+            args.last().unwrap().starts_with("https://"),
+            "URL must be the last argument"
+        );
+    }
 }

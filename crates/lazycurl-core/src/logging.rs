@@ -226,6 +226,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
             project: Some("test-project".to_string()),
             collection: Some("test-collection".to_string()),
+            request_id: None,
             request: RequestLogData {
                 method: Method::Post,
                 url: "https://api.example.com/login".to_string(),

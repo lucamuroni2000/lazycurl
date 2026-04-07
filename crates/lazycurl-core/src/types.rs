@@ -436,6 +436,8 @@ pub struct RequestLogEntry {
     pub project: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub collection: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub request_id: Option<uuid::Uuid>,
     pub request: RequestLogData,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response: Option<ResponseLogData>,
@@ -503,6 +505,15 @@ impl ProjectWorkspaceData {
             .active_environment
             .and_then(|i| self.environments.get(i))
             .map(|env| env.name.clone());
+    }
+
+    /// Find the auth config for a request by its UUID, searching all collections.
+    pub fn find_request_auth(&self, request_id: uuid::Uuid) -> Option<Auth> {
+        self.collections
+            .iter()
+            .flat_map(|c| &c.requests)
+            .find(|r| r.id == request_id)
+            .and_then(|r| r.auth.clone())
     }
 
     /// Restore `active_environment` index from the saved `project.active_environment` name.
@@ -696,6 +707,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
             project: Some("my-api".to_string()),
             collection: Some("auth-endpoints".to_string()),
+            request_id: None,
             request: RequestLogData {
                 method: Method::Post,
                 url: "https://api.example.com/login".to_string(),
@@ -754,6 +766,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
             project: None,
             collection: None,
+            request_id: None,
             request: RequestLogData {
                 method: Method::Get,
                 url: "https://example.com".to_string(),
@@ -771,6 +784,98 @@ mod tests {
         let deserialized: RequestLogEntry = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.error, Some("Connection refused".to_string()));
         assert!(deserialized.response.is_none());
+    }
+
+    #[test]
+    fn test_request_log_entry_with_request_id() {
+        let req_id = uuid::Uuid::new_v4();
+        let entry = RequestLogEntry {
+            id: uuid::Uuid::new_v4(),
+            timestamp: chrono::Utc::now(),
+            project: Some("proj".to_string()),
+            collection: Some("col".to_string()),
+            request_id: Some(req_id),
+            request: RequestLogData {
+                method: Method::Get,
+                url: "https://example.com".to_string(),
+                url_template: None,
+                headers: vec![],
+                body: None,
+                body_template: None,
+                params: vec![],
+            },
+            response: None,
+            curl_command: "curl https://example.com".to_string(),
+            error: None,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let deserialized: RequestLogEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.request_id, Some(req_id));
+    }
+
+    #[test]
+    fn test_request_log_entry_without_request_id_backward_compat() {
+        // Old log entries without request_id should deserialize with None
+        let json = r#"{
+            "id": "00000000-0000-0000-0000-000000000001",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "request": {
+                "method": "GET",
+                "url": "https://example.com",
+                "headers": [],
+                "params": []
+            },
+            "curl_command": "curl https://example.com"
+        }"#;
+        let entry: RequestLogEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(entry.request_id, None);
+    }
+
+    #[test]
+    fn test_find_request_auth_returns_auth_for_known_id() {
+        let req_id = uuid::Uuid::new_v4();
+        let auth = Auth::Bearer {
+            token: "{{my_token}}".to_string(),
+        };
+        let collection = Collection {
+            id: uuid::Uuid::new_v4(),
+            name: "test-col".to_string(),
+            variables: HashMap::new(),
+            requests: vec![Request {
+                id: req_id,
+                name: "authed-request".to_string(),
+                method: Method::Get,
+                url: "https://example.com".to_string(),
+                headers: vec![],
+                params: vec![],
+                body: None,
+                auth: Some(auth.clone()),
+            }],
+        };
+        let mut ws = ProjectWorkspaceData::new(
+            Project {
+                id: uuid::Uuid::new_v4(),
+                name: "test".to_string(),
+                active_environment: None,
+            },
+            "test".to_string(),
+        );
+        ws.collections = vec![collection];
+
+        assert_eq!(ws.find_request_auth(req_id), Some(auth));
+    }
+
+    #[test]
+    fn test_find_request_auth_returns_none_for_unknown_id() {
+        let ws = ProjectWorkspaceData::new(
+            Project {
+                id: uuid::Uuid::new_v4(),
+                name: "test".to_string(),
+                active_environment: None,
+            },
+            "test".to_string(),
+        );
+        assert_eq!(ws.find_request_auth(uuid::Uuid::new_v4()), None);
     }
 
     fn make_workspace_with_envs() -> ProjectWorkspaceData {

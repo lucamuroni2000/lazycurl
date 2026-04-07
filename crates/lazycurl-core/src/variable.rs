@@ -207,4 +207,115 @@ mod tests {
         let (result, _) = resolver.resolve("{{greeting}}").unwrap();
         assert_eq!(result, "hello world");
     }
+
+    #[test]
+    fn test_resolve_malformed_placeholder() {
+        let global = make_vars(&[("var", "value", false)]);
+        let resolver = FileVariableResolver::new(global, None, None);
+        let (result, _) = resolver.resolve("{{var").unwrap();
+        assert_eq!(result, "{{var");
+    }
+
+    #[test]
+    fn test_resolve_empty_variable_name() {
+        let resolver = FileVariableResolver::new(HashMap::new(), None, None);
+        let result = resolver.resolve("{{}}");
+        assert!(matches!(result, Err(ResolveError::UndefinedVariables(_))));
+        if let Err(ResolveError::UndefinedVariables(vars)) = result {
+            assert_eq!(vars, vec!["".to_string()]);
+        }
+    }
+
+    #[test]
+    fn test_resolve_consecutive_variables() {
+        let global = make_vars(&[("a", "hello", false), ("b", "world", false)]);
+        let resolver = FileVariableResolver::new(global, None, None);
+        let (result, _) = resolver.resolve("{{a}}{{b}}").unwrap();
+        assert_eq!(result, "helloworld");
+    }
+
+    #[test]
+    fn test_resolve_same_variable_multiple_times() {
+        let global = make_vars(&[("host", "example.com", false)]);
+        let resolver = FileVariableResolver::new(global, None, None);
+        let (result, _) = resolver.resolve("{{host}}:{{host}}").unwrap();
+        assert_eq!(result, "example.com:example.com");
+    }
+
+    #[test]
+    fn test_resolve_deep_nesting_within_limit() {
+        // Chain of 9 deep: v0 -> v1 -> ... -> v8 -> "end"
+        let mut vars = Vec::new();
+        for i in 0..8 {
+            vars.push((format!("v{}", i), format!("{{{{v{}}}}}", i + 1), false));
+        }
+        vars.push(("v8".to_string(), "end".to_string(), false));
+
+        let global: HashMap<String, Variable> = vars
+            .iter()
+            .map(|(k, v, s)| {
+                (
+                    k.clone(),
+                    Variable {
+                        value: v.clone(),
+                        secret: *s,
+                    },
+                )
+            })
+            .collect();
+
+        let resolver = FileVariableResolver::new(global, None, None);
+        let (result, _) = resolver.resolve("{{v0}}").unwrap();
+        assert_eq!(result, "end");
+    }
+
+    #[test]
+    fn test_resolve_deep_nesting_exceeds_limit() {
+        // Chain of 11 deep: v0 -> v1 -> ... -> v10 -> "end"
+        let mut vars = Vec::new();
+        for i in 0..10 {
+            vars.push((format!("v{}", i), format!("{{{{v{}}}}}", i + 1), false));
+        }
+        vars.push(("v10".to_string(), "end".to_string(), false));
+
+        let global: HashMap<String, Variable> = vars
+            .iter()
+            .map(|(k, v, s)| {
+                (
+                    k.clone(),
+                    Variable {
+                        value: v.clone(),
+                        secret: *s,
+                    },
+                )
+            })
+            .collect();
+
+        let resolver = FileVariableResolver::new(global, None, None);
+        let result = resolver.resolve("{{v0}}");
+        assert!(matches!(result, Err(ResolveError::CircularReference(_))));
+    }
+
+    #[test]
+    fn test_resolve_nested_secret_tracking() {
+        let global = make_vars(&[
+            ("wrapper", "{{secret_key}}", false),
+            ("secret_key", "s3cret", true),
+        ]);
+        let resolver = FileVariableResolver::new(global, None, None);
+        let (result, secrets) = resolver.resolve("{{wrapper}}").unwrap();
+        assert_eq!(result, "s3cret");
+        assert_eq!(secrets, vec!["s3cret".to_string()]);
+    }
+
+    #[test]
+    fn test_resolve_mixed_defined_and_undefined() {
+        let global = make_vars(&[("defined", "value", false)]);
+        let resolver = FileVariableResolver::new(global, None, None);
+        let result = resolver.resolve("{{defined}} {{undefined}}");
+        assert!(matches!(result, Err(ResolveError::UndefinedVariables(_))));
+        if let Err(ResolveError::UndefinedVariables(vars)) = result {
+            assert_eq!(vars, vec!["undefined".to_string()]);
+        }
+    }
 }
