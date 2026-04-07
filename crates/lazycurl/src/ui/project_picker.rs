@@ -66,7 +66,9 @@ pub fn draw(frame: &mut Frame, app: &App, kb: &HashMap<String, String>) {
             let is_open = open_slugs.contains(&slug.as_str());
             let is_cursor = i == app.project_picker_cursor;
             let is_renaming = app.project_picker_renaming && is_cursor;
-            let marker = if is_open { "* " } else { "  " };
+
+            let cursor_marker = if is_cursor { "> " } else { "  " };
+            let open_marker = if is_open { "[*] " } else { "    " };
 
             let name_span = if is_renaming {
                 Span::styled(
@@ -80,15 +82,17 @@ pub fn draw(frame: &mut Frame, app: &App, kb: &HashMap<String, String>) {
                     Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD)
-                } else if is_open {
-                    Style::default().fg(Color::Green)
                 } else {
                     Style::default().fg(Color::White)
                 };
                 Span::styled(&project.name, style)
             };
 
-            ListItem::new(Line::from(vec![Span::raw(marker), name_span]))
+            ListItem::new(Line::from(vec![
+                Span::raw(cursor_marker),
+                Span::styled(open_marker, Style::default().fg(Color::Green)),
+                name_span,
+            ]))
         })
         .collect();
 
@@ -97,8 +101,8 @@ pub fn draw(frame: &mut Frame, app: &App, kb: &HashMap<String, String>) {
 
     // Show cursor position when renaming
     if app.project_picker_renaming {
-        // marker (2) + input cursor
-        let cursor_x = inner.x + 2 + app.project_picker_name_input.cursor() as u16;
+        // cursor_marker (2) + open_marker (4) + input cursor
+        let cursor_x = inner.x + 2 + 4 + app.project_picker_name_input.cursor() as u16;
         let cursor_y = inner.y + app.project_picker_cursor as u16;
         if cursor_x < inner.x + inner.width && cursor_y < inner.y + inner.height {
             frame.set_cursor_position((cursor_x, cursor_y));
