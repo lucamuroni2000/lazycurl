@@ -1,17 +1,28 @@
+use std::collections::HashMap;
+
 use ratatui::layout::{Constraint, Direction, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Tabs};
 use ratatui::Frame;
 
+use super::key_for;
 use crate::app::{App, InputMode, VarEditTarget, VarTier};
 
-pub fn draw(frame: &mut Frame, app: &App) {
+pub fn draw(frame: &mut Frame, app: &App, kb: &HashMap<String, String>) {
     let area = centered_rect(70, 80, frame.area());
     frame.render_widget(Clear, area);
 
+    let title = format!(
+        " Variables — {}: close  {}: switch tier  {}: add  {}: delete  {}: secret ",
+        key_for(kb, "cancel"),
+        key_for(kb, "cycle_pane_forward"),
+        key_for(kb, "add_item"),
+        key_for(kb, "delete_item"),
+        key_for(kb, "toggle_enabled"),
+    );
     let block = Block::default()
-        .title(" Variables — Esc: close  Tab: switch tier  a: add  d: delete  s: secret ")
+        .title(title)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
 
@@ -63,8 +74,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
                 None => ("None selected".to_string(), "0/0".to_string()),
             };
             format!(
-                " Environment: {} [{}]  (Ctrl+E: switch  Ctrl+Shift+E: manage)",
-                name, idx_info
+                " Environment: {} [{}]  ({}: switch  {}: manage)",
+                name,
+                idx_info,
+                key_for(kb, "switch_env"),
+                key_for(kb, "manage_envs")
             )
         }
         VarTier::Collection => {
@@ -110,14 +124,14 @@ pub fn draw(frame: &mut Frame, app: &App) {
         // Shrink the content area for the variable list
         let narrowed = msg_chunks[0];
         // Render the variable list in `narrowed` instead of `content_chunks[1]`
-        draw_var_list(frame, app, narrowed);
+        draw_var_list(frame, app, narrowed, kb);
         return;
     }
 
-    draw_var_list(frame, app, content_chunks[1]);
+    draw_var_list(frame, app, content_chunks[1], kb);
 }
 
-fn draw_var_list(frame: &mut Frame, app: &App, area: Rect) {
+fn draw_var_list(frame: &mut Frame, app: &App, area: Rect, kb: &HashMap<String, String>) {
     let keys = app.var_keys();
 
     if keys.is_empty() {
@@ -127,15 +141,24 @@ fn draw_var_list(frame: &mut Frame, app: &App, area: Rect) {
             matches!(app.var_tier, VarTier::Collection) && app.var_collection_idx().is_none();
 
         let msg = if no_env {
-            " No environment selected. Press Ctrl+Shift+E to manage environments."
+            format!(
+                " No environment selected. Press {} to manage environments.",
+                key_for(kb, "manage_envs")
+            )
         } else if no_col {
-            " No collection selected. Save a request first (Ctrl+S)."
+            format!(
+                " No collection selected. Save a request first ({}).",
+                key_for(kb, "save_request")
+            )
         } else {
-            " No variables. Press 'a' to add one."
+            format!(
+                " No variables. Press '{}' to add one.",
+                key_for(kb, "add_item")
+            )
         };
 
         frame.render_widget(
-            Paragraph::new(msg).style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new(msg.as_str().to_string()).style(Style::default().fg(Color::DarkGray)),
             area,
         );
         return;

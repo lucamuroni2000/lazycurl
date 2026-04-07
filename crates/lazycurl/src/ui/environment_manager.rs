@@ -1,12 +1,15 @@
+use std::collections::HashMap;
+
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph};
 use ratatui::Frame;
 
+use super::key_for;
 use crate::app::App;
 
-pub fn draw(frame: &mut Frame, app: &App) {
+pub fn draw(frame: &mut Frame, app: &App, kb: &HashMap<String, String>) {
     let area = frame.area();
     let popup_width = (area.width * 50 / 100).max(40).min(area.width);
     // Height: 3 (border + padding) + env count + 1 (confirm line), capped at 60%
@@ -36,8 +39,13 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .unwrap_or("No project");
 
     let title = format!(
-        " {} — Environments — n:new  r:rename  d:delete  Enter:activate  Esc:close ",
-        project_name
+        " {} — Environments — {}:new  {}:rename  {}:delete  {}:activate  {}:close ",
+        project_name,
+        key_for(kb, "new_request"),
+        key_for(kb, "rename"),
+        key_for(kb, "delete_item"),
+        key_for(kb, "enter"),
+        key_for(kb, "cancel"),
     );
 
     let block = Block::default()
@@ -49,8 +57,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
     frame.render_widget(block, popup_area);
 
     if env_count == 0 {
-        let msg = Paragraph::new(" No environments. Press n to create one.")
-            .style(Style::default().fg(Color::DarkGray));
+        let msg = Paragraph::new(format!(
+            " No environments. Press {} to create one.",
+            key_for(kb, "new_request")
+        ))
+        .style(Style::default().fg(Color::DarkGray));
         frame.render_widget(msg, inner);
         return;
     }
@@ -139,7 +150,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
                 ),
                 Span::styled(" to confirm, ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
-                    "Esc",
+                    key_for(kb, "cancel"),
                     Style::default()
                         .fg(Color::DarkGray)
                         .add_modifier(Modifier::BOLD),

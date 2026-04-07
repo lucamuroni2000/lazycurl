@@ -12,11 +12,49 @@ pub mod response;
 pub mod statusbar;
 pub mod variables;
 
+use std::collections::HashMap;
+
 use ratatui::Frame;
 
 use crate::app::App;
 
+/// Format a binding string for display (e.g. "ctrl+s" → "Ctrl+S").
+pub fn format_key_display(binding: &str) -> String {
+    binding
+        .split('+')
+        .map(|part| match part.to_lowercase().as_str() {
+            "ctrl" => "Ctrl".to_string(),
+            "shift" => "Shift".to_string(),
+            "alt" => "Alt".to_string(),
+            "enter" => "Enter".to_string(),
+            "escape" | "esc" => "Esc".to_string(),
+            "backtab" => "Tab".to_string(), // shift+backtab displays as Shift+Tab
+            "tab" => "Tab".to_string(),
+            s if s.starts_with('f') && s[1..].parse::<u8>().is_ok() => s.to_uppercase(),
+            s if s.len() == 1 && s.chars().next().unwrap().is_ascii_uppercase() => {
+                format!("Shift+{}", s)
+            }
+            s if s.len() == 1 => s.to_string(),
+            other => other.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
+/// Look up a keybinding and return its display name, or "?" if not found.
+pub fn key_for(kb: &HashMap<String, String>, action: &str) -> String {
+    kb.get(action)
+        .map(|k| format_key_display(k))
+        .unwrap_or_else(|| "?".to_string())
+}
+
+/// Look up two keybindings and return them as "X/Y".
+pub fn key_pair_for(kb: &HashMap<String, String>, action1: &str, action2: &str) -> String {
+    format!("{}/{}", key_for(kb, action1), key_for(kb, action2))
+}
+
 pub fn draw(frame: &mut Frame, app: &App) {
+    let kb = &app.config.keybindings;
     let pane_layout = layout::compute_layout(frame.area(), app.pane_visible);
 
     // Title bar — project tabs + env
@@ -27,14 +65,14 @@ pub fn draw(frame: &mut Frame, app: &App) {
         collections::draw(frame, app, area);
     }
     if let Some(area) = pane_layout.request {
-        request::draw(frame, app, area);
+        request::draw(frame, app, area, kb);
     }
     if let Some(area) = pane_layout.response {
         response::draw(frame, app, area);
     }
 
     // Status bar
-    statusbar::draw(frame, app, pane_layout.status_bar, &app.config.keybindings);
+    statusbar::draw(frame, app, pane_layout.status_bar, kb);
 
     // Method picker (rendered relative to request pane)
     if app.show_method_picker {
@@ -52,22 +90,22 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     // Overlays (on top of everything)
     if app.show_export_picker {
-        export_picker::draw(frame, app);
+        export_picker::draw(frame, app, kb);
     }
     if app.show_collection_picker {
-        picker::draw_collection_picker(frame, app);
+        picker::draw_collection_picker(frame, app, kb);
     }
     if app.show_variables {
-        variables::draw(frame, app);
+        variables::draw(frame, app, kb);
     }
     if app.show_env_manager {
-        environment_manager::draw(frame, app);
+        environment_manager::draw(frame, app, kb);
     }
     if app.show_help {
-        help::draw(frame, &app.config.keybindings);
+        help::draw(frame, kb);
     }
     if app.show_project_picker {
-        project_picker::draw(frame, app);
+        project_picker::draw(frame, app, kb);
     }
     if app.show_log_viewer {
         log_viewer::draw(frame, app);

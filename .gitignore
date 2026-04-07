@@ -1,8 +1,14 @@
 /target
 **/*.rs.bk
 *.pdb
+
 .env
+
 .claude/*
 !.claude/commands/
+
 docs/*
+!docs/keybindings-default.md
+!docs/keybindings-vim.md
+
 .superpowers/*

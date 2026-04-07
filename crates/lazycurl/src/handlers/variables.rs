@@ -1,5 +1,6 @@
 use crate::app::{self, Action, App};
 use crate::handlers::confirmations;
+use crate::ui::key_for;
 
 pub fn handle(app: &mut App, action: &Action) {
     // Variable delete confirmation
@@ -52,14 +53,16 @@ pub fn handle(app: &mut App, action: &Action) {
                 if needs_container {
                     match app.var_tier {
                         app::VarTier::Environment => {
-                            app.status_message = Some(
-                                "No environment selected. Press Ctrl+Shift+E to manage environments."
-                                    .to_string(),
-                            );
+                            let key = key_for(&app.config.keybindings, "manage_envs");
+                            app.status_message = Some(format!(
+                                "No environment selected. Press {} to manage environments.",
+                                key
+                            ));
                         }
                         app::VarTier::Collection => {
+                            let key = key_for(&app.config.keybindings, "save_request");
                             app.status_message =
-                                Some("Select or create a collection first (Ctrl+S)".to_string());
+                                Some(format!("Select or create a collection first ({})", key));
                         }
                         _ => {}
                     }

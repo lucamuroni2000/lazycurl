@@ -1,12 +1,15 @@
+use std::collections::HashMap;
+
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
 use ratatui::Frame;
 
+use super::key_for;
 use crate::app::{App, EditField, InputMode, Pane, RequestTab};
 
-pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
+pub fn draw(frame: &mut Frame, app: &App, area: Rect, kb: &HashMap<String, String>) {
     let is_focused = app.active_pane == Pane::Request;
     let border_color = if is_focused {
         Color::Cyan
@@ -59,7 +62,10 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         let name_line = Line::from(vec![
             Span::styled(" ", Style::default()),
             Span::styled(name_text.clone(), name_style),
-            Span::styled("  (r: rename)", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("  ({}: rename)", key_for(kb, "rename")),
+                Style::default().fg(Color::DarkGray),
+            ),
         ]);
         frame.render_widget(Paragraph::new(name_line), chunks[0]);
 
@@ -162,21 +168,24 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     // Tab content
     match app.request_tab() {
-        RequestTab::Headers => draw_headers(frame, app, chunks[3]),
+        RequestTab::Headers => draw_headers(frame, app, chunks[3], kb),
         RequestTab::Body => draw_body(frame, app, chunks[3]),
-        RequestTab::Auth => draw_auth(frame, app, chunks[3]),
-        RequestTab::Params => draw_params(frame, app, chunks[3]),
+        RequestTab::Auth => draw_auth(frame, app, chunks[3], kb),
+        RequestTab::Params => draw_params(frame, app, chunks[3], kb),
     }
 }
 
-fn draw_headers(frame: &mut Frame, app: &App, area: Rect) {
+fn draw_headers(frame: &mut Frame, app: &App, area: Rect, kb: &HashMap<String, String>) {
     let Some(req) = app.current_request() else {
         return;
     };
 
     if req.headers.is_empty() {
-        let text = Paragraph::new(" No headers. Press 'a' to add one.")
-            .style(Style::default().fg(Color::DarkGray));
+        let text = Paragraph::new(format!(
+            " No headers. Press '{}' to add one.",
+            key_for(kb, "add_item")
+        ))
+        .style(Style::default().fg(Color::DarkGray));
         frame.render_widget(text, area);
         return;
     }
@@ -324,7 +333,7 @@ fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-fn draw_auth(frame: &mut Frame, app: &App, area: Rect) {
+fn draw_auth(frame: &mut Frame, app: &App, area: Rect, kb: &HashMap<String, String>) {
     let Some(req) = app.current_request() else {
         return;
     };
@@ -332,7 +341,10 @@ fn draw_auth(frame: &mut Frame, app: &App, area: Rect) {
     let is_no_auth = matches!(req.auth, None | Some(lazycurl_core::types::Auth::None));
 
     if is_no_auth {
-        let text = " No authentication configured. Press Ctrl+A to select an auth type.";
+        let text = format!(
+            " No authentication configured. Press {} to select an auth type.",
+            key_for(kb, "change_auth_type")
+        );
         frame.render_widget(
             Paragraph::new(text).style(Style::default().fg(Color::DarkGray)),
             area,
@@ -363,7 +375,7 @@ fn draw_auth(frame: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            "  (Ctrl+A: change type)",
+            format!("  ({}: change type)", key_for(kb, "change_auth_type")),
             Style::default().fg(Color::DarkGray),
         ),
     ]));
@@ -436,14 +448,17 @@ fn draw_auth(frame: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-fn draw_params(frame: &mut Frame, app: &App, area: Rect) {
+fn draw_params(frame: &mut Frame, app: &App, area: Rect, kb: &HashMap<String, String>) {
     let Some(req) = app.current_request() else {
         return;
     };
 
     if req.params.is_empty() {
-        let text = Paragraph::new(" No query parameters. Press 'a' to add one.")
-            .style(Style::default().fg(Color::DarkGray));
+        let text = Paragraph::new(format!(
+            " No query parameters. Press '{}' to add one.",
+            key_for(kb, "add_item")
+        ))
+        .style(Style::default().fg(Color::DarkGray));
         frame.render_widget(text, area);
         return;
     }

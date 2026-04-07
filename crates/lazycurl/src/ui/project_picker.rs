@@ -1,12 +1,15 @@
+use std::collections::HashMap;
+
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph};
 use ratatui::Frame;
 
+use super::key_for;
 use crate::app::App;
 
-pub fn draw(frame: &mut Frame, app: &App) {
+pub fn draw(frame: &mut Frame, app: &App, kb: &HashMap<String, String>) {
     let area = frame.area();
     let popup_width = (area.width * 50 / 100).max(30).min(area.width);
     let confirm_line = if app.project_picker_confirm_delete.is_some() {
@@ -25,8 +28,17 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     frame.render_widget(Clear, popup_area);
 
+    let title = format!(
+        " Projects — {}:open  {}:new  {}:rename  {}:close  {}:delete  {}:cancel ",
+        key_for(kb, "enter"),
+        key_for(kb, "new_request"),
+        key_for(kb, "rename"),
+        key_for(kb, "close_project"),
+        key_for(kb, "delete_item"),
+        key_for(kb, "cancel"),
+    );
     let block = Block::default()
-        .title(" Projects — Enter:open  n:new  r:rename  c:close  d:delete  Esc:cancel ")
+        .title(title)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
 
@@ -108,7 +120,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
                 ),
                 Span::styled(" to confirm, ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
-                    "Esc",
+                    key_for(kb, "cancel"),
                     Style::default()
                         .fg(Color::DarkGray)
                         .add_modifier(Modifier::BOLD),

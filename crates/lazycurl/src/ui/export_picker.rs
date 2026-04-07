@@ -1,12 +1,15 @@
+use std::collections::HashMap;
+
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
+use super::{key_for, key_pair_for};
 use crate::app::App;
 
-pub fn draw(frame: &mut Frame, app: &App) {
+pub fn draw(frame: &mut Frame, app: &App, kb: &HashMap<String, String>) {
     let formats = app.export_formats();
     let height = (formats.len() as u16 + 7).min(20);
     let area = centered_rect(50, height, frame.area());
@@ -84,14 +87,17 @@ pub fn draw(frame: &mut Frame, app: &App) {
     let key_style = Style::default().fg(Color::Yellow);
     let mut hint_spans = vec![Span::raw(" ")];
     if app.export_collection_available {
-        hint_spans.push(Span::styled("Tab", key_style));
+        hint_spans.push(Span::styled(key_for(kb, "cycle_pane_forward"), key_style));
         hint_spans.push(Span::styled(":scope ", hint_style));
     }
-    hint_spans.push(Span::styled("j/k", key_style));
+    hint_spans.push(Span::styled(
+        key_pair_for(kb, "move_up", "move_down"),
+        key_style,
+    ));
     hint_spans.push(Span::styled(":select ", hint_style));
-    hint_spans.push(Span::styled("Enter", key_style));
+    hint_spans.push(Span::styled(key_for(kb, "enter"), key_style));
     hint_spans.push(Span::styled(":export ", hint_style));
-    hint_spans.push(Span::styled("Esc", key_style));
+    hint_spans.push(Span::styled(key_for(kb, "cancel"), key_style));
     hint_spans.push(Span::styled(":cancel", hint_style));
     lines.push(Line::from(hint_spans));
 
