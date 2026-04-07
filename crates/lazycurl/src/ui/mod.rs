@@ -22,20 +22,27 @@ use crate::app::App;
 pub fn format_key_display(binding: &str) -> String {
     binding
         .split('+')
-        .map(|part| match part.to_lowercase().as_str() {
-            "ctrl" => "Ctrl".to_string(),
-            "shift" => "Shift".to_string(),
-            "alt" => "Alt".to_string(),
-            "enter" => "Enter".to_string(),
-            "escape" | "esc" => "Esc".to_string(),
-            "backtab" => "Tab".to_string(), // shift+backtab displays as Shift+Tab
-            "tab" => "Tab".to_string(),
-            s if s.starts_with('f') && s[1..].parse::<u8>().is_ok() => s.to_uppercase(),
-            s if s.len() == 1 && s.chars().next().unwrap().is_ascii_uppercase() => {
-                format!("Shift+{}", s)
+        .map(|part| {
+            // Check for uppercase single char BEFORE lowercasing
+            if part.len() == 1 {
+                let c = part.chars().next().unwrap();
+                if c.is_ascii_uppercase() {
+                    return c.to_string();
+                }
+                return part.to_string();
             }
-            s if s.len() == 1 => s.to_string(),
-            other => other.to_string(),
+            match part.to_lowercase().as_str() {
+                "ctrl" => "Ctrl".to_string(),
+                "shift" => "Shift".to_string(),
+                "alt" => "Alt".to_string(),
+                "enter" => "Enter".to_string(),
+                "escape" | "esc" => "Esc".to_string(),
+                "backtab" => "Tab".to_string(),
+                "tab" => "Tab".to_string(),
+                "space" => "Space".to_string(),
+                s if s.starts_with('f') && s[1..].parse::<u8>().is_ok() => s.to_uppercase(),
+                _ => part.to_string(),
+            }
         })
         .collect::<Vec<_>>()
         .join("+")

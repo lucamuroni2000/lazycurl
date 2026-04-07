@@ -94,7 +94,13 @@ pub fn draw(frame: &mut Frame, app: &App, kb: &HashMap<String, String>) {
                 }
                 None => ("None selected".to_string(), "0/0".to_string()),
             };
-            format!(" Collection: {} [{}]  ([ ] switch)", name, idx_info)
+            format!(
+                " Collection: {} [{}]  ({} {} switch)",
+                name,
+                idx_info,
+                key_for(kb, "variables.cycle_container_back"),
+                key_for(kb, "variables.cycle_container_fwd"),
+            )
         }
     };
 
