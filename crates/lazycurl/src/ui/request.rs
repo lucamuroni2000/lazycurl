@@ -400,11 +400,12 @@ fn draw_auth(frame: &mut Frame, app: &App, area: Rect, kb: &HashMap<String, Stri
             .map(|inp| inp.content().to_string())
             .unwrap_or_default();
 
-        let display_value = if is_secret && !is_editing && !raw_value.is_empty() {
-            "••••••".to_string()
-        } else {
-            raw_value.clone()
-        };
+        let display_value =
+            if is_secret && !is_editing && !app.secrets_revealed && !raw_value.is_empty() {
+                "••••••".to_string()
+            } else {
+                raw_value.clone()
+            };
 
         let value_style = if is_editing {
             Style::default().fg(Color::Yellow).bg(Color::DarkGray)
