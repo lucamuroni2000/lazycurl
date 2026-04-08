@@ -921,6 +921,15 @@ impl App {
             }
         }
 
+        // Inject auto Content-Type header
+        if let Some(body) = &request.body {
+            for auto_header in
+                lazycurl_core::auto_headers::resolve_auto_headers(body, &request.headers)
+            {
+                builder = builder.header(&auto_header.key, &auto_header.value);
+            }
+        }
+
         // Add query params
         for param in &request.params {
             if param.enabled {

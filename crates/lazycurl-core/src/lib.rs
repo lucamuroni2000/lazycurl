@@ -1,4 +1,5 @@
 pub mod asap;
+pub mod auto_headers;
 pub mod aws_v4;
 pub mod collection;
 pub mod command;
