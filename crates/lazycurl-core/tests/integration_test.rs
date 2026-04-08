@@ -363,8 +363,9 @@ fn test_export_full_request_as_curl() {
             value: "1".to_string(),
             enabled: true,
         }],
-        body: Some(Body::Json {
+        body: Some(Body::Raw {
             content: r#"{"name":"Alice"}"#.to_string(),
+            content_type: RawBodyType::Json,
         }),
         auth: None,
     };
@@ -417,8 +418,9 @@ fn test_export_collection_as_postman() {
                 url: "https://api.test.com/items".to_string(),
                 headers: vec![],
                 params: vec![],
-                body: Some(Body::Json {
+                body: Some(Body::Raw {
                     content: r#"{"name":"test"}"#.to_string(),
+                    content_type: RawBodyType::Json,
                 }),
                 auth: Some(Auth::Bearer {
                     token: "{{token}}".to_string(),
@@ -463,8 +465,9 @@ fn test_export_collection_as_openapi() {
                 url: "https://api.test.com/items".to_string(),
                 headers: vec![],
                 params: vec![],
-                body: Some(Body::Json {
+                body: Some(Body::Raw {
                     content: r#"{"name":"test"}"#.to_string(),
+                    content_type: RawBodyType::Json,
                 }),
                 auth: None,
             },

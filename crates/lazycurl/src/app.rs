@@ -766,7 +766,10 @@ impl App {
                 .request
                 .body_template
                 .or(entry.request.body)
-                .map(|content| Body::Json { content }),
+                .map(|content| Body::Raw {
+                    content,
+                    content_type: lazycurl_core::types::RawBodyType::Json,
+                }),
             auth,
         };
 
@@ -936,7 +939,7 @@ impl App {
         // Add body
         if let Some(body) = &request.body {
             match body {
-                Body::Json { content } => {
+                Body::Raw { content, .. } => {
                     let (resolved, s) = match resolver.resolve(content) {
                         Ok(r) => r,
                         Err(e) => {
@@ -946,9 +949,6 @@ impl App {
                     };
                     secrets.extend(s);
                     builder = builder.body_json(&resolved);
-                }
-                Body::Text { content } => {
-                    builder = builder.body_text(content);
                 }
                 Body::Form { fields } => {
                     for field in fields {
@@ -974,6 +974,41 @@ impl App {
                             builder = builder.multipart_field(&part.name, value);
                         }
                     }
+                }
+                Body::Binary { file_path } => {
+                    builder = builder.body_binary(file_path);
+                }
+                Body::GraphQL { query, variables } => {
+                    let (resolved_query, s) = match resolver.resolve(query) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            self.status_message =
+                                Some(format!("GraphQL query variable error: {}", e));
+                            return;
+                        }
+                    };
+                    secrets.extend(s);
+                    let (resolved_vars, s) = match resolver.resolve(variables) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            self.status_message = Some(format!("GraphQL variables error: {}", e));
+                            return;
+                        }
+                    };
+                    secrets.extend(s);
+                    let gql_body = if resolved_vars.is_empty() {
+                        format!(
+                            "{{\"query\":{}}}",
+                            serde_json::to_string(&resolved_query).unwrap_or_default()
+                        )
+                    } else {
+                        format!(
+                            "{{\"query\":{},\"variables\":{}}}",
+                            serde_json::to_string(&resolved_query).unwrap_or_default(),
+                            resolved_vars
+                        )
+                    };
+                    builder = builder.body_json(&gql_body);
                 }
                 Body::None => {}
             }
@@ -1316,9 +1351,7 @@ impl App {
                             })
                             .collect(),
                         body: request.body.as_ref().and_then(|b| match b {
-                            Body::Json { content } | Body::Text { content } => {
-                                Some(content.clone())
-                            }
+                            Body::Raw { content, .. } => Some(content.clone()),
                             _ => None,
                         }),
                         body_template: None,
@@ -2037,7 +2070,10 @@ impl App {
                         if content.is_empty() {
                             request.body = Option::None;
                         } else {
-                            request.body = Some(lazycurl_core::types::Body::Json { content });
+                            request.body = Some(lazycurl_core::types::Body::Raw {
+                                content,
+                                content_type: lazycurl_core::types::RawBodyType::Json,
+                            });
                         }
                     }
                 }
@@ -2184,10 +2220,7 @@ impl App {
         if let Some(request) = &request {
             self.url_input.set_content(&request.url);
             match &request.body {
-                Some(lazycurl_core::types::Body::Json { content }) => {
-                    self.body_input.set_content(content);
-                }
-                Some(lazycurl_core::types::Body::Text { content }) => {
+                Some(lazycurl_core::types::Body::Raw { content, .. }) => {
                     self.body_input.set_content(content);
                 }
                 _ => {
@@ -3558,8 +3591,9 @@ impl App {
             if body_content.is_empty() {
                 request.body = None;
             } else {
-                request.body = Some(lazycurl_core::types::Body::Json {
+                request.body = Some(lazycurl_core::types::Body::Raw {
                     content: body_content,
+                    content_type: lazycurl_core::types::RawBodyType::Json,
                 });
             }
             for (i, header) in request.headers.iter_mut().enumerate() {

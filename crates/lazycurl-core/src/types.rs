@@ -82,11 +82,38 @@ pub struct MultipartPart {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Body {
-    Json { content: String },
-    Text { content: String },
-    Form { fields: Vec<FormField> },
-    Multipart { parts: Vec<MultipartPart> },
+    Raw {
+        content: String,
+        content_type: RawBodyType,
+    },
+    Form {
+        fields: Vec<FormField>,
+    },
+    Multipart {
+        parts: Vec<MultipartPart>,
+    },
+    Binary {
+        file_path: String,
+    },
+    #[serde(rename = "graphql")]
+    GraphQL {
+        query: String,
+        variables: String,
+    },
     None,
+}
+
+impl From<&Body> for BodyType {
+    fn from(body: &Body) -> Self {
+        match body {
+            Body::Raw { content_type, .. } => BodyType::Raw(*content_type),
+            Body::Form { .. } => BodyType::Form,
+            Body::Multipart { .. } => BodyType::Multipart,
+            Body::Binary { .. } => BodyType::Binary,
+            Body::GraphQL { .. } => BodyType::GraphQL,
+            Body::None => BodyType::None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -654,9 +681,10 @@ mod tests {
     }
 
     #[test]
-    fn test_body_json_roundtrip() {
-        let body = Body::Json {
+    fn test_body_raw_json_roundtrip() {
+        let body = Body::Raw {
             content: r#"{"key": "value"}"#.to_string(),
+            content_type: RawBodyType::Json,
         };
         let json = serde_json::to_string(&body).unwrap();
         let deserialized: Body = serde_json::from_str(&json).unwrap();
@@ -1492,5 +1520,99 @@ mod tests {
         assert_eq!(format!("{}", RawBodyType::Xml), "XML");
         assert_eq!(format!("{}", RawBodyType::Html), "HTML");
         assert_eq!(format!("{}", RawBodyType::Javascript), "JavaScript");
+    }
+
+    #[test]
+    fn body_raw_json_serialization() {
+        let body = Body::Raw {
+            content: "{\"key\": \"value\"}".to_string(),
+            content_type: RawBodyType::Json,
+        };
+        let json = serde_json::to_value(&body).unwrap();
+        assert_eq!(json["type"], "raw");
+        assert_eq!(json["content"], "{\"key\": \"value\"}");
+        assert_eq!(json["content_type"], "json");
+    }
+
+    #[test]
+    fn body_raw_xml_serialization() {
+        let body = Body::Raw {
+            content: "<root/>".to_string(),
+            content_type: RawBodyType::Xml,
+        };
+        let json = serde_json::to_value(&body).unwrap();
+        assert_eq!(json["type"], "raw");
+        assert_eq!(json["content_type"], "xml");
+    }
+
+    #[test]
+    fn body_binary_serialization() {
+        let body = Body::Binary {
+            file_path: "/tmp/image.png".to_string(),
+        };
+        let json = serde_json::to_value(&body).unwrap();
+        assert_eq!(json["type"], "binary");
+        assert_eq!(json["file_path"], "/tmp/image.png");
+    }
+
+    #[test]
+    fn body_graphql_serialization() {
+        let body = Body::GraphQL {
+            query: "{ users { id } }".to_string(),
+            variables: "{\"limit\": 10}".to_string(),
+        };
+        let json = serde_json::to_value(&body).unwrap();
+        assert_eq!(json["type"], "graphql");
+        assert_eq!(json["query"], "{ users { id } }");
+        assert_eq!(json["variables"], "{\"limit\": 10}");
+    }
+
+    #[test]
+    fn body_form_serialization_unchanged() {
+        let body = Body::Form {
+            fields: vec![FormField {
+                key: "name".to_string(),
+                value: "test".to_string(),
+                enabled: true,
+            }],
+        };
+        let json = serde_json::to_value(&body).unwrap();
+        assert_eq!(json["type"], "form");
+    }
+
+    #[test]
+    fn body_none_serialization_unchanged() {
+        let body = Body::None;
+        let json = serde_json::to_value(&body).unwrap();
+        assert_eq!(json["type"], "none");
+    }
+
+    #[test]
+    fn body_type_from_body() {
+        assert_eq!(
+            BodyType::from(&Body::Raw {
+                content: String::new(),
+                content_type: RawBodyType::Json
+            }),
+            BodyType::Raw(RawBodyType::Json)
+        );
+        assert_eq!(
+            BodyType::from(&Body::Form { fields: vec![] }),
+            BodyType::Form
+        );
+        assert_eq!(
+            BodyType::from(&Body::Binary {
+                file_path: String::new()
+            }),
+            BodyType::Binary
+        );
+        assert_eq!(
+            BodyType::from(&Body::GraphQL {
+                query: String::new(),
+                variables: String::new()
+            }),
+            BodyType::GraphQL
+        );
+        assert_eq!(BodyType::from(&Body::None), BodyType::None);
     }
 }

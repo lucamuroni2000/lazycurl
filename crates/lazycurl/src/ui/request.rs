@@ -298,8 +298,7 @@ fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
         app.body_input.content().to_string()
     } else if let Some(req) = app.current_request() {
         match &req.body {
-            Some(lazycurl_core::types::Body::Json { content }) => content.clone(),
-            Some(lazycurl_core::types::Body::Text { content }) => content.clone(),
+            Some(lazycurl_core::types::Body::Raw { content, .. }) => content.clone(),
             _ => String::new(),
         }
     } else {

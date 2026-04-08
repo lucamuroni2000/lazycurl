@@ -282,6 +282,11 @@ impl CurlCommandBuilder {
         self
     }
 
+    pub fn body_binary(mut self, file_path: &str) -> Self {
+        self.body = Some(format!("@{}", file_path));
+        self
+    }
+
     pub fn form_field(mut self, key: &str, value: &str) -> Self {
         self.form_fields.push((key.to_string(), value.to_string()));
         self

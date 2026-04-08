@@ -440,15 +440,16 @@ fn resolve_request(
 
     // Resolve body
     let resolved_body = match &req.body {
-        Some(Body::Json { content }) => {
+        Some(Body::Raw {
+            content,
+            content_type,
+        }) => {
             let (resolved, s) = resolver.resolve(content)?;
             secrets.extend(s);
-            Some(Body::Json { content: resolved })
-        }
-        Some(Body::Text { content }) => {
-            let (resolved, s) = resolver.resolve(content)?;
-            secrets.extend(s);
-            Some(Body::Text { content: resolved })
+            Some(Body::Raw {
+                content: resolved,
+                content_type: *content_type,
+            })
         }
         Some(Body::Form { fields }) => {
             let mut resolved_fields = Vec::new();

@@ -1,7 +1,7 @@
 use crate::collection::slugify;
 use crate::command::CurlCommandBuilder;
 use crate::config::config_dir;
-use crate::types::{ApiKeyLocation, Auth, Body, Collection, OAuth2Grant, Request};
+use crate::types::{ApiKeyLocation, Auth, Body, Collection, OAuth2Grant, RawBodyType, Request};
 
 use std::path::PathBuf;
 
@@ -68,11 +68,8 @@ pub fn export_curl(request: &Request, secrets: &[String]) -> String {
 
     if let Some(body) = &request.body {
         match body {
-            Body::Json { content } => {
+            Body::Raw { content, .. } => {
                 builder = builder.body_json(content);
-            }
-            Body::Text { content } => {
-                builder = builder.body_text(content);
             }
             Body::Form { fields } => {
                 for field in fields {
@@ -90,6 +87,24 @@ pub fn export_curl(request: &Request, secrets: &[String]) -> String {
                         builder = builder.multipart_file(&part.name, path);
                     }
                 }
+            }
+            Body::Binary { file_path } => {
+                builder = builder.body_binary(file_path);
+            }
+            Body::GraphQL { query, variables } => {
+                let gql_body = if variables.is_empty() {
+                    format!(
+                        "{{\"query\":{}}}",
+                        serde_json::to_string(query).unwrap_or_default()
+                    )
+                } else {
+                    format!(
+                        "{{\"query\":{},\"variables\":{}}}",
+                        serde_json::to_string(query).unwrap_or_default(),
+                        variables
+                    )
+                };
+                builder = builder.body_json(&gql_body);
             }
             Body::None => {}
         }
@@ -237,16 +252,23 @@ fn postman_headers(request: &Request) -> Vec<serde_json::Value> {
 
 fn postman_body(request: &Request) -> Option<serde_json::Value> {
     match &request.body {
-        Some(Body::Json { content }) => Some(serde_json::json!({
-            "mode": "raw",
-            "raw": content,
-            "options": { "raw": { "language": "json" } }
-        })),
-        Some(Body::Text { content }) => Some(serde_json::json!({
-            "mode": "raw",
-            "raw": content,
-            "options": { "raw": { "language": "text" } }
-        })),
+        Some(Body::Raw {
+            content,
+            content_type,
+        }) => {
+            let language = match content_type {
+                RawBodyType::Json => "json",
+                RawBodyType::Text => "text",
+                RawBodyType::Xml => "xml",
+                RawBodyType::Html => "html",
+                RawBodyType::Javascript => "javascript",
+            };
+            Some(serde_json::json!({
+                "mode": "raw",
+                "raw": content,
+                "options": { "raw": { "language": language } }
+            }))
+        }
         Some(Body::Form { fields }) => {
             let items: Vec<serde_json::Value> = fields
                 .iter()
@@ -268,6 +290,14 @@ fn postman_body(request: &Request) -> Option<serde_json::Value> {
                 .collect();
             Some(serde_json::json!({ "mode": "formdata", "formdata": items }))
         }
+        Some(Body::Binary { file_path }) => Some(serde_json::json!({
+            "mode": "file",
+            "file": { "src": file_path }
+        })),
+        Some(Body::GraphQL { query, variables }) => Some(serde_json::json!({
+            "mode": "graphql",
+            "graphql": { "query": query, "variables": variables }
+        })),
         Some(Body::None) | None => None,
     }
 }
@@ -500,19 +530,26 @@ fn openapi_operation(request: &Request) -> serde_json::Value {
 
     if let Some(body) = &request.body {
         match body {
-            Body::Json { content } => {
+            Body::Raw {
+                content,
+                content_type,
+            } => {
+                let ct = content_type.content_type();
+                let example = if matches!(content_type, RawBodyType::Json) {
+                    serde_json::from_str::<serde_json::Value>(content)
+                        .unwrap_or_else(|_| serde_json::Value::String(content.clone()))
+                } else {
+                    serde_json::Value::String(content.clone())
+                };
+                let schema = if matches!(content_type, RawBodyType::Json) {
+                    serde_json::json!({"type": "object"})
+                } else {
+                    serde_json::json!({"type": "string"})
+                };
                 operation["requestBody"] = serde_json::json!({
-                    "content": { "application/json": {
-                        "schema": { "type": "object" },
-                        "example": serde_json::from_str::<serde_json::Value>(content)
-                            .unwrap_or_else(|_| serde_json::Value::String(content.clone()))
-                    }}
-                });
-            }
-            Body::Text { content } => {
-                operation["requestBody"] = serde_json::json!({
-                    "content": { "text/plain": {
-                        "schema": { "type": "string" }, "example": content
+                    "content": { ct: {
+                        "schema": schema,
+                        "example": example
                     }}
                 });
             }
@@ -545,6 +582,31 @@ fn openapi_operation(request: &Request) -> serde_json::Value {
                 operation["requestBody"] = serde_json::json!({
                     "content": { "multipart/form-data": {
                         "schema": { "type": "object", "properties": properties }
+                    }}
+                });
+            }
+            Body::Binary { .. } => {
+                operation["requestBody"] = serde_json::json!({
+                    "content": { "application/octet-stream": {
+                        "schema": { "type": "string", "format": "binary" }
+                    }}
+                });
+            }
+            Body::GraphQL { query, variables } => {
+                let mut example = serde_json::Map::new();
+                example.insert(
+                    "query".to_string(),
+                    serde_json::Value::String(query.clone()),
+                );
+                if !variables.is_empty() {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(variables) {
+                        example.insert("variables".to_string(), v);
+                    }
+                }
+                operation["requestBody"] = serde_json::json!({
+                    "content": { "application/json": {
+                        "schema": { "type": "object" },
+                        "example": example
                     }}
                 });
             }
@@ -753,8 +815,9 @@ mod tests {
             url: "https://api.example.com/users".to_string(),
             headers: vec![],
             params: vec![],
-            body: Some(Body::Json {
+            body: Some(Body::Raw {
                 content: r#"{"name":"Alice"}"#.to_string(),
+                content_type: RawBodyType::Json,
             }),
             auth: None,
         };
@@ -954,8 +1017,9 @@ mod tests {
             url: "https://example.com/api".to_string(),
             headers: vec![],
             params: vec![],
-            body: Some(Body::Json {
+            body: Some(Body::Raw {
                 content: r#"{"key":"value"}"#.to_string(),
+                content_type: RawBodyType::Json,
             }),
             auth: None,
         };
@@ -1053,8 +1117,9 @@ mod tests {
             url: "https://api.example.com/users".to_string(),
             headers: vec![],
             params: vec![],
-            body: Some(Body::Json {
+            body: Some(Body::Raw {
                 content: r#"{"name":"Alice"}"#.to_string(),
+                content_type: RawBodyType::Json,
             }),
             auth: None,
         };
@@ -1081,8 +1146,9 @@ mod tests {
             url: "https://example.com/api/items".to_string(),
             headers: vec![],
             params: vec![],
-            body: Some(Body::Json {
+            body: Some(Body::Raw {
                 content: r#"{"key":"val"}"#.to_string(),
+                content_type: RawBodyType::Json,
             }),
             auth: None,
         };
