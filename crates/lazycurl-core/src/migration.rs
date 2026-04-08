@@ -134,6 +134,113 @@ pub fn migrate_flat_to_project(root: &Path) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
+/// Returns true if any collection file still uses the old `"json"` or `"text"` body types
+/// and the body-type migration marker has not been written yet.
+pub fn needs_body_type_migration(root: &Path) -> bool {
+    if root.join("projects/.body-type-migration-complete").exists() {
+        return false;
+    }
+
+    let projects_dir = root.join("projects");
+    if !projects_dir.exists() {
+        return false;
+    }
+
+    if let Ok(project_entries) = std::fs::read_dir(&projects_dir) {
+        for project_entry in project_entries.flatten() {
+            let collections_dir = project_entry.path().join("collections");
+            if !collections_dir.is_dir() {
+                continue;
+            }
+            if let Ok(col_entries) = std::fs::read_dir(&collections_dir) {
+                for col_entry in col_entries.flatten() {
+                    let path = col_entry.path();
+                    if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                        continue;
+                    }
+                    if let Ok(content) = std::fs::read_to_string(&path) {
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                            if let Some(requests) = val.get("requests").and_then(|r| r.as_array()) {
+                                for req in requests {
+                                    if let Some(body_type) = req
+                                        .get("body")
+                                        .and_then(|b| b.get("type"))
+                                        .and_then(|t| t.as_str())
+                                    {
+                                        if body_type == "json" || body_type == "text" {
+                                            return true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    false
+}
+
+/// Migrate old `"json"` and `"text"` body types to `"raw"` with a `content_type` field.
+pub fn migrate_body_types(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let projects_dir = root.join("projects");
+
+    if let Ok(project_entries) = std::fs::read_dir(&projects_dir) {
+        for project_entry in project_entries.flatten() {
+            let collections_dir = project_entry.path().join("collections");
+            if !collections_dir.is_dir() {
+                continue;
+            }
+            if let Ok(col_entries) = std::fs::read_dir(&collections_dir) {
+                for col_entry in col_entries.flatten() {
+                    let path = col_entry.path();
+                    if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                        continue;
+                    }
+                    let content = std::fs::read_to_string(&path)?;
+                    let mut val: serde_json::Value = serde_json::from_str(&content)?;
+                    let mut changed = false;
+
+                    if let Some(requests) = val.get_mut("requests").and_then(|r| r.as_array_mut()) {
+                        for req in requests.iter_mut() {
+                            if let Some(body) = req.get_mut("body") {
+                                if let Some(body_type) =
+                                    body.get("type").and_then(|t| t.as_str()).map(String::from)
+                                {
+                                    if body_type == "json" || body_type == "text" {
+                                        let content_val = body
+                                            .get("content")
+                                            .cloned()
+                                            .unwrap_or(serde_json::Value::String(String::new()));
+                                        *body = serde_json::json!({
+                                            "type": "raw",
+                                            "content": content_val,
+                                            "content_type": body_type,
+                                        });
+                                        changed = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if changed {
+                        let updated = serde_json::to_string_pretty(&val)?;
+                        std::fs::write(&path, updated)?;
+                    }
+                }
+            }
+        }
+    }
+
+    // Write marker
+    std::fs::write(projects_dir.join(".body-type-migration-complete"), "")?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,5 +339,149 @@ mod tests {
 
         migrate_flat_to_project(root).unwrap();
         assert!(!needs_migration(root));
+    }
+
+    #[test]
+    fn needs_body_type_migration_with_old_json_body() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let project_dir = root.join("projects/default/collections");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        std::fs::write(root.join("projects/.migration-complete"), "").unwrap();
+
+        let collection = serde_json::json!({
+            "id": "00000000-0000-0000-0000-000000000001",
+            "name": "Test",
+            "requests": [{
+                "id": "00000000-0000-0000-0000-000000000002",
+                "name": "Old Request",
+                "method": "GET",
+                "url": "https://example.com",
+                "headers": [],
+                "params": [],
+                "body": {"type": "json", "content": "{\"key\": \"value\"}"}
+            }]
+        });
+        std::fs::write(
+            project_dir.join("test.json"),
+            serde_json::to_string_pretty(&collection).unwrap(),
+        )
+        .unwrap();
+
+        assert!(needs_body_type_migration(root));
+    }
+
+    #[test]
+    fn no_body_type_migration_when_marker_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("projects")).unwrap();
+        std::fs::write(root.join("projects/.body-type-migration-complete"), "").unwrap();
+        assert!(!needs_body_type_migration(root));
+    }
+
+    #[test]
+    fn migrate_body_types_converts_json_and_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let project_dir = root.join("projects/default/collections");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        std::fs::write(root.join("projects/.migration-complete"), "").unwrap();
+
+        let collection = serde_json::json!({
+            "id": "00000000-0000-0000-0000-000000000001",
+            "name": "Test",
+            "requests": [
+                {
+                    "id": "00000000-0000-0000-0000-000000000002",
+                    "name": "JSON Request",
+                    "method": "POST",
+                    "url": "https://api.example.com",
+                    "headers": [],
+                    "params": [],
+                    "body": {"type": "json", "content": "{\"key\": \"value\"}"}
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000003",
+                    "name": "Text Request",
+                    "method": "POST",
+                    "url": "https://api.example.com",
+                    "headers": [],
+                    "params": [],
+                    "body": {"type": "text", "content": "hello world"}
+                }
+            ]
+        });
+        std::fs::write(
+            project_dir.join("test.json"),
+            serde_json::to_string_pretty(&collection).unwrap(),
+        )
+        .unwrap();
+
+        migrate_body_types(root).unwrap();
+
+        let data: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(project_dir.join("test.json")).unwrap())
+                .unwrap();
+
+        let req0_body = &data["requests"][0]["body"];
+        assert_eq!(req0_body["type"], "raw");
+        assert_eq!(req0_body["content"], "{\"key\": \"value\"}");
+        assert_eq!(req0_body["content_type"], "json");
+
+        let req1_body = &data["requests"][1]["body"];
+        assert_eq!(req1_body["type"], "raw");
+        assert_eq!(req1_body["content"], "hello world");
+        assert_eq!(req1_body["content_type"], "text");
+
+        assert!(root.join("projects/.body-type-migration-complete").exists());
+        assert!(!needs_body_type_migration(root));
+    }
+
+    #[test]
+    fn migrate_body_types_leaves_form_and_none_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let project_dir = root.join("projects/default/collections");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        std::fs::write(root.join("projects/.migration-complete"), "").unwrap();
+
+        let collection = serde_json::json!({
+            "id": "00000000-0000-0000-0000-000000000001",
+            "name": "Test",
+            "requests": [
+                {
+                    "id": "00000000-0000-0000-0000-000000000002",
+                    "name": "Form Request",
+                    "method": "POST",
+                    "url": "https://api.example.com",
+                    "headers": [],
+                    "params": [],
+                    "body": {"type": "form", "fields": [{"key": "name", "value": "test", "enabled": true}]}
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000003",
+                    "name": "No Body",
+                    "method": "GET",
+                    "url": "https://api.example.com",
+                    "headers": [],
+                    "params": []
+                }
+            ]
+        });
+        std::fs::write(
+            project_dir.join("test.json"),
+            serde_json::to_string_pretty(&collection).unwrap(),
+        )
+        .unwrap();
+
+        migrate_body_types(root).unwrap();
+
+        let data: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(project_dir.join("test.json")).unwrap())
+                .unwrap();
+
+        assert_eq!(data["requests"][0]["body"]["type"], "form");
+        assert!(data["requests"][1]["body"].is_null());
     }
 }

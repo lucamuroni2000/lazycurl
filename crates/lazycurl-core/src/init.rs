@@ -29,6 +29,11 @@ pub fn initialize(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
         crate::migration::migrate_flat_to_project(root)?;
     }
 
+    // Migrate old json/text body types to raw format
+    if crate::migration::needs_body_type_migration(root) {
+        crate::migration::migrate_body_types(root)?;
+    }
+
     Ok(())
 }
 
