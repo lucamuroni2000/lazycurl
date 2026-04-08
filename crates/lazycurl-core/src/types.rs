@@ -89,6 +89,96 @@ pub enum Body {
     None,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RawBodyType {
+    Json,
+    Text,
+    Xml,
+    Html,
+    Javascript,
+}
+
+impl RawBodyType {
+    pub const ALL: [RawBodyType; 5] = [
+        RawBodyType::Json,
+        RawBodyType::Text,
+        RawBodyType::Xml,
+        RawBodyType::Html,
+        RawBodyType::Javascript,
+    ];
+
+    pub fn content_type(&self) -> &'static str {
+        match self {
+            RawBodyType::Json => "application/json",
+            RawBodyType::Text => "text/plain",
+            RawBodyType::Xml => "application/xml",
+            RawBodyType::Html => "text/html",
+            RawBodyType::Javascript => "application/javascript",
+        }
+    }
+}
+
+impl std::fmt::Display for RawBodyType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RawBodyType::Json => write!(f, "JSON"),
+            RawBodyType::Text => write!(f, "Text"),
+            RawBodyType::Xml => write!(f, "XML"),
+            RawBodyType::Html => write!(f, "HTML"),
+            RawBodyType::Javascript => write!(f, "JavaScript"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BodyType {
+    None,
+    Raw(RawBodyType),
+    Form,
+    Multipart,
+    Binary,
+    GraphQL,
+}
+
+impl BodyType {
+    pub const ALL: [BodyType; 10] = [
+        BodyType::None,
+        BodyType::Raw(RawBodyType::Json),
+        BodyType::Raw(RawBodyType::Text),
+        BodyType::Raw(RawBodyType::Xml),
+        BodyType::Raw(RawBodyType::Html),
+        BodyType::Raw(RawBodyType::Javascript),
+        BodyType::Form,
+        BodyType::Multipart,
+        BodyType::Binary,
+        BodyType::GraphQL,
+    ];
+
+    pub fn content_type(&self) -> Option<&'static str> {
+        match self {
+            BodyType::Raw(raw) => Some(raw.content_type()),
+            BodyType::Form => Some("application/x-www-form-urlencoded"),
+            BodyType::Multipart => Some("multipart/form-data"),
+            BodyType::GraphQL => Some("application/json"),
+            BodyType::Binary | BodyType::None => None,
+        }
+    }
+}
+
+impl std::fmt::Display for BodyType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BodyType::None => write!(f, "None"),
+            BodyType::Raw(raw) => write!(f, "{}", raw),
+            BodyType::Form => write!(f, "Form (url-encoded)"),
+            BodyType::Multipart => write!(f, "Multipart (form-data)"),
+            BodyType::Binary => write!(f, "Binary"),
+            BodyType::GraphQL => write!(f, "GraphQL"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ApiKeyLocation {
@@ -1340,5 +1430,67 @@ mod tests {
                 location: ApiKeyLocation::Header,
             }
         );
+    }
+
+    #[test]
+    fn raw_body_type_content_type() {
+        assert_eq!(RawBodyType::Json.content_type(), "application/json");
+        assert_eq!(RawBodyType::Text.content_type(), "text/plain");
+        assert_eq!(RawBodyType::Xml.content_type(), "application/xml");
+        assert_eq!(RawBodyType::Html.content_type(), "text/html");
+        assert_eq!(
+            RawBodyType::Javascript.content_type(),
+            "application/javascript"
+        );
+    }
+
+    #[test]
+    fn body_type_content_type() {
+        assert_eq!(
+            BodyType::Raw(RawBodyType::Json).content_type(),
+            Some("application/json")
+        );
+        assert_eq!(
+            BodyType::Form.content_type(),
+            Some("application/x-www-form-urlencoded")
+        );
+        assert_eq!(
+            BodyType::Multipart.content_type(),
+            Some("multipart/form-data")
+        );
+        assert_eq!(BodyType::GraphQL.content_type(), Some("application/json"));
+        assert_eq!(BodyType::Binary.content_type(), None);
+        assert_eq!(BodyType::None.content_type(), None);
+    }
+
+    #[test]
+    fn body_type_all_has_10_entries() {
+        assert_eq!(BodyType::ALL.len(), 10);
+    }
+
+    #[test]
+    fn body_type_display() {
+        assert_eq!(format!("{}", BodyType::Raw(RawBodyType::Json)), "JSON");
+        assert_eq!(format!("{}", BodyType::Raw(RawBodyType::Text)), "Text");
+        assert_eq!(format!("{}", BodyType::Raw(RawBodyType::Xml)), "XML");
+        assert_eq!(format!("{}", BodyType::Raw(RawBodyType::Html)), "HTML");
+        assert_eq!(
+            format!("{}", BodyType::Raw(RawBodyType::Javascript)),
+            "JavaScript"
+        );
+        assert_eq!(format!("{}", BodyType::Form), "Form (url-encoded)");
+        assert_eq!(format!("{}", BodyType::Multipart), "Multipart (form-data)");
+        assert_eq!(format!("{}", BodyType::Binary), "Binary");
+        assert_eq!(format!("{}", BodyType::GraphQL), "GraphQL");
+        assert_eq!(format!("{}", BodyType::None), "None");
+    }
+
+    #[test]
+    fn raw_body_type_display() {
+        assert_eq!(format!("{}", RawBodyType::Json), "JSON");
+        assert_eq!(format!("{}", RawBodyType::Text), "Text");
+        assert_eq!(format!("{}", RawBodyType::Xml), "XML");
+        assert_eq!(format!("{}", RawBodyType::Html), "HTML");
+        assert_eq!(format!("{}", RawBodyType::Javascript), "JavaScript");
     }
 }
