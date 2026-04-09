@@ -180,7 +180,14 @@ fn draw_headers(frame: &mut Frame, app: &App, area: Rect, kb: &HashMap<String, S
         return;
     };
 
-    if req.headers.is_empty() {
+    let auto_headers = req
+        .body
+        .as_ref()
+        .map(|b| lazycurl_core::auto_headers::resolve_auto_headers(b, &req.headers))
+        .unwrap_or_default();
+    let has_auto_headers = !auto_headers.is_empty();
+
+    if req.headers.is_empty() && !has_auto_headers {
         let text = Paragraph::new(format!(
             " No headers. Press '{}' to add one.",
             key_for(kb, "add_item")
@@ -193,6 +200,59 @@ fn draw_headers(frame: &mut Frame, app: &App, area: Rect, kb: &HashMap<String, S
     let is_focused = app.active_pane == Pane::Request && !app.url_focused;
     let mut lines = Vec::new();
     let mut cursor_pos: Option<(u16, u16)> = None;
+
+    // Auto-generated headers section
+    let auto_header_lines: usize = if has_auto_headers {
+        if app.show_auto_headers {
+            1 + auto_headers.len() + 1 // label + headers + separator
+        } else {
+            1 // "(N hidden)" label only
+        }
+    } else {
+        0
+    };
+
+    if has_auto_headers {
+        let toggle_key = key_for(kb, "toggle_auto_headers");
+
+        if app.show_auto_headers {
+            // Label
+            let label = format!(
+                " ({} auto-generated) \u{2014} press '{}' to hide",
+                auto_headers.len(),
+                toggle_key,
+            );
+            lines.push(Line::from(Span::styled(
+                label,
+                Style::default().fg(Color::DarkGray),
+            )));
+
+            // Auto headers (dimmed, no checkbox)
+            for h in &auto_headers {
+                lines.push(Line::from(Span::styled(
+                    format!("  {}: {}", h.key, h.value),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+
+            // Separator
+            let sep = "\u{2500}".repeat(area.width as usize);
+            lines.push(Line::from(Span::styled(
+                sep,
+                Style::default().fg(Color::DarkGray),
+            )));
+        } else {
+            let label = format!(
+                " ({} hidden) \u{2014} press '{}' to reveal",
+                auto_headers.len(),
+                toggle_key,
+            );
+            lines.push(Line::from(Span::styled(
+                label,
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+    }
 
     for (i, header) in req.headers.iter().enumerate() {
         let is_selected = i == app.header_cursor && is_focused;
@@ -262,7 +322,7 @@ fn draw_headers(frame: &mut Frame, app: &App, area: Rect, kb: &HashMap<String, S
             if let Some(inp) = app.header_key_inputs.get(i) {
                 let prefix_len = 4; // "[x] "
                 let cx = area.x + prefix_len + inp.cursor() as u16;
-                let cy = area.y + i as u16;
+                let cy = area.y + auto_header_lines as u16 + i as u16;
                 if cx < area.x + area.width && cy < area.y + area.height {
                     cursor_pos = Some((cx, cy));
                 }
@@ -271,7 +331,7 @@ fn draw_headers(frame: &mut Frame, app: &App, area: Rect, kb: &HashMap<String, S
             if let Some(inp) = app.header_value_inputs.get(i) {
                 let prefix_len = 4 + key_display.len() as u16 + 2; // "[x] " + key + ": "
                 let cx = area.x + prefix_len + inp.cursor() as u16;
-                let cy = area.y + i as u16;
+                let cy = area.y + auto_header_lines as u16 + i as u16;
                 if cx < area.x + area.width && cy < area.y + area.height {
                     cursor_pos = Some((cx, cy));
                 }
