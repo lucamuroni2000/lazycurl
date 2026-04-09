@@ -235,6 +235,18 @@ pub async fn handle(app: &mut App, action: &Action) {
                 app.open_auth_picker();
             }
         }
+        Action::CycleBodyType => {
+            if app.active_pane == app::Pane::Request && app.request_tab() == app::RequestTab::Body {
+                app.open_body_type_picker();
+            }
+        }
+        Action::ToggleAutoHeaders => {
+            if app.active_pane == app::Pane::Request
+                && app.request_tab() == app::RequestTab::Headers
+            {
+                app.show_auto_headers = !app.show_auto_headers;
+            }
+        }
         // Editing actions
         Action::CharInput(c) => {
             if let Some(input) = app.active_text_input() {

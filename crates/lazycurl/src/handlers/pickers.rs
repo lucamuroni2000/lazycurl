@@ -270,6 +270,31 @@ pub fn handle_project_picker(app: &mut App, action: &Action) {
     }
 }
 
+/// Handle body type picker actions.
+pub fn handle_body_type_picker(app: &mut App, action: &Action) {
+    match action {
+        Action::Cancel => {
+            app.show_body_type_picker = false;
+        }
+        Action::MoveUp => {
+            if app.body_type_picker_cursor > 0 {
+                app.body_type_picker_cursor -= 1;
+            }
+        }
+        Action::MoveDown => {
+            if app.body_type_picker_cursor + 1 < lazycurl_core::types::BodyType::ALL.len() {
+                app.body_type_picker_cursor += 1;
+            }
+        }
+        Action::Enter => {
+            let body_type = lazycurl_core::types::BodyType::ALL[app.body_type_picker_cursor];
+            app.select_body_type(body_type);
+        }
+        Action::Quit => app.should_quit = true,
+        _ => {}
+    }
+}
+
 /// Handle environment manager actions.
 pub fn handle_env_manager(app: &mut App, action: &Action) {
     // Delete confirmation state

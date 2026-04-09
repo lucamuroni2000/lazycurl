@@ -211,6 +211,8 @@ async fn run_loop(
                 handlers::pickers::handle_method_picker(app, &action);
             } else if app.show_auth_picker {
                 handlers::pickers::handle_auth_picker(app, &action);
+            } else if app.show_body_type_picker {
+                handlers::pickers::handle_body_type_picker(app, &action);
             } else if app.show_export_picker {
                 handlers::pickers::handle_export_picker(app, &action);
             } else if app.show_collection_picker {
