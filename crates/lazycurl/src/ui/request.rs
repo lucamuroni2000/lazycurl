@@ -287,22 +287,92 @@ fn draw_headers(frame: &mut Frame, app: &App, area: Rect, kb: &HashMap<String, S
 }
 
 fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
+    use lazycurl_core::types::{Body, BodyType};
+
+    // Split area: selector row (1 line) + separator (1 line) + content
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // Body type selector row
+            Constraint::Length(1), // Separator
+            Constraint::Min(1),    // Body content
+        ])
+        .split(area);
+
+    // --- Selector row ---
+    let current_body_type = app
+        .current_request()
+        .and_then(|r| r.body.as_ref())
+        .map(BodyType::from)
+        .unwrap_or(BodyType::None);
+
+    let selector_focused = app.active_pane == Pane::Request
+        && !app.url_focused
+        && app.request_tab() == RequestTab::Body
+        && app.body_selector_focused
+        && app.input_mode == InputMode::Normal;
+
+    let selector_style = if selector_focused {
+        Style::default().fg(Color::Black).bg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let selector_text = format!(" Body Type: {} >", current_body_type);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(selector_text, selector_style))),
+        chunks[0],
+    );
+
+    // --- Separator ---
+    let sep = "\u{2500}".repeat(area.width as usize);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            sep,
+            Style::default().fg(Color::DarkGray),
+        ))),
+        chunks[1],
+    );
+
+    // --- Body content ---
+    let current_body = app.current_request().and_then(|r| r.body.clone());
+
+    match &current_body {
+        Some(Body::Raw { content, .. }) => {
+            draw_raw_body_content(frame, app, chunks[2], content);
+        }
+        Some(Body::Form { fields }) => {
+            draw_form_body_content(frame, app, chunks[2], fields);
+        }
+        Some(Body::Multipart { parts }) => {
+            draw_multipart_body_content(frame, app, chunks[2], parts);
+        }
+        Some(Body::Binary { file_path }) => {
+            draw_binary_body_content(frame, app, chunks[2], file_path);
+        }
+        Some(Body::GraphQL { query, variables }) => {
+            draw_graphql_body_content(frame, app, chunks[2], query, variables);
+        }
+        Some(Body::None) | None => {
+            let text = Paragraph::new(" No body").style(Style::default().fg(Color::DarkGray));
+            frame.render_widget(text, chunks[2]);
+        }
+    }
+}
+
+fn draw_raw_body_content(frame: &mut Frame, app: &App, area: Rect, stored_content: &str) {
     let body_editing =
         app.input_mode == InputMode::Editing && app.edit_field == Some(EditField::BodyContent);
     let body_selected = app.active_pane == Pane::Request
         && !app.url_focused
         && app.request_tab() == RequestTab::Body
+        && !app.body_selector_focused
         && !body_editing;
 
     let content = if body_editing {
         app.body_input.content().to_string()
-    } else if let Some(req) = app.current_request() {
-        match &req.body {
-            Some(lazycurl_core::types::Body::Raw { content, .. }) => content.clone(),
-            _ => String::new(),
-        }
     } else {
-        String::new()
+        stored_content.to_string()
     };
 
     let style = if body_editing {
@@ -319,7 +389,6 @@ fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
         format!(" {}", content)
     };
 
-    // Render body text as a single styled line (not filling the whole area)
     let line = Line::from(Span::styled(display, style));
     frame.render_widget(Paragraph::new(line), area);
 
@@ -330,6 +399,203 @@ fn draw_body(frame: &mut Frame, app: &App, area: Rect) {
             frame.set_cursor_position((cursor_x, cursor_y));
         }
     }
+}
+
+fn draw_binary_body_content(frame: &mut Frame, app: &App, area: Rect, stored_path: &str) {
+    let body_editing =
+        app.input_mode == InputMode::Editing && app.edit_field == Some(EditField::BodyContent);
+    let body_selected = app.active_pane == Pane::Request
+        && !app.url_focused
+        && app.request_tab() == RequestTab::Body
+        && !app.body_selector_focused
+        && !body_editing;
+
+    let content = if body_editing {
+        app.body_input.content().to_string()
+    } else {
+        stored_path.to_string()
+    };
+
+    let style = if body_editing {
+        Style::default().fg(Color::White).bg(Color::DarkGray)
+    } else if body_selected {
+        Style::default().fg(Color::Black).bg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let label = Span::styled(" File path: ", Style::default().fg(Color::Yellow));
+    let value = Span::styled(
+        if content.is_empty() && !body_editing {
+            "Press Enter to set file path...".to_string()
+        } else {
+            content.clone()
+        },
+        style,
+    );
+
+    frame.render_widget(Paragraph::new(Line::from(vec![label, value])), area);
+
+    if body_editing {
+        let cursor_x = area.x + 12 + app.body_input.cursor() as u16;
+        let cursor_y = area.y;
+        if cursor_x < area.x + area.width {
+            frame.set_cursor_position((cursor_x, cursor_y));
+        }
+    }
+}
+
+fn draw_graphql_body_content(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    query: &str,
+    variables: &str,
+) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // "Query:" label
+            Constraint::Min(1),    // Query content
+            Constraint::Length(1), // "Variables:" label
+            Constraint::Length(1), // Variables content
+        ])
+        .split(area);
+
+    let editing_query =
+        app.input_mode == InputMode::Editing && app.edit_field == Some(EditField::GraphQLQuery);
+    let editing_vars =
+        app.input_mode == InputMode::Editing && app.edit_field == Some(EditField::GraphQLVariables);
+
+    // Query label
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            " Query:",
+            Style::default().fg(Color::Yellow),
+        ))),
+        chunks[0],
+    );
+
+    // Query content
+    let query_content = if editing_query {
+        app.graphql_query_input.content().to_string()
+    } else {
+        query.to_string()
+    };
+    let query_style = if editing_query {
+        Style::default().fg(Color::White).bg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::White)
+    };
+    let query_display = if query_content.is_empty() && !editing_query {
+        " Press Enter to edit query...".to_string()
+    } else {
+        format!(" {}", query_content)
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(query_display, query_style))),
+        chunks[1],
+    );
+    if editing_query {
+        let cx = chunks[1].x + 1 + app.graphql_query_input.cursor() as u16;
+        let cy = chunks[1].y;
+        if cx < chunks[1].x + chunks[1].width {
+            frame.set_cursor_position((cx, cy));
+        }
+    }
+
+    // Variables label
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            " Variables:",
+            Style::default().fg(Color::Yellow),
+        ))),
+        chunks[2],
+    );
+
+    // Variables content
+    let vars_content = if editing_vars {
+        app.graphql_variables_input.content().to_string()
+    } else {
+        variables.to_string()
+    };
+    let vars_style = if editing_vars {
+        Style::default().fg(Color::White).bg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::White)
+    };
+    let vars_display = if vars_content.is_empty() && !editing_vars {
+        " Press Enter to edit variables...".to_string()
+    } else {
+        format!(" {}", vars_content)
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(vars_display, vars_style))),
+        chunks[3],
+    );
+    if editing_vars {
+        let cx = chunks[3].x + 1 + app.graphql_variables_input.cursor() as u16;
+        let cy = chunks[3].y;
+        if cx < chunks[3].x + chunks[3].width {
+            frame.set_cursor_position((cx, cy));
+        }
+    }
+}
+
+fn draw_form_body_content(
+    frame: &mut Frame,
+    _app: &App,
+    area: Rect,
+    fields: &[lazycurl_core::types::FormField],
+) {
+    if fields.is_empty() {
+        let text = Paragraph::new(" No form fields. Press 'a' to add one.")
+            .style(Style::default().fg(Color::DarkGray));
+        frame.render_widget(text, area);
+        return;
+    }
+
+    let mut lines = Vec::new();
+    for field in fields {
+        let enabled = if field.enabled { " " } else { "x" };
+        let style = Style::default().fg(Color::White);
+        lines.push(Line::from(vec![
+            Span::styled(format!("[{}] ", enabled), style),
+            Span::styled(field.key.clone(), Style::default().fg(Color::Yellow)),
+            Span::styled(": ", style),
+            Span::styled(field.value.clone(), style),
+        ]));
+    }
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
+fn draw_multipart_body_content(
+    frame: &mut Frame,
+    _app: &App,
+    area: Rect,
+    parts: &[lazycurl_core::types::MultipartPart],
+) {
+    if parts.is_empty() {
+        let text = Paragraph::new(" No multipart parts. Press 'a' to add one.")
+            .style(Style::default().fg(Color::DarkGray));
+        frame.render_widget(text, area);
+        return;
+    }
+
+    let mut lines = Vec::new();
+    for part in parts {
+        let value_display = if let Some(path) = &part.file_path {
+            format!("@{}", path)
+        } else {
+            part.value.clone().unwrap_or_default()
+        };
+        lines.push(Line::from(vec![
+            Span::styled(part.name.clone(), Style::default().fg(Color::Yellow)),
+            Span::styled(": ", Style::default().fg(Color::White)),
+            Span::styled(value_display, Style::default().fg(Color::White)),
+        ]));
+    }
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 fn draw_auth(frame: &mut Frame, app: &App, area: Rect, kb: &HashMap<String, String>) {
@@ -636,6 +902,47 @@ pub fn draw_auth_picker(frame: &mut Frame, app: &App, request_area: Rect) {
     let list = List::new(items).block(
         Block::default()
             .title(" Auth Type ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
+    frame.render_widget(list, area);
+}
+
+pub fn draw_body_type_picker(frame: &mut Frame, app: &App, request_area: Rect) {
+    use lazycurl_core::types::BodyType;
+    use ratatui::widgets::{Clear, List, ListItem};
+
+    let items: Vec<ListItem> = BodyType::ALL
+        .iter()
+        .enumerate()
+        .map(|(i, bt)| {
+            let style = if i == app.body_type_picker_cursor {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            ListItem::new(format!(" {} ", bt)).style(style)
+        })
+        .collect();
+
+    let width = 28u16;
+    let height = BodyType::ALL.len() as u16 + 2; // +2 for border
+    let x = request_area.x + 1;
+    let y = request_area.y + 4; // after name + method/url + tabs + body type selector
+    let area = Rect::new(
+        x,
+        y,
+        width.min(request_area.width),
+        height.min(request_area.height.saturating_sub(4)),
+    );
+
+    frame.render_widget(Clear, area);
+    let list = List::new(items).block(
+        Block::default()
+            .title(" Body Type ")
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Cyan)),
     );

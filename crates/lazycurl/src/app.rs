@@ -47,6 +47,8 @@ pub enum EditField {
     NewProjectName,
     /// Editing an auth field by index into auth_inputs
     AuthField(usize),
+    GraphQLQuery,
+    GraphQLVariables,
 }
 
 /// Tracks why the collection picker is open, so the confirm handler dispatches correctly.
@@ -2133,6 +2135,8 @@ impl App {
             | EditField::CollectionName(_)
             | EditField::NewCollectionName
             | EditField::NewProjectName => Some(&mut self.name_input),
+            EditField::GraphQLQuery => Some(&mut self.graphql_query_input),
+            EditField::GraphQLVariables => Some(&mut self.graphql_variables_input),
         }
     }
 
@@ -2318,6 +2322,9 @@ impl App {
             }
             EditField::AuthField(_) => {
                 // Handled via sync_auth_to_request in stop_editing — no-op here
+            }
+            EditField::GraphQLQuery | EditField::GraphQLVariables => {
+                // Editing logic handled in Task 11 — no-op here
             }
         }
     }

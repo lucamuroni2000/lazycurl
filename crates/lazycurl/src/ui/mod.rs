@@ -95,6 +95,13 @@ pub fn draw(frame: &mut Frame, app: &App) {
         }
     }
 
+    // Body type picker (rendered relative to request pane)
+    if app.show_body_type_picker {
+        if let Some(area) = pane_layout.request {
+            request::draw_body_type_picker(frame, app, area);
+        }
+    }
+
     // Overlays (on top of everything)
     if app.show_export_picker {
         export_picker::draw(frame, app, kb);
