@@ -271,6 +271,21 @@ pub struct App {
     // Auth type picker
     pub show_auth_picker: bool,
     pub auth_picker_cursor: usize,
+    // Body type picker
+    pub show_body_type_picker: bool,
+    #[allow(dead_code)]
+    pub body_type_picker_cursor: usize,
+    // Auto-generated headers visibility
+    #[allow(dead_code)]
+    pub show_auto_headers: bool,
+    // Body tab focus: true = selector row, false = content area
+    #[allow(dead_code)]
+    pub body_selector_focused: bool,
+    // GraphQL inputs
+    #[allow(dead_code)]
+    pub graphql_query_input: crate::text_input::TextInput,
+    #[allow(dead_code)]
+    pub graphql_variables_input: crate::text_input::TextInput,
     // Delete confirmation for collections pane
     pub confirm_delete: bool,
     // Environment Manager state
@@ -355,6 +370,12 @@ impl App {
             method_picker_cursor: 0,
             show_auth_picker: false,
             auth_picker_cursor: 0,
+            show_body_type_picker: false,
+            body_type_picker_cursor: 0,
+            show_auto_headers: false,
+            body_selector_focused: true,
+            graphql_query_input: crate::text_input::TextInput::new(""),
+            graphql_variables_input: crate::text_input::TextInput::new(""),
             confirm_delete: false,
             show_env_manager: false,
             env_manager_cursor: 0,
@@ -618,6 +639,7 @@ impl App {
             InputContext::Variables
         } else if self.show_method_picker
             || self.show_auth_picker
+            || self.show_body_type_picker
             || self.show_export_picker
             || self.show_collection_picker
             || self.show_project_picker
@@ -2131,12 +2153,37 @@ impl App {
                 if let Some(ws) = self.active_workspace_mut() {
                     if let Some(request) = &mut ws.data.current_request {
                         if content.is_empty() {
-                            request.body = Option::None;
+                            match &request.body {
+                                Some(lazycurl_core::types::Body::Raw { content_type, .. }) => {
+                                    request.body = Some(lazycurl_core::types::Body::Raw {
+                                        content: String::new(),
+                                        content_type: *content_type,
+                                    });
+                                }
+                                _ => {
+                                    request.body = Option::None;
+                                }
+                            }
                         } else {
-                            request.body = Some(lazycurl_core::types::Body::Raw {
-                                content,
-                                content_type: lazycurl_core::types::RawBodyType::Json,
-                            });
+                            match &request.body {
+                                Some(lazycurl_core::types::Body::Raw { content_type, .. }) => {
+                                    request.body = Some(lazycurl_core::types::Body::Raw {
+                                        content,
+                                        content_type: *content_type,
+                                    });
+                                }
+                                Some(lazycurl_core::types::Body::Binary { .. }) => {
+                                    request.body = Some(lazycurl_core::types::Body::Binary {
+                                        file_path: content,
+                                    });
+                                }
+                                _ => {
+                                    request.body = Some(lazycurl_core::types::Body::Raw {
+                                        content,
+                                        content_type: lazycurl_core::types::RawBodyType::Json,
+                                    });
+                                }
+                            }
                         }
                     }
                 }
@@ -2920,6 +2967,80 @@ impl App {
         self.show_method_picker = false;
     }
 
+    /// Open the body type picker dropdown
+    #[allow(dead_code)]
+    pub fn open_body_type_picker(&mut self) {
+        use lazycurl_core::types::BodyType;
+        let current_body_type = self
+            .current_request()
+            .and_then(|r| r.body.as_ref())
+            .map(BodyType::from)
+            .unwrap_or(BodyType::None);
+        self.body_type_picker_cursor = BodyType::ALL
+            .iter()
+            .position(|&bt| bt == current_body_type)
+            .unwrap_or(0);
+        self.show_body_type_picker = true;
+    }
+
+    /// Set the current request's body type from the picker
+    #[allow(dead_code)]
+    pub fn select_body_type(&mut self, body_type: lazycurl_core::types::BodyType) {
+        use lazycurl_core::types::{Body, BodyType};
+
+        let current_body = self.current_request().and_then(|r| r.body.clone());
+
+        // Extract text content from current body (for preservation between raw types)
+        let current_text = match &current_body {
+            Some(Body::Raw { content, .. }) => Some(content.clone()),
+            _ => None,
+        };
+
+        let new_body = match body_type {
+            BodyType::None => Some(Body::None),
+            BodyType::Raw(raw_type) => {
+                let content = current_text.clone().unwrap_or_default();
+                Some(Body::Raw {
+                    content,
+                    content_type: raw_type,
+                })
+            }
+            BodyType::Form => Some(Body::Form { fields: vec![] }),
+            BodyType::Multipart => Some(Body::Multipart { parts: vec![] }),
+            BodyType::Binary => Some(Body::Binary {
+                file_path: String::new(),
+            }),
+            BodyType::GraphQL => Some(Body::GraphQL {
+                query: String::new(),
+                variables: String::new(),
+            }),
+        };
+
+        if let Some(ws) = self.active_workspace_mut() {
+            if let Some(ref mut req) = ws.data.current_request {
+                req.body = new_body;
+            }
+        }
+
+        // Reset inputs for the new body type
+        match body_type {
+            BodyType::Raw(_) => {
+                let content = current_text.unwrap_or_default();
+                self.body_input = crate::text_input::TextInput::new(&content);
+            }
+            BodyType::Binary => {
+                self.body_input = crate::text_input::TextInput::new("");
+            }
+            BodyType::GraphQL => {
+                self.graphql_query_input = crate::text_input::TextInput::new("");
+                self.graphql_variables_input = crate::text_input::TextInput::new("");
+            }
+            _ => {}
+        }
+
+        self.show_body_type_picker = false;
+    }
+
     /// Set the current request's auth type from the picker
     pub fn select_auth_type(&mut self, index: usize) {
         use lazycurl_core::types::*;
@@ -3652,12 +3773,32 @@ impl App {
         if let Some(request) = &mut ws.data.current_request {
             request.url = url;
             if body_content.is_empty() {
-                request.body = None;
+                match &request.body {
+                    Some(lazycurl_core::types::Body::Raw { content_type, .. }) => {
+                        request.body = Some(lazycurl_core::types::Body::Raw {
+                            content: String::new(),
+                            content_type: *content_type,
+                        });
+                    }
+                    _ => {
+                        request.body = None;
+                    }
+                }
             } else {
-                request.body = Some(lazycurl_core::types::Body::Raw {
-                    content: body_content,
-                    content_type: lazycurl_core::types::RawBodyType::Json,
-                });
+                match &request.body {
+                    Some(lazycurl_core::types::Body::Raw { content_type, .. }) => {
+                        request.body = Some(lazycurl_core::types::Body::Raw {
+                            content: body_content,
+                            content_type: *content_type,
+                        });
+                    }
+                    _ => {
+                        request.body = Some(lazycurl_core::types::Body::Raw {
+                            content: body_content,
+                            content_type: lazycurl_core::types::RawBodyType::Json,
+                        });
+                    }
+                }
             }
             for (i, header) in request.headers.iter_mut().enumerate() {
                 if let Some(k) = header_keys.get(i) {
