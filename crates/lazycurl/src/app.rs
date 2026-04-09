@@ -762,14 +762,34 @@ impl App {
             url,
             headers,
             params,
-            body: entry
-                .request
-                .body_template
-                .or(entry.request.body)
-                .map(|content| Body::Raw {
-                    content,
-                    content_type: lazycurl_core::types::RawBodyType::Json,
-                }),
+            body: {
+                let content = entry.request.body_template.or(entry.request.body);
+                match (content, entry.request.body_type.as_deref()) {
+                    (Some(content), Some(bt)) if bt.starts_with("raw:") => {
+                        let raw_type = match &bt[4..] {
+                            "json" => lazycurl_core::types::RawBodyType::Json,
+                            "text" => lazycurl_core::types::RawBodyType::Text,
+                            "xml" => lazycurl_core::types::RawBodyType::Xml,
+                            "html" => lazycurl_core::types::RawBodyType::Html,
+                            "javascript" => lazycurl_core::types::RawBodyType::Javascript,
+                            _ => lazycurl_core::types::RawBodyType::Json,
+                        };
+                        Some(Body::Raw {
+                            content,
+                            content_type: raw_type,
+                        })
+                    }
+                    (Some(content), Some("graphql")) => Some(Body::GraphQL {
+                        query: content,
+                        variables: String::new(),
+                    }),
+                    (Some(content), _) => Some(Body::Raw {
+                        content,
+                        content_type: lazycurl_core::types::RawBodyType::Json,
+                    }),
+                    (None, _) => None,
+                }
+            },
             auth,
         };
 
@@ -1364,6 +1384,22 @@ impl App {
                             _ => None,
                         }),
                         body_template: None,
+                        body_type: request.body.as_ref().map(|b| match b {
+                            Body::Raw { content_type, .. } => {
+                                format!(
+                                    "raw:{}",
+                                    serde_json::to_value(content_type)
+                                        .unwrap()
+                                        .as_str()
+                                        .unwrap()
+                                )
+                            }
+                            Body::Form { .. } => "form".to_string(),
+                            Body::Multipart { .. } => "multipart".to_string(),
+                            Body::Binary { .. } => "binary".to_string(),
+                            Body::GraphQL { .. } => "graphql".to_string(),
+                            Body::None => "none".to_string(),
+                        }),
                         params: request
                             .params
                             .iter()
@@ -1428,6 +1464,22 @@ impl App {
                         headers: vec![],
                         body: None,
                         body_template: None,
+                        body_type: request.body.as_ref().map(|b| match b {
+                            Body::Raw { content_type, .. } => {
+                                format!(
+                                    "raw:{}",
+                                    serde_json::to_value(content_type)
+                                        .unwrap()
+                                        .as_str()
+                                        .unwrap()
+                                )
+                            }
+                            Body::Form { .. } => "form".to_string(),
+                            Body::Multipart { .. } => "multipart".to_string(),
+                            Body::Binary { .. } => "binary".to_string(),
+                            Body::GraphQL { .. } => "graphql".to_string(),
+                            Body::None => "none".to_string(),
+                        }),
                         params: vec![],
                     },
                     response: None,

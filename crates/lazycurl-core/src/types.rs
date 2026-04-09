@@ -526,6 +526,8 @@ pub struct RequestLogData {
     pub body: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body_template: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub body_type: Option<String>,
     #[serde(default)]
     pub params: Vec<LogParam>,
 }
@@ -844,6 +846,7 @@ mod tests {
                 ],
                 body: Some(r#"{"user": "test"}"#.to_string()),
                 body_template: Some(r#"{"user": "{{username}}"}"#.to_string()),
+                body_type: None,
                 params: vec![LogParam {
                     name: "debug".to_string(),
                     value: "true".to_string(),
@@ -892,6 +895,7 @@ mod tests {
                 headers: vec![],
                 body: None,
                 body_template: None,
+                body_type: None,
                 params: vec![],
             },
             response: None,
@@ -920,6 +924,7 @@ mod tests {
                 headers: vec![],
                 body: None,
                 body_template: None,
+                body_type: None,
                 params: vec![],
             },
             response: None,
@@ -1614,5 +1619,34 @@ mod tests {
             BodyType::GraphQL
         );
         assert_eq!(BodyType::from(&Body::None), BodyType::None);
+    }
+
+    #[test]
+    fn request_log_data_body_type_serialization() {
+        let log = RequestLogData {
+            method: Method::Post,
+            url: "https://example.com".to_string(),
+            url_template: None,
+            headers: vec![],
+            body: Some("{\"key\": \"value\"}".to_string()),
+            body_template: None,
+            body_type: Some("raw:xml".to_string()),
+            params: vec![],
+        };
+        let json = serde_json::to_value(&log).unwrap();
+        assert_eq!(json["body_type"], "raw:xml");
+    }
+
+    #[test]
+    fn request_log_data_body_type_default_none() {
+        // Old log entries without body_type should deserialize with None
+        let json = serde_json::json!({
+            "method": "GET",
+            "url": "https://example.com",
+            "headers": [],
+            "params": []
+        });
+        let log: RequestLogData = serde_json::from_value(json).unwrap();
+        assert!(log.body_type.is_none());
     }
 }

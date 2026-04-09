@@ -245,6 +245,7 @@ mod tests {
                 ],
                 body: Some(r#"{"password": "secret-token-123"}"#.to_string()),
                 body_template: Some(r#"{"password": "{{api_token}}"}"#.to_string()),
+                body_type: None,
                 params: vec![],
             },
             response: Some(ResponseLogData {

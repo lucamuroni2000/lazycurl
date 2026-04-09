@@ -142,6 +142,7 @@ fn test_secrets_redacted_in_logs() {
             headers: vec![],
             body: None,
             body_template: None,
+            body_type: None,
             params: vec![],
         },
         response: Some(ResponseLogData {
@@ -879,6 +880,7 @@ fn test_log_entry_request_id_enables_auth_recovery() {
             headers: vec![],
             body: None,
             body_template: None,
+            body_type: None,
             params: vec![],
         },
         response: None,
