@@ -62,6 +62,8 @@ fn default_preset_keybindings() -> HashMap<String, String> {
     map.insert("toggle_collapse".into(), "space".into());
     map.insert("duplicate_item".into(), "c".into());
     map.insert("move_request".into(), "m".into());
+    map.insert("cycle_body_type".into(), "b".into());
+    map.insert("toggle_auto_headers".into(), "g".into());
     // Log viewer context (7 keys)
     map.insert("log_viewer.filter".into(), "f".into());
     map.insert("log_viewer.clear_filter".into(), "c".into());
@@ -620,7 +622,7 @@ mod tests {
     #[test]
     fn test_vim_preset_v2_overrides() {
         let kb = vim_preset_keybindings();
-        assert_eq!(kb.len(), 47);
+        assert_eq!(kb.len(), 49);
         // Vim-specific navigation
         assert_eq!(kb["move_up"], "k");
         assert_eq!(kb["move_down"], "j");
@@ -661,12 +663,14 @@ mod tests {
         assert_eq!(kb["toggle_collapse"], "space");
         assert_eq!(kb["duplicate_item"], "c");
         assert_eq!(kb["move_request"], "m");
+        assert_eq!(kb["cycle_body_type"], "b");
+        assert_eq!(kb["toggle_auto_headers"], "g");
     }
 
     #[test]
     fn test_default_preset_v2_has_all_keys() {
         let kb = default_preset_keybindings();
-        assert_eq!(kb.len(), 47);
+        assert_eq!(kb.len(), 49);
         // Global
         assert_eq!(kb["quit"], "q");
         assert_eq!(kb["cancel"], "escape");
@@ -685,6 +689,8 @@ mod tests {
         assert_eq!(kb["focus_url"], "ctrl+u");
         assert_eq!(kb["cycle_method"], "ctrl+m");
         assert_eq!(kb["change_auth_type"], "ctrl+a");
+        assert_eq!(kb["cycle_body_type"], "b");
+        assert_eq!(kb["toggle_auto_headers"], "g");
         assert_eq!(kb["move_up"], "up");
         assert_eq!(kb["move_down"], "down");
         assert_eq!(kb["enter"], "enter");

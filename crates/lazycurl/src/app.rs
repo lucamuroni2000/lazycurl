@@ -135,6 +135,8 @@ pub enum Action {
     FocusUrl,
     CycleMethod,
     ChangeAuthType,
+    CycleBodyType,
+    ToggleAutoHeaders,
     // Navigation
     MoveUp,
     MoveDown,

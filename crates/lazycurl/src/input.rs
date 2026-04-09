@@ -79,6 +79,8 @@ fn action_for_key(key: &str) -> Option<(InputContext, Action)> {
         "focus_url" => Some((Global, Action::FocusUrl)),
         "cycle_method" => Some((Global, Action::CycleMethod)),
         "change_auth_type" => Some((Global, Action::ChangeAuthType)),
+        "cycle_body_type" => Some((Global, Action::CycleBodyType)),
+        "toggle_auto_headers" => Some((Global, Action::ToggleAutoHeaders)),
         "move_up" => Some((Global, Action::MoveUp)),
         "move_down" => Some((Global, Action::MoveDown)),
         "enter" => Some((Global, Action::Enter)),
