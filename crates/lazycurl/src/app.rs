@@ -2323,8 +2323,29 @@ impl App {
             EditField::AuthField(_) => {
                 // Handled via sync_auth_to_request in stop_editing — no-op here
             }
-            EditField::GraphQLQuery | EditField::GraphQLVariables => {
-                // Editing logic handled in Task 11 — no-op here
+            EditField::GraphQLQuery => {
+                let content = self.graphql_query_input.content().to_string();
+                if let Some(ws) = self.active_workspace_mut() {
+                    if let Some(request) = &mut ws.data.current_request {
+                        if let Some(lazycurl_core::types::Body::GraphQL { query, .. }) =
+                            &mut request.body
+                        {
+                            *query = content;
+                        }
+                    }
+                }
+            }
+            EditField::GraphQLVariables => {
+                let content = self.graphql_variables_input.content().to_string();
+                if let Some(ws) = self.active_workspace_mut() {
+                    if let Some(request) = &mut ws.data.current_request {
+                        if let Some(lazycurl_core::types::Body::GraphQL { variables, .. }) =
+                            &mut request.body
+                        {
+                            *variables = content;
+                        }
+                    }
+                }
             }
         }
     }
@@ -2339,6 +2360,14 @@ impl App {
             match &request.body {
                 Some(lazycurl_core::types::Body::Raw { content, .. }) => {
                     self.body_input.set_content(content);
+                }
+                Some(lazycurl_core::types::Body::Binary { file_path }) => {
+                    self.body_input.set_content(file_path);
+                }
+                Some(lazycurl_core::types::Body::GraphQL { query, variables }) => {
+                    self.graphql_query_input.set_content(query);
+                    self.graphql_variables_input.set_content(variables);
+                    self.body_input.clear();
                 }
                 _ => {
                     self.body_input.clear();
@@ -2920,7 +2949,25 @@ impl App {
                         }
                     }
                     RequestTab::Body => {
-                        self.start_editing(EditField::BodyContent);
+                        if self.body_selector_focused {
+                            self.open_body_type_picker();
+                        } else {
+                            // Start editing based on current body type
+                            let body_type = self
+                                .current_request()
+                                .and_then(|r| r.body.as_ref())
+                                .map(lazycurl_core::types::BodyType::from);
+                            match body_type {
+                                Some(lazycurl_core::types::BodyType::Raw(_))
+                                | Some(lazycurl_core::types::BodyType::Binary) => {
+                                    self.start_editing(EditField::BodyContent);
+                                }
+                                Some(lazycurl_core::types::BodyType::GraphQL) => {
+                                    self.start_editing(EditField::GraphQLQuery);
+                                }
+                                _ => {}
+                            }
+                        }
                     }
                     RequestTab::Auth => {
                         if self.auth_inputs.is_empty() {
@@ -3152,7 +3199,7 @@ impl App {
                     RequestTab::Headers => self.header_cursor == 0,
                     RequestTab::Params => self.param_cursor == 0,
                     RequestTab::Auth => self.auth_field_cursor == 0,
-                    RequestTab::Body => true,
+                    RequestTab::Body => self.body_selector_focused,
                 };
                 if at_top {
                     self.url_focused = true;
@@ -3161,7 +3208,9 @@ impl App {
                         RequestTab::Headers => self.header_cursor -= 1,
                         RequestTab::Params => self.param_cursor -= 1,
                         RequestTab::Auth => self.auth_field_cursor -= 1,
-                        _ => {}
+                        RequestTab::Body => {
+                            self.body_selector_focused = true;
+                        }
                     }
                 }
             }
@@ -3213,7 +3262,11 @@ impl App {
                             self.auth_field_cursor += 1;
                         }
                     }
-                    _ => {}
+                    RequestTab::Body => {
+                        if self.body_selector_focused {
+                            self.body_selector_focused = false;
+                        }
+                    }
                 }
             }
             Pane::Response => {
@@ -3347,6 +3400,7 @@ impl App {
             RequestTab::Auth => RequestTab::Params,
             RequestTab::Params => RequestTab::Headers,
         };
+        self.body_selector_focused = true;
     }
 
     /// Switch to previous request tab
@@ -3360,6 +3414,7 @@ impl App {
             RequestTab::Auth => RequestTab::Body,
             RequestTab::Params => RequestTab::Auth,
         };
+        self.body_selector_focused = true;
     }
 
     /// Switch to next response tab
