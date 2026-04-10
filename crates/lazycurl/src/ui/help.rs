@@ -179,6 +179,16 @@ pub fn draw(frame: &mut Frame, keybindings: &HashMap<String, String>) {
     ));
     lines.extend(binding_line(
         kb,
+        "cycle_body_type",
+        "Open body type picker (in Body tab)",
+    ));
+    lines.extend(binding_line(
+        kb,
+        "toggle_auto_headers",
+        "Show/hide auto-generated headers (in Headers tab)",
+    ));
+    lines.extend(binding_line(
+        kb,
         "toggle_enabled",
         "Toggle enabled/disabled on selected item",
     ));

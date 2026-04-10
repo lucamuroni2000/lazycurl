@@ -292,8 +292,50 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<Stri
                         hints.extend(hint(kb, "add_item", "add", key_style, hint_style));
                         hints.extend(hint(kb, "delete_item", "delete", key_style, hint_style));
                         hints.extend(hint(kb, "toggle_enabled", "toggle", key_style, hint_style));
+                        hints.extend(hint(
+                            kb,
+                            "toggle_auto_headers",
+                            "auto headers",
+                            key_style,
+                            hint_style,
+                        ));
                     }
-                    RequestTab::Body => {}
+                    RequestTab::Body => {
+                        if app.body_selector_focused {
+                            hints.extend(hint(
+                                kb,
+                                "enter",
+                                "pick type",
+                                key_style,
+                                hint_style,
+                            ));
+                            hints.extend(hint(
+                                kb,
+                                "cycle_body_type",
+                                "body type",
+                                key_style,
+                                hint_style,
+                            ));
+                            hints.push(Span::styled(
+                                key_pair_for(kb, "move_up", "move_down"),
+                                key_style,
+                            ));
+                            hints.push(Span::styled(":navigate ", hint_style));
+                        } else {
+                            hints.push(Span::styled(
+                                key_pair_for(kb, "move_up", "move_down"),
+                                key_style,
+                            ));
+                            hints.push(Span::styled(":navigate ", hint_style));
+                            hints.extend(hint(
+                                kb,
+                                "enter",
+                                "edit",
+                                key_style,
+                                hint_style,
+                            ));
+                        }
+                    }
                     RequestTab::Auth => {
                         if app.auth_inputs.is_empty() {
                             hints.extend(hint(
