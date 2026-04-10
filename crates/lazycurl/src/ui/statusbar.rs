@@ -302,13 +302,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<Stri
                     }
                     RequestTab::Body => {
                         if app.body_selector_focused {
-                            hints.extend(hint(
-                                kb,
-                                "enter",
-                                "pick type",
-                                key_style,
-                                hint_style,
-                            ));
+                            hints.extend(hint(kb, "enter", "pick type", key_style, hint_style));
                             hints.extend(hint(
                                 kb,
                                 "cycle_body_type",
@@ -327,13 +321,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<Stri
                                 key_style,
                             ));
                             hints.push(Span::styled(":navigate ", hint_style));
-                            hints.extend(hint(
-                                kb,
-                                "enter",
-                                "edit",
-                                key_style,
-                                hint_style,
-                            ));
+                            hints.extend(hint(kb, "enter", "edit", key_style, hint_style));
                         }
                     }
                     RequestTab::Auth => {
