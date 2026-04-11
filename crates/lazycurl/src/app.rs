@@ -1922,15 +1922,14 @@ impl App {
             // Delete the entire collection
             if let Some(collection) = ws.data.collections.get(col_idx) {
                 let name = collection.name.clone();
-                let slug_str = lazycurl_core::collection::slugify(&name);
-                let path = config_dir()
+                let collections_dir = config_dir()
                     .join("projects")
                     .join(&ws.data.slug)
-                    .join("collections")
-                    .join(format!("{}.json", slug_str));
-                if path.exists() {
-                    let _ = std::fs::remove_file(&path);
-                }
+                    .join("collections");
+                let _ = lazycurl_core::collection::delete_collection_from_dir(
+                    &collections_dir,
+                    collection,
+                );
 
                 ws.data.collections.remove(col_idx);
 

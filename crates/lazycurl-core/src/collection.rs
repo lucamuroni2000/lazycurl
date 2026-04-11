@@ -90,6 +90,18 @@ pub fn delete_collection(path: &Path) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
+/// Delete a collection from a directory by finding its file via ID.
+pub fn delete_collection_from_dir(
+    dir: &Path,
+    collection: &Collection,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let path = find_path_for(dir, collection);
+    if path.exists() {
+        std::fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
 /// Deep-clone a request with a new UUID and " copy" appended to the name.
 pub fn duplicate_request(original: &crate::types::Request) -> crate::types::Request {
     let mut copy = original.clone();
@@ -223,6 +235,44 @@ mod tests {
         // Both should exist
         assert!(dir.join("test.json").exists());
         assert!(dir.join("test-2.json").exists());
+    }
+
+    #[test]
+    fn test_delete_collection_from_dir_with_slug_collision() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("collections");
+
+        // Two collections with the same name → test.json and test-2.json
+        let c1 = Collection {
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
+            variables: std::collections::HashMap::new(),
+            requests: vec![],
+        };
+        save_collection(&dir, &c1).unwrap();
+
+        let c2 = Collection {
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
+            variables: std::collections::HashMap::new(),
+            requests: vec![],
+        };
+        save_collection(&dir, &c2).unwrap();
+
+        assert!(dir.join("test.json").exists());
+        assert!(dir.join("test-2.json").exists());
+
+        // Delete c2 (the one stored in test-2.json)
+        delete_collection_from_dir(&dir, &c2).unwrap();
+
+        // c2's file should be gone, c1's file should remain
+        assert!(dir.join("test.json").exists());
+        assert!(!dir.join("test-2.json").exists());
+
+        // Only c1 should remain
+        let remaining = list_collections(&dir).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, c1.id);
     }
 
     #[test]
