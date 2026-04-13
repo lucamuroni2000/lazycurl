@@ -64,6 +64,7 @@ fn default_preset_keybindings() -> HashMap<String, String> {
     map.insert("move_request".into(), "m".into());
     map.insert("cycle_body_type".into(), "b".into());
     map.insert("toggle_auto_headers".into(), "g".into());
+    map.insert("open_config".into(), "F9".into());
     // Log viewer context (7 keys)
     map.insert("log_viewer.filter".into(), "f".into());
     map.insert("log_viewer.clear_filter".into(), "c".into());
@@ -622,7 +623,7 @@ mod tests {
     #[test]
     fn test_vim_preset_v2_overrides() {
         let kb = vim_preset_keybindings();
-        assert_eq!(kb.len(), 49);
+        assert_eq!(kb.len(), 50);
         // Vim-specific navigation
         assert_eq!(kb["move_up"], "k");
         assert_eq!(kb["move_down"], "j");
@@ -670,7 +671,7 @@ mod tests {
     #[test]
     fn test_default_preset_v2_has_all_keys() {
         let kb = default_preset_keybindings();
-        assert_eq!(kb.len(), 49);
+        assert_eq!(kb.len(), 50);
         // Global
         assert_eq!(kb["quit"], "q");
         assert_eq!(kb["cancel"], "escape");
@@ -744,5 +745,17 @@ mod tests {
         assert_eq!(kb.get("close_project").unwrap(), "space");
         // cycle_method changed to M in vim
         assert_eq!(kb.get("cycle_method").unwrap(), "M");
+    }
+
+    #[test]
+    fn test_default_preset_has_open_config() {
+        let kb = default_preset_keybindings();
+        assert_eq!(kb.get("open_config").unwrap(), "F9");
+    }
+
+    #[test]
+    fn test_vim_preset_has_open_config() {
+        let kb = vim_preset_keybindings();
+        assert_eq!(kb.get("open_config").unwrap(), "F9");
     }
 }

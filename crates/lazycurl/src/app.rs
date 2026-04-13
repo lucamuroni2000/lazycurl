@@ -136,6 +136,7 @@ pub enum Action {
     RevealSecrets,
     FocusUrl,
     CycleMethod,
+    OpenConfig,
     ChangeAuthType,
     CycleBodyType,
     ToggleAutoHeaders,
@@ -317,6 +318,8 @@ pub struct App {
     pub export_collection_available: bool,
     // OAuth 2.0 browser flow
     pub oauth_flow_active: bool,
+    // Config reload: when set, poll for mtime change and auto-reload
+    pub config_reload_mtime: Option<std::time::SystemTime>,
 }
 
 impl App {
@@ -402,6 +405,7 @@ impl App {
             export_scope_is_collection: false,
             export_collection_available: false,
             oauth_flow_active: false,
+            config_reload_mtime: None,
         }
     }
 

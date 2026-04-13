@@ -218,6 +218,11 @@ pub fn draw(frame: &mut Frame, keybindings: &HashMap<String, String>) {
     lines.push(header("General"));
     lines.extend(binding_line(
         kb,
+        "open_config",
+        "Open config file in editor",
+    ));
+    lines.extend(binding_line(
+        kb,
         "reveal_secrets",
         "Show or hide secret variable values",
     ));

@@ -283,6 +283,21 @@ pub async fn handle(app: &mut App, action: &Action) {
                 input.move_end();
             }
         }
+        Action::OpenConfig => {
+            let config_path = config_dir().join("config.json");
+            if open::that(&config_path).is_ok() {
+                app.status_message = Some("Config opened in editor.".to_string());
+                // Record current mtime so the poll loop detects when the file is saved
+                app.config_reload_mtime = std::fs::metadata(&config_path)
+                    .and_then(|m| m.modified())
+                    .ok();
+            } else {
+                app.status_message = Some(format!(
+                    "Could not open editor. Config at: {}",
+                    config_path.display()
+                ));
+            }
+        }
         _ => {}
     }
 }

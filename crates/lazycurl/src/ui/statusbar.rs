@@ -414,6 +414,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, keybindings: &HashMap<Stri
         hints.extend(hint(kb, "send_request", "send", key_style, hint_style));
         hints.extend(hint(kb, "save_request", "save", key_style, hint_style));
         hints.extend(hint(kb, "open_variables", "vars", key_style, hint_style));
+        hints.extend(hint(kb, "open_config", "config", key_style, hint_style));
         hints.extend(hint(kb, "help", "help", key_style, hint_style));
         hints.extend(hint(kb, "quit", "quit", key_style, hint_style));
     }

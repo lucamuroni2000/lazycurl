@@ -119,13 +119,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Build context-scoped keymaps from config
-    let keymaps = input::build_context_keymaps(&app.config.keybindings);
+    let mut keymaps = input::build_context_keymaps(&app.config.keybindings);
 
     // Load current request fields into text inputs
     app.load_request_into_inputs();
 
     // Main loop
-    let result = run_loop(&mut terminal, &mut app, &keymaps).await;
+    let result = run_loop(&mut terminal, &mut app, &mut keymaps).await;
 
     // Save session state
     app.config.open_projects = app
@@ -151,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
-    keymaps: &ContextKeymaps,
+    keymaps: &mut ContextKeymaps,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         // Auto-dismiss status bar messages after 10 seconds
@@ -164,6 +164,37 @@ async fn run_loop(
         terminal.draw(|frame| {
             ui::draw(frame, app);
         })?;
+
+        // Config auto-reload: poll file mtime while waiting for editor save
+        if let Some(old_mtime) = app.config_reload_mtime {
+            let config_path = lazycurl_core::config::config_dir().join("config.json");
+            let current_mtime = std::fs::metadata(&config_path)
+                .and_then(|m| m.modified())
+                .ok();
+            if current_mtime != Some(old_mtime) {
+                app.config_reload_mtime = None;
+                match AppConfig::load_from(&config_path) {
+                    Ok(new_config) => {
+                        *keymaps = input::build_context_keymaps(&new_config.keybindings);
+                        app.config.keybindings = new_config.keybindings;
+                        app.config.keymap_preset = new_config.keymap_preset;
+                        app.config.default_timeout = new_config.default_timeout;
+                        app.config.max_response_body_size_bytes =
+                            new_config.max_response_body_size_bytes;
+                        app.config.debug_logging = new_config.debug_logging;
+                        app.config.log_retention_days = new_config.log_retention_days;
+                        app.config.max_log_body_size_bytes = new_config.max_log_body_size_bytes;
+                        app.config.variables = new_config.variables;
+                        app.status_message = Some("Config reloaded".to_string());
+                        app.status_message_at = None;
+                    }
+                    Err(e) => {
+                        app.status_message = Some(format!("Config reload failed: {}", e));
+                        app.status_message_at = None;
+                    }
+                }
+            }
+        }
 
         if let Some(Event::Key(key)) = events::poll_event(Duration::from_millis(50))? {
             // Confirmation dialogs bypass the keymap entirely: 'y'/'Y' confirms,

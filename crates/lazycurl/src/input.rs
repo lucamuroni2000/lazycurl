@@ -78,6 +78,7 @@ fn action_for_key(key: &str) -> Option<(InputContext, Action)> {
         "reveal_secrets" => Some((Global, Action::RevealSecrets)),
         "focus_url" => Some((Global, Action::FocusUrl)),
         "cycle_method" => Some((Global, Action::CycleMethod)),
+        "open_config" => Some((Global, Action::OpenConfig)),
         "change_auth_type" => Some((Global, Action::ChangeAuthType)),
         "cycle_body_type" => Some((Global, Action::CycleBodyType)),
         "toggle_auto_headers" => Some((Global, Action::ToggleAutoHeaders)),
