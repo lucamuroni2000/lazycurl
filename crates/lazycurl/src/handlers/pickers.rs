@@ -318,17 +318,6 @@ pub fn handle_import_overlay(app: &mut App, action: &Action) {
             Action::Enter => {
                 app.import_step = crate::app::ImportStep::Input;
                 app.import_text_input = crate::text_input::TextInput::new("");
-                // For Curl format, try to auto-paste from clipboard
-                if app.import_format_cursor == 0 {
-                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                        if let Ok(text) = clipboard.get_text() {
-                            let trimmed = text.trim();
-                            if trimmed.starts_with("curl ") || trimmed.starts_with("curl.exe ") {
-                                app.import_text_input.set_content(trimmed);
-                            }
-                        }
-                    }
-                }
                 app.input_mode = crate::app::InputMode::Editing;
                 app.edit_field = None;
             }
