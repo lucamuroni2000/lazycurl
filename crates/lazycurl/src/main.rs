@@ -61,6 +61,95 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Parse --import, --headless, --format CLI flags
+    let args: Vec<String> = std::env::args().collect();
+    let import_path = args
+        .iter()
+        .position(|a| a == "--import")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
+    let headless = args.iter().any(|a| a == "--headless");
+    let format_override = args
+        .iter()
+        .position(|a| a == "--format")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|f| match f.as_str() {
+            "curl" => Some(lazycurl_core::import::ImportFormat::Curl),
+            "postman" => Some(lazycurl_core::import::ImportFormat::Postman),
+            "openapi" => Some(lazycurl_core::import::ImportFormat::OpenAPI),
+            _ => None,
+        });
+
+    if let Some(ref import_source) = import_path {
+        if headless {
+            let content = if import_source == "-" {
+                use std::io::Read;
+                let mut buf = String::new();
+                std::io::stdin().read_to_string(&mut buf)?;
+                buf
+            } else {
+                std::fs::read_to_string(import_source)?
+            };
+
+            let format = format_override
+                .or_else(|| lazycurl_core::import::detect_format(&content).ok())
+                .ok_or("Could not detect format. Use --format to specify.")?;
+
+            let source = if format == lazycurl_core::import::ImportFormat::Curl {
+                &content
+            } else {
+                import_source.as_str()
+            };
+
+            let result = lazycurl_core::import::import(&format, source);
+
+            match result {
+                Ok(import_result) => {
+                    // Find active project slug
+                    let projects_dir = config_root.join("projects");
+                    let slug = lazycurl_core::project::list_projects(&projects_dir)
+                        .ok()
+                        .and_then(|p| p.into_iter().next())
+                        .map(|(_, path)| path.file_name().unwrap().to_string_lossy().to_string())
+                        .unwrap_or_else(|| "default".to_string());
+
+                    let collections_dir = projects_dir.join(&slug).join("collections");
+                    std::fs::create_dir_all(&collections_dir)?;
+                    lazycurl_core::collection::save_collection(
+                        &collections_dir,
+                        &import_result.collection,
+                    )?;
+
+                    println!(
+                        "Imported \"{}\" into project \"{}\"",
+                        import_result.collection.name, slug
+                    );
+                    println!(
+                        "  {} requests added",
+                        import_result.collection.requests.len()
+                    );
+                    if !import_result.collection.variables.is_empty() {
+                        println!(
+                            "  {} collection variables",
+                            import_result.collection.variables.len()
+                        );
+                    }
+                    if !import_result.warnings.is_empty() {
+                        println!("  {} warnings:", import_result.warnings.len());
+                        for w in &import_result.warnings {
+                            println!("  - {}", w);
+                        }
+                    }
+                    return Ok(());
+                }
+                Err(e) => {
+                    eprintln!("Import failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -123,6 +212,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load current request fields into text inputs
     app.load_request_into_inputs();
+
+    // If --import was provided (non-headless), open overlay with pre-filled path
+    if let Some(ref import_source) = import_path {
+        app.open_import_overlay();
+        if let Some(fmt) = format_override {
+            let idx = lazycurl_core::import::ImportFormat::all()
+                .iter()
+                .position(|f| *f == fmt)
+                .unwrap_or(0);
+            app.import_format_cursor = idx;
+        }
+        app.import_step = app::ImportStep::Input;
+        app.import_text_input.set_content(import_source);
+        app.input_mode = app::InputMode::Editing;
+    }
 
     // Main loop
     let result = run_loop(&mut terminal, &mut app, &mut keymaps).await;
