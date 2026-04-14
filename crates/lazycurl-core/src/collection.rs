@@ -157,6 +157,7 @@ mod tests {
             name: "Test API".to_string(),
             variables: std::collections::HashMap::new(),
             requests: vec![],
+            children: Vec::new(),
         };
 
         save_collection(&dir, &collection).unwrap();
@@ -175,12 +176,14 @@ mod tests {
             name: "First".to_string(),
             variables: std::collections::HashMap::new(),
             requests: vec![],
+            children: Vec::new(),
         };
         let c2 = Collection {
             id: uuid::Uuid::new_v4(),
             name: "Second".to_string(),
             variables: std::collections::HashMap::new(),
             requests: vec![],
+            children: Vec::new(),
         };
 
         save_collection(&dir, &c1).unwrap();
@@ -200,6 +203,7 @@ mod tests {
             name: "Delete Me".to_string(),
             variables: std::collections::HashMap::new(),
             requests: vec![],
+            children: Vec::new(),
         };
 
         save_collection(&dir, &collection).unwrap();
@@ -220,6 +224,7 @@ mod tests {
             name: "Test".to_string(),
             variables: std::collections::HashMap::new(),
             requests: vec![],
+            children: Vec::new(),
         };
         save_collection(&dir, &c1).unwrap();
 
@@ -229,6 +234,7 @@ mod tests {
             name: "Test".to_string(),
             variables: std::collections::HashMap::new(),
             requests: vec![],
+            children: Vec::new(),
         };
         save_collection(&dir, &c2).unwrap();
 
@@ -248,6 +254,7 @@ mod tests {
             name: "Test".to_string(),
             variables: std::collections::HashMap::new(),
             requests: vec![],
+            children: Vec::new(),
         };
         save_collection(&dir, &c1).unwrap();
 
@@ -256,6 +263,7 @@ mod tests {
             name: "Test".to_string(),
             variables: std::collections::HashMap::new(),
             requests: vec![],
+            children: Vec::new(),
         };
         save_collection(&dir, &c2).unwrap();
 
@@ -335,6 +343,7 @@ mod tests {
             name: "My API".to_string(),
             variables: HashMap::new(),
             requests: vec![req1.clone(), req2.clone()],
+            children: Vec::new(),
         };
 
         let copy = duplicate_collection(&original);
@@ -362,6 +371,7 @@ mod tests {
             name: "My API".to_string(),
             variables: std::collections::HashMap::new(),
             requests: vec![],
+            children: Vec::new(),
         };
         save_collection(&dir, &collection).unwrap();
 

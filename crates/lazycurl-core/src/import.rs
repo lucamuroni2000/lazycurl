@@ -353,6 +353,7 @@ pub fn import_curl(input: &str) -> Result<ImportResult, ImportError> {
         name: "Imported Curl Request".to_string(),
         variables: std::collections::HashMap::new(),
         requests: vec![request],
+        children: Vec::new(),
     };
 
     Ok(ImportResult {
@@ -469,6 +470,7 @@ pub fn import_postman(path: &Path) -> Result<ImportResult, ImportError> {
         name,
         variables,
         requests,
+        children: Vec::new(),
     };
 
     Ok(ImportResult {
@@ -960,6 +962,7 @@ pub fn import_openapi(path: &Path) -> Result<ImportResult, ImportError> {
         name: title,
         variables: std::collections::HashMap::new(),
         requests,
+        children: Vec::new(),
     };
 
     Ok(ImportResult {

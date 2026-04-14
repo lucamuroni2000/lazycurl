@@ -1867,6 +1867,7 @@ impl App {
             name: "New Collection".to_string(),
             variables: std::collections::HashMap::new(),
             requests: Vec::new(),
+            children: Vec::new(),
         };
         let collections_dir = config_dir()
             .join("projects")
@@ -2120,6 +2121,7 @@ impl App {
             name: name.clone(),
             variables: std::collections::HashMap::new(),
             requests: vec![request],
+            children: Vec::new(),
         };
         let collections_dir = config_dir()
             .join("projects")

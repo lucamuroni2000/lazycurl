@@ -49,6 +49,7 @@ fn test_full_collection_workflow() {
             body: None,
             auth: Some(Auth::None),
         }],
+        children: Vec::new(),
     };
 
     let col_dir = root.join("collections");
@@ -231,6 +232,7 @@ fn test_project_lifecycle() {
         name: "API".to_string(),
         variables: std::collections::HashMap::new(),
         requests: vec![],
+        children: Vec::new(),
     };
     lazycurl_core::collection::save_collection(&dir.join("collections"), &collection).unwrap();
 
@@ -265,6 +267,7 @@ fn test_migration_then_project_load() {
         name: "Legacy".to_string(),
         variables: std::collections::HashMap::new(),
         requests: vec![],
+        children: Vec::new(),
     };
     lazycurl_core::collection::save_collection(&root.join("collections"), &col).unwrap();
 
@@ -428,6 +431,7 @@ fn test_export_collection_as_postman() {
                 }),
             },
         ],
+        children: Vec::new(),
     };
 
     let json = export_postman_collection(&collection);
@@ -473,6 +477,7 @@ fn test_export_collection_as_openapi() {
                 auth: None,
             },
         ],
+        children: Vec::new(),
     };
 
     let json = export_openapi_collection(&collection);
@@ -515,6 +520,7 @@ fn test_collection_with_oauth2_auth_roundtrip() {
                 refresh_token: "refresh-456".to_string(),
             }),
         }],
+        children: Vec::new(),
     };
 
     lazycurl_core::collection::save_collection(dir.path(), &collection).unwrap();
@@ -596,6 +602,7 @@ fn test_collection_with_digest_auth_roundtrip() {
                 opaque: String::new(),
             }),
         }],
+        children: Vec::new(),
     };
 
     lazycurl_core::collection::save_collection(dir.path(), &collection).unwrap();
@@ -640,6 +647,7 @@ fn test_collection_with_awsv4_auth_roundtrip() {
                 add_to: AwsAddTo::Headers,
             }),
         }],
+        children: Vec::new(),
     };
 
     lazycurl_core::collection::save_collection(dir.path(), &collection).unwrap();
@@ -814,6 +822,7 @@ fn test_collection_save_reload_preserves_all_auth_types() {
         name: "All Auth Types".to_string(),
         variables: HashMap::new(),
         requests,
+        children: Vec::new(),
     };
 
     save_collection(dir.path(), &collection).unwrap();
@@ -902,6 +911,7 @@ fn test_log_entry_request_id_enables_auth_recovery() {
             body: None,
             auth: Some(auth.clone()),
         }],
+        children: Vec::new(),
     };
 
     let mut ws = ProjectWorkspaceData::new(

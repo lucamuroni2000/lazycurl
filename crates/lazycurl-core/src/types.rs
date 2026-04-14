@@ -472,6 +472,8 @@ pub struct Collection {
     pub variables: HashMap<String, Variable>,
     #[serde(default)]
     pub requests: Vec<Request>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<Collection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -773,6 +775,7 @@ mod tests {
             name: "My API".to_string(),
             variables: std::collections::HashMap::new(),
             requests: vec![],
+            children: Vec::new(),
         };
         let json = serde_json::to_string(&collection).unwrap();
         let deserialized: Collection = serde_json::from_str(&json).unwrap();
@@ -974,6 +977,7 @@ mod tests {
                 body: None,
                 auth: Some(auth.clone()),
             }],
+            children: Vec::new(),
         };
         let mut ws = ProjectWorkspaceData::new(
             Project {
@@ -1648,5 +1652,60 @@ mod tests {
         });
         let log: RequestLogData = serde_json::from_value(json).unwrap();
         assert!(log.body_type.is_none());
+    }
+
+    #[test]
+    fn test_collection_children_serde_roundtrip() {
+        let child = Collection {
+            id: uuid::Uuid::new_v4(),
+            name: "Subfolder".to_string(),
+            variables: std::collections::HashMap::new(),
+            requests: vec![Request {
+                id: uuid::Uuid::new_v4(),
+                name: "Child Request".to_string(),
+                method: Method::Get,
+                url: "https://example.com".to_string(),
+                headers: Vec::new(),
+                params: Vec::new(),
+                body: None,
+                auth: None,
+            }],
+            children: Vec::new(),
+        };
+        let parent = Collection {
+            id: uuid::Uuid::new_v4(),
+            name: "Parent".to_string(),
+            variables: std::collections::HashMap::new(),
+            requests: Vec::new(),
+            children: vec![child],
+        };
+        let json = serde_json::to_string(&parent).unwrap();
+        let deserialized: Collection = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.name, "Parent");
+        assert_eq!(deserialized.children.len(), 1);
+        assert_eq!(deserialized.children[0].name, "Subfolder");
+        assert_eq!(deserialized.children[0].requests.len(), 1);
+        assert_eq!(deserialized.children[0].requests[0].name, "Child Request");
+    }
+
+    #[test]
+    fn test_collection_no_children_field_deserializes() {
+        let json = r#"{"id":"00000000-0000-0000-0000-000000000001","name":"Legacy","requests":[]}"#;
+        let col: Collection = serde_json::from_str(json).unwrap();
+        assert_eq!(col.name, "Legacy");
+        assert!(col.children.is_empty());
+    }
+
+    #[test]
+    fn test_collection_empty_children_not_serialized() {
+        let col = Collection {
+            id: uuid::Uuid::new_v4(),
+            name: "Leaf".to_string(),
+            variables: std::collections::HashMap::new(),
+            requests: Vec::new(),
+            children: Vec::new(),
+        };
+        let json = serde_json::to_string(&col).unwrap();
+        assert!(!json.contains("children"));
     }
 }

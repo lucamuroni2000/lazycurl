@@ -1005,6 +1005,7 @@ mod tests {
                 m
             },
             requests: vec![make_request()],
+            children: Vec::new(),
         };
         let json = export_postman_collection(&collection);
         assert_eq!(json["info"]["name"].as_str().unwrap(), "My API");
@@ -1135,6 +1136,7 @@ mod tests {
             name: "User API".to_string(),
             variables: HashMap::new(),
             requests: vec![req1, req2],
+            children: Vec::new(),
         };
         let json = export_openapi_collection(&collection);
         let paths = json["paths"].as_object().unwrap();
