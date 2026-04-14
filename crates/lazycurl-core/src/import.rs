@@ -903,15 +903,25 @@ pub fn import_openapi(path: &Path) -> Result<ImportResult, ImportError> {
                 };
                 let param_in = param.get("in").and_then(|i| i.as_str()).unwrap_or("");
 
+                // Extract example value: param.example > param.schema.example
+                let example_val = param
+                    .get("example")
+                    .or_else(|| param.get("schema").and_then(|s| s.get("example")))
+                    .map(|v| match v.as_str() {
+                        Some(s) => s.to_string(),
+                        None => v.to_string(),
+                    })
+                    .unwrap_or_default();
+
                 match param_in {
                     "query" => params.push(Param {
                         key: param_name,
-                        value: String::new(),
+                        value: example_val,
                         enabled: true,
                     }),
                     "header" => headers.push(Header {
                         key: param_name,
-                        value: String::new(),
+                        value: example_val,
                         enabled: true,
                     }),
                     _ => {} // path and cookie params: not directly mapped
@@ -1879,6 +1889,47 @@ mod tests {
         assert_eq!(req.params[0].key, "q");
         assert_eq!(req.headers.len(), 1);
         assert_eq!(req.headers[0].key, "X-Request-Id");
+    }
+
+    #[test]
+    fn test_openapi_parameter_examples() {
+        let json = r#"{
+            "openapi": "3.0.3",
+            "info": {"title": "Examples", "version": "1.0"},
+            "servers": [{"url": "https://api.test"}],
+            "paths": {
+                "/items": {
+                    "get": {
+                        "operationId": "listItems",
+                        "parameters": [
+                            {"name": "vendor_id", "in": "query", "schema": {"type": "string"}},
+                            {"name": "expand", "in": "query", "example": "parameters%2Cproduct_filter.parameters", "schema": {"type": "string"}},
+                            {"name": "limit", "in": "query", "schema": {"type": "integer", "example": 25}},
+                            {"name": "X-Api-Version", "in": "header", "example": "2024-01-01", "schema": {"type": "string"}}
+                        ]
+                    }
+                }
+            }
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path()).unwrap();
+        let req = &result.collection.requests[0];
+        assert_eq!(req.params.len(), 3);
+        // No example → empty
+        assert_eq!(req.params[0].key, "vendor_id");
+        assert_eq!(req.params[0].value, "");
+        // Param-level example
+        assert_eq!(req.params[1].key, "expand");
+        assert_eq!(
+            req.params[1].value,
+            "parameters%2Cproduct_filter.parameters"
+        );
+        // Schema-level example (integer)
+        assert_eq!(req.params[2].key, "limit");
+        assert_eq!(req.params[2].value, "25");
+        // Header with example
+        assert_eq!(req.headers[0].key, "X-Api-Version");
+        assert_eq!(req.headers[0].value, "2024-01-01");
     }
 
     #[test]
