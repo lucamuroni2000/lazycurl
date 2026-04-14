@@ -91,6 +91,11 @@ pub fn draw(frame: &mut Frame, keybindings: &HashMap<String, String>) {
     lines.extend(binding_line(kb, "switch_env", "Cycle active environment"));
     lines.extend(binding_line(kb, "manage_envs", "Manage environments"));
     lines.extend(binding_line(kb, "open_export", "Export request/collection"));
+    lines.extend(binding_line(
+        kb,
+        "open_import",
+        "Import (Curl/Postman/OpenAPI)",
+    ));
     lines.extend(binding_line(kb, "copy", "Copy response body to clipboard"));
     lines.extend(binding_line(
         kb,
