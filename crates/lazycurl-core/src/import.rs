@@ -791,6 +791,265 @@ fn get_postman_auth_field(
         })
 }
 
+/// Import an OpenAPI 3.x specification file (JSON or YAML).
+pub fn import_openapi(path: &Path) -> Result<ImportResult, ImportError> {
+    let content = std::fs::read_to_string(path)?;
+
+    // Try JSON first, then YAML
+    let root: serde_json::Value = serde_json::from_str(&content).or_else(|_| {
+        serde_yaml::from_str(&content)
+            .map_err(|e| ImportError::ParseError(format!("JSON/YAML parse error: {}", e)))
+    })?;
+
+    // Reject Swagger 2.0
+    if root.get("swagger").is_some() {
+        return Err(ImportError::UnsupportedFormat(
+            "Swagger 2.0 is not supported. Please convert to OpenAPI 3.x.".into(),
+        ));
+    }
+
+    // Validate OpenAPI 3.x
+    if root.get("openapi").is_none() {
+        return Err(ImportError::UnsupportedFormat(
+            "Not an OpenAPI specification (missing 'openapi' field)".into(),
+        ));
+    }
+
+    let title = root
+        .get("info")
+        .and_then(|i| i.get("title"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("Imported OpenAPI")
+        .to_string();
+
+    let base_url = root
+        .get("servers")
+        .and_then(|s| s.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|s| s.get("url"))
+        .and_then(|u| u.as_str())
+        .unwrap_or("")
+        .trim_end_matches('/');
+
+    // Collect security schemes for auth mapping
+    let security_schemes = root
+        .get("components")
+        .and_then(|c| c.get("securitySchemes"))
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+
+    let paths = root
+        .get("paths")
+        .and_then(|p| p.as_object())
+        .ok_or(ImportError::ParseError("Missing 'paths' object".into()))?;
+
+    let mut requests = Vec::new();
+    let warnings = Vec::new();
+
+    let http_methods = ["get", "post", "put", "delete", "patch", "head", "options"];
+
+    for (path_str, path_item) in paths {
+        let path_obj = match path_item.as_object() {
+            Some(o) => o,
+            None => continue,
+        };
+
+        // Path-level parameters
+        let path_params = path_obj
+            .get("parameters")
+            .and_then(|p| p.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        for method_str in &http_methods {
+            let operation = match path_obj.get(*method_str) {
+                Some(op) => op,
+                None => continue,
+            };
+
+            let name = operation
+                .get("operationId")
+                .and_then(|o| o.as_str())
+                .map(String::from)
+                .unwrap_or_else(|| format!("{} {}", method_str.to_uppercase(), path_str));
+
+            let method = parse_method(method_str);
+            let url = if base_url.is_empty() {
+                path_str.to_string()
+            } else {
+                format!("{}{}", base_url, path_str)
+            };
+
+            // Merge path-level and operation-level parameters
+            let op_params = operation
+                .get("parameters")
+                .and_then(|p| p.as_array())
+                .cloned()
+                .unwrap_or_default();
+
+            let all_params: Vec<serde_json::Value> = path_params
+                .iter()
+                .chain(op_params.iter())
+                .cloned()
+                .collect();
+
+            let mut headers = Vec::new();
+            let mut params = Vec::new();
+
+            for param in &all_params {
+                let param_name = match param.get("name").and_then(|n| n.as_str()) {
+                    Some(n) => n.to_string(),
+                    None => continue,
+                };
+                let param_in = param.get("in").and_then(|i| i.as_str()).unwrap_or("");
+
+                match param_in {
+                    "query" => params.push(Param {
+                        key: param_name,
+                        value: String::new(),
+                        enabled: true,
+                    }),
+                    "header" => headers.push(Header {
+                        key: param_name,
+                        value: String::new(),
+                        enabled: true,
+                    }),
+                    _ => {} // path and cookie params: not directly mapped
+                }
+            }
+
+            // Request body
+            let body = parse_openapi_body(operation.get("requestBody"));
+
+            // Auth from security
+            let auth = parse_openapi_security(
+                operation.get("security"),
+                root.get("security"),
+                &security_schemes,
+            );
+
+            requests.push(Request {
+                id: uuid::Uuid::new_v4(),
+                name,
+                method,
+                url,
+                headers,
+                params,
+                body,
+                auth,
+            });
+        }
+    }
+
+    if requests.is_empty() {
+        return Err(ImportError::EmptyImport);
+    }
+
+    let collection = Collection {
+        id: uuid::Uuid::new_v4(),
+        name: title,
+        variables: std::collections::HashMap::new(),
+        requests,
+    };
+
+    Ok(ImportResult {
+        collection,
+        warnings,
+    })
+}
+
+fn parse_openapi_body(body_val: Option<&serde_json::Value>) -> Option<Body> {
+    let body = body_val?;
+    let content = body.get("content")?.as_object()?;
+
+    // Prefer application/json, then first available
+    let (content_type_str, media) = if let Some(json_media) = content.get("application/json") {
+        ("application/json", json_media)
+    } else if let Some((ct, media)) = content.iter().next() {
+        (ct.as_str(), media)
+    } else {
+        return None;
+    };
+
+    // Try example first, then generate from schema
+    let example = media
+        .get("example")
+        .or_else(|| media.get("schema").and_then(|s| s.get("example")));
+
+    if content_type_str.contains("json") {
+        let content_str = match example {
+            Some(ex) => serde_json::to_string_pretty(ex).unwrap_or_default(),
+            None => String::new(),
+        };
+        Some(Body::Raw {
+            content: content_str,
+            content_type: RawBodyType::Json,
+        })
+    } else if content_type_str.contains("xml") {
+        Some(Body::Raw {
+            content: example.and_then(|e| e.as_str()).unwrap_or("").to_string(),
+            content_type: RawBodyType::Xml,
+        })
+    } else {
+        Some(Body::Raw {
+            content: example.and_then(|e| e.as_str()).unwrap_or("").to_string(),
+            content_type: RawBodyType::Text,
+        })
+    }
+}
+
+fn parse_openapi_security(
+    operation_security: Option<&serde_json::Value>,
+    global_security: Option<&serde_json::Value>,
+    schemes: &serde_json::Value,
+) -> Option<Auth> {
+    // Operation-level security overrides global
+    let security = operation_security.or(global_security)?;
+    let arr = security.as_array()?;
+    let first = arr.first()?.as_object()?;
+    let (scheme_name, _) = first.iter().next()?;
+
+    let scheme = schemes.get(scheme_name)?;
+    let scheme_type = scheme.get("type").and_then(|t| t.as_str())?;
+
+    match scheme_type {
+        "http" => {
+            let http_scheme = scheme.get("scheme").and_then(|s| s.as_str()).unwrap_or("");
+            match http_scheme {
+                "bearer" => Some(Auth::Bearer {
+                    token: String::new(),
+                }),
+                "basic" => Some(Auth::Basic {
+                    username: String::new(),
+                    password: String::new(),
+                }),
+                _ => None,
+            }
+        }
+        "apiKey" => {
+            let name = scheme
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("")
+                .to_string();
+            let location_str = scheme
+                .get("in")
+                .and_then(|i| i.as_str())
+                .unwrap_or("header");
+            let location = match location_str {
+                "query" => crate::types::ApiKeyLocation::Query,
+                _ => crate::types::ApiKeyLocation::Header,
+            };
+            Some(Auth::ApiKey {
+                key: name,
+                value: String::new(),
+                location,
+            })
+        }
+        _ => None,
+    }
+}
+
 /// Detect import format from file content.
 pub fn detect_format(content: &str) -> Result<ImportFormat, ImportError> {
     let trimmed = content.trim();
@@ -1509,5 +1768,275 @@ mod tests {
         let path = write_temp_json(json);
         let result = import_postman(path.path()).unwrap();
         assert_eq!(result.collection.requests[0].url, "https://api.test/simple");
+    }
+
+    #[test]
+    fn test_openapi_minimal_json() {
+        let json = r#"{
+            "openapi": "3.0.3",
+            "info": {"title": "Pet API", "version": "1.0"},
+            "servers": [{"url": "https://api.test"}],
+            "paths": {
+                "/pets": {
+                    "get": {
+                        "operationId": "listPets",
+                        "summary": "List all pets"
+                    }
+                }
+            }
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path()).unwrap();
+        assert_eq!(result.collection.name, "Pet API");
+        assert_eq!(result.collection.requests.len(), 1);
+        assert_eq!(result.collection.requests[0].name, "listPets");
+        assert_eq!(result.collection.requests[0].method, Method::Get);
+        assert_eq!(result.collection.requests[0].url, "https://api.test/pets");
+    }
+
+    #[test]
+    fn test_openapi_multiple_paths_methods() {
+        let json = r#"{
+            "openapi": "3.0.3",
+            "info": {"title": "Multi", "version": "1.0"},
+            "servers": [{"url": "https://api.test"}],
+            "paths": {
+                "/users": {
+                    "get": {"operationId": "listUsers"},
+                    "post": {"operationId": "createUser"}
+                },
+                "/users/{id}": {
+                    "get": {"operationId": "getUser"},
+                    "delete": {"operationId": "deleteUser"}
+                }
+            }
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path()).unwrap();
+        assert_eq!(result.collection.requests.len(), 4);
+        let names: Vec<&str> = result
+            .collection
+            .requests
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect();
+        assert!(names.contains(&"listUsers"));
+        assert!(names.contains(&"createUser"));
+        assert!(names.contains(&"getUser"));
+        assert!(names.contains(&"deleteUser"));
+    }
+
+    #[test]
+    fn test_openapi_fallback_name() {
+        let json = r#"{
+            "openapi": "3.0.3",
+            "info": {"title": "No OpId", "version": "1.0"},
+            "servers": [{"url": "https://api.test"}],
+            "paths": {
+                "/health": {
+                    "get": {"summary": "Health check"}
+                }
+            }
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path()).unwrap();
+        assert_eq!(result.collection.requests[0].name, "GET /health");
+    }
+
+    #[test]
+    fn test_openapi_parameters() {
+        let json = r#"{
+            "openapi": "3.0.3",
+            "info": {"title": "Params", "version": "1.0"},
+            "servers": [{"url": "https://api.test"}],
+            "paths": {
+                "/search": {
+                    "get": {
+                        "operationId": "search",
+                        "parameters": [
+                            {"name": "q", "in": "query", "schema": {"type": "string"}},
+                            {"name": "X-Request-Id", "in": "header", "schema": {"type": "string"}}
+                        ]
+                    }
+                }
+            }
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path()).unwrap();
+        let req = &result.collection.requests[0];
+        assert_eq!(req.params.len(), 1);
+        assert_eq!(req.params[0].key, "q");
+        assert_eq!(req.headers.len(), 1);
+        assert_eq!(req.headers[0].key, "X-Request-Id");
+    }
+
+    #[test]
+    fn test_openapi_request_body() {
+        let json = r#"{
+            "openapi": "3.0.3",
+            "info": {"title": "Body", "version": "1.0"},
+            "servers": [{"url": "https://api.test"}],
+            "paths": {
+                "/users": {
+                    "post": {
+                        "operationId": "createUser",
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "example": {"name": "Alice", "age": 30}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path()).unwrap();
+        match &result.collection.requests[0].body {
+            Some(Body::Raw {
+                content,
+                content_type,
+            }) => {
+                assert_eq!(*content_type, RawBodyType::Json);
+                let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
+                assert_eq!(parsed["name"], "Alice");
+            }
+            other => panic!("Expected Raw JSON body, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_openapi_no_servers() {
+        let json = r#"{
+            "openapi": "3.0.3",
+            "info": {"title": "No Server", "version": "1.0"},
+            "paths": {
+                "/test": {
+                    "get": {"operationId": "test"}
+                }
+            }
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path()).unwrap();
+        assert_eq!(result.collection.requests[0].url, "/test");
+    }
+
+    #[test]
+    fn test_openapi_yaml() {
+        use std::io::Write;
+        let yaml = r#"
+openapi: "3.0.3"
+info:
+  title: YAML API
+  version: "1.0"
+servers:
+  - url: https://yaml.test
+paths:
+  /items:
+    get:
+      operationId: listItems
+"#;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(yaml.as_bytes()).unwrap();
+        file.flush().unwrap();
+        let result = import_openapi(file.path()).unwrap();
+        assert_eq!(result.collection.name, "YAML API");
+        assert_eq!(result.collection.requests[0].url, "https://yaml.test/items");
+    }
+
+    #[test]
+    fn test_openapi_swagger2_rejected() {
+        let json = r#"{
+            "swagger": "2.0",
+            "info": {"title": "Old", "version": "1.0"},
+            "paths": {}
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path());
+        assert!(matches!(result, Err(ImportError::UnsupportedFormat(_))));
+    }
+
+    #[test]
+    fn test_openapi_empty_paths() {
+        let json = r#"{
+            "openapi": "3.0.3",
+            "info": {"title": "Empty", "version": "1.0"},
+            "paths": {}
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path());
+        assert!(matches!(result, Err(ImportError::EmptyImport)));
+    }
+
+    #[test]
+    fn test_openapi_bearer_security() {
+        let json = r#"{
+            "openapi": "3.0.3",
+            "info": {"title": "Secured", "version": "1.0"},
+            "servers": [{"url": "https://api.test"}],
+            "paths": {
+                "/secret": {
+                    "get": {
+                        "operationId": "getSecret",
+                        "security": [{"bearerAuth": []}]
+                    }
+                }
+            },
+            "components": {
+                "securitySchemes": {
+                    "bearerAuth": {
+                        "type": "http",
+                        "scheme": "bearer"
+                    }
+                }
+            }
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path()).unwrap();
+        match &result.collection.requests[0].auth {
+            Some(Auth::Bearer { token }) => assert_eq!(token, ""),
+            other => panic!("Expected Bearer auth, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_openapi_apikey_security() {
+        let json = r#"{
+            "openapi": "3.0.3",
+            "info": {"title": "ApiKey", "version": "1.0"},
+            "servers": [{"url": "https://api.test"}],
+            "paths": {
+                "/data": {
+                    "get": {
+                        "operationId": "getData",
+                        "security": [{"apiKeyAuth": []}]
+                    }
+                }
+            },
+            "components": {
+                "securitySchemes": {
+                    "apiKeyAuth": {
+                        "type": "apiKey",
+                        "in": "header",
+                        "name": "X-API-Key"
+                    }
+                }
+            }
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path()).unwrap();
+        match &result.collection.requests[0].auth {
+            Some(Auth::ApiKey {
+                key,
+                value,
+                location,
+            }) => {
+                assert_eq!(key, "X-API-Key");
+                assert_eq!(value, "");
+                assert_eq!(*location, crate::types::ApiKeyLocation::Header);
+            }
+            other => panic!("Expected ApiKey auth, got {:?}", other),
+        }
     }
 }
