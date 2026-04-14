@@ -454,14 +454,22 @@ pub fn import_postman(path: &Path) -> Result<ImportResult, ImportError> {
         }
     }
 
-    // Flatten and parse items
+    // Parse items with hierarchy
     let mut requests = Vec::new();
+    let mut children = Vec::new();
     let mut warnings = Vec::new();
     if let Some(items) = root.get("item").and_then(|i| i.as_array()) {
-        flatten_postman_items(items, &mut requests, &mut warnings);
+        let parent_auth = parse_postman_auth(root.get("auth"));
+        parse_postman_items(
+            items,
+            &mut requests,
+            &mut children,
+            &mut warnings,
+            parent_auth.as_ref(),
+        );
     }
 
-    if requests.is_empty() {
+    if requests.is_empty() && children.is_empty() {
         return Err(ImportError::EmptyImport);
     }
 
@@ -470,7 +478,7 @@ pub fn import_postman(path: &Path) -> Result<ImportResult, ImportError> {
         name,
         variables,
         requests,
-        children: Vec::new(),
+        children,
     };
 
     Ok(ImportResult {
@@ -479,19 +487,44 @@ pub fn import_postman(path: &Path) -> Result<ImportResult, ImportError> {
     })
 }
 
-fn flatten_postman_items(
+fn parse_postman_items(
     items: &[serde_json::Value],
     requests: &mut Vec<Request>,
+    children: &mut Vec<Collection>,
     warnings: &mut Vec<ImportWarning>,
+    parent_auth: Option<&Auth>,
 ) {
     for item in items {
-        // If item has nested "item" array, it's a folder — recurse
         if let Some(sub_items) = item.get("item").and_then(|i| i.as_array()) {
-            flatten_postman_items(sub_items, requests, warnings);
+            let folder_name = item
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("Unnamed Folder")
+                .to_string();
+
+            let folder_auth = parse_postman_auth(item.get("auth"));
+            let effective_auth = folder_auth.as_ref().or(parent_auth);
+
+            let mut folder_requests = Vec::new();
+            let mut folder_children = Vec::new();
+            parse_postman_items(
+                sub_items,
+                &mut folder_requests,
+                &mut folder_children,
+                warnings,
+                effective_auth,
+            );
+
+            children.push(Collection {
+                id: uuid::Uuid::new_v4(),
+                name: folder_name,
+                variables: std::collections::HashMap::new(),
+                requests: folder_requests,
+                children: folder_children,
+            });
             continue;
         }
 
-        // Otherwise it's a request
         let request_obj = match item.get("request") {
             Some(r) => r,
             None => continue,
@@ -504,7 +537,12 @@ fn flatten_postman_items(
             .to_string();
 
         match parse_postman_request(request_obj, &item_name) {
-            Ok(req) => requests.push(req),
+            Ok(mut req) => {
+                if req.auth.is_none() {
+                    req.auth = parent_auth.cloned();
+                }
+                requests.push(req);
+            }
             Err(msg) => warnings.push(ImportWarning {
                 request_name: Some(item_name),
                 message: msg,
@@ -557,6 +595,19 @@ fn parse_postman_url(url_val: Option<&serde_json::Value>) -> (String, Vec<Param>
         .and_then(|r| r.as_str())
         .unwrap_or("")
         .to_string();
+
+    // Convert Postman path variables :param to {{param}} syntax
+    let raw = raw
+        .split('/')
+        .map(|segment| {
+            if let Some(name) = segment.strip_prefix(':') {
+                format!("{{{{{}}}}}", name)
+            } else {
+                segment.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/");
 
     // If structured query params exist, use those (they have disabled state)
     if let Some(query) = url_val.get("query").and_then(|q| q.as_array()) {
@@ -742,7 +793,7 @@ fn parse_postman_auth(auth_val: Option<&serde_json::Value>) -> Option<Auth> {
 
     match auth_type {
         "bearer" => {
-            let token = get_postman_auth_field(auth, "bearer", "token")?;
+            let token = get_postman_auth_field(auth, "bearer", "token").unwrap_or_default();
             Some(Auth::Bearer { token })
         }
         "basic" => {
@@ -1424,6 +1475,7 @@ mod tests {
         assert_eq!(result.collection.requests[0].name, "Get Users");
         assert_eq!(result.collection.requests[0].method, Method::Get);
         assert_eq!(result.collection.requests[0].url, "https://api.test/users");
+        assert!(result.collection.children.is_empty());
     }
 
     #[test]
@@ -1496,9 +1548,177 @@ mod tests {
         }"#;
         let path = write_temp_json(json);
         let result = import_postman(path.path()).unwrap();
-        assert_eq!(result.collection.requests.len(), 2);
-        assert_eq!(result.collection.requests[0].name, "Get Users");
-        assert_eq!(result.collection.requests[1].name, "Deep Request");
+        assert_eq!(result.collection.requests.len(), 0);
+        assert_eq!(result.collection.children.len(), 1);
+        let users_folder = &result.collection.children[0];
+        assert_eq!(users_folder.name, "Users Folder");
+        assert_eq!(users_folder.requests.len(), 1);
+        assert_eq!(users_folder.requests[0].name, "Get Users");
+        assert_eq!(users_folder.children.len(), 1);
+        let inner = &users_folder.children[0];
+        assert_eq!(inner.name, "Inner Folder");
+        assert_eq!(inner.requests.len(), 1);
+        assert_eq!(inner.requests[0].name, "Deep Request");
+        assert_eq!(inner.requests[0].method, Method::Post);
+    }
+
+    #[test]
+    fn test_postman_auth_inheritance() {
+        let json = r#"{
+            "info": {
+                "name": "Auth Inherit",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": [
+                {
+                    "name": "Admin",
+                    "auth": {
+                        "type": "bearer",
+                        "bearer": [{"key": "token", "value": "folder-token"}]
+                    },
+                    "item": [
+                        {
+                            "name": "No Auth Request",
+                            "request": {
+                                "method": "GET",
+                                "url": {"raw": "https://api.test/admin/list"}
+                            }
+                        },
+                        {
+                            "name": "Own Auth Request",
+                            "request": {
+                                "method": "GET",
+                                "url": {"raw": "https://api.test/admin/special"},
+                                "auth": {
+                                    "type": "basic",
+                                    "basic": [
+                                        {"key": "username", "value": "alice"},
+                                        {"key": "password", "value": "pass"}
+                                    ]
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path()).unwrap();
+        let admin = &result.collection.children[0];
+        match &admin.requests[0].auth {
+            Some(Auth::Bearer { token }) => assert_eq!(token, "folder-token"),
+            other => panic!("Expected inherited Bearer auth, got {:?}", other),
+        }
+        match &admin.requests[1].auth {
+            Some(Auth::Basic { username, .. }) => assert_eq!(username, "alice"),
+            other => panic!("Expected own Basic auth, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_postman_three_levels_deep() {
+        let json = r#"{
+            "info": {
+                "name": "Deep",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": [
+                {
+                    "name": "L1",
+                    "item": [
+                        {
+                            "name": "L2",
+                            "item": [
+                                {
+                                    "name": "L3",
+                                    "item": [
+                                        {
+                                            "name": "Deep",
+                                            "request": {
+                                                "method": "GET",
+                                                "url": {"raw": "https://api.test/deep"}
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path()).unwrap();
+        let l1 = &result.collection.children[0];
+        assert_eq!(l1.name, "L1");
+        let l2 = &l1.children[0];
+        assert_eq!(l2.name, "L2");
+        let l3 = &l2.children[0];
+        assert_eq!(l3.name, "L3");
+        assert_eq!(l3.requests[0].name, "Deep");
+    }
+
+    #[test]
+    fn test_postman_mixed_requests_and_folders() {
+        let json = r#"{
+            "info": {
+                "name": "Mixed",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": [
+                {
+                    "name": "Folder A",
+                    "item": [
+                        {
+                            "name": "Req In Folder",
+                            "request": {"method": "GET", "url": {"raw": "https://api.test/a"}}
+                        }
+                    ]
+                },
+                {
+                    "name": "Root Request",
+                    "request": {"method": "POST", "url": {"raw": "https://api.test/root"}}
+                }
+            ]
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path()).unwrap();
+        assert_eq!(result.collection.requests.len(), 1);
+        assert_eq!(result.collection.requests[0].name, "Root Request");
+        assert_eq!(result.collection.children.len(), 1);
+        assert_eq!(result.collection.children[0].name, "Folder A");
+        assert_eq!(
+            result.collection.children[0].requests[0].name,
+            "Req In Folder"
+        );
+    }
+
+    #[test]
+    fn test_postman_url_path_variables() {
+        let json = r#"{
+            "info": {
+                "name": "Path Var Test",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": [
+                {
+                    "name": "Get Order",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/orders/:id",
+                            "path": ["orders", ":id"],
+                            "host": ["{{baseUrl}}"],
+                            "variable": [{"key": "id", "type": "string"}]
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path()).unwrap();
+        let req = &result.collection.requests[0];
+        assert_eq!(req.url, "{{baseUrl}}/orders/{{id}}");
     }
 
     #[test]
