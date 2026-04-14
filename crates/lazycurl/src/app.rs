@@ -66,6 +66,23 @@ pub enum PickerContext {
     },
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImportStep {
+    FormatSelect,
+    Input,
+    Result,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImportResultDisplay {
+    pub success: bool,
+    pub collection_name: String,
+    pub request_count: usize,
+    pub variable_count: usize,
+    pub warnings: Vec<String>,
+    pub error: Option<String>,
+}
+
 /// Tracks a duplicate-in-progress so Esc can cancel it.
 #[derive(Debug, Clone)]
 pub enum PendingDuplicate {
@@ -131,6 +148,7 @@ pub enum Action {
     ManageEnvironments,
     OpenVariables,
     OpenExportPicker,
+    OpenImportOverlay,
     OpenLogViewer,
     OpenProjectPicker,
     RevealSecrets,
@@ -316,6 +334,12 @@ pub struct App {
     pub export_format_cursor: usize,
     pub export_scope_is_collection: bool,
     pub export_collection_available: bool,
+    // Import overlay
+    pub show_import_overlay: bool,
+    pub import_step: ImportStep,
+    pub import_format_cursor: usize,
+    pub import_text_input: crate::text_input::TextInput,
+    pub import_result: Option<ImportResultDisplay>,
     // OAuth 2.0 browser flow
     pub oauth_flow_active: bool,
     // Config reload: when set, poll for mtime change and auto-reload
@@ -404,6 +428,11 @@ impl App {
             export_format_cursor: 0,
             export_scope_is_collection: false,
             export_collection_available: false,
+            show_import_overlay: false,
+            import_step: ImportStep::FormatSelect,
+            import_format_cursor: 0,
+            import_text_input: crate::text_input::TextInput::new(""),
+            import_result: None,
             oauth_flow_active: false,
             config_reload_mtime: None,
         }
@@ -438,6 +467,14 @@ impl App {
             self.active_pane == Pane::Collections && self.export_collection_available;
         self.export_format_cursor = 0;
         self.show_export_picker = true;
+    }
+
+    pub fn open_import_overlay(&mut self) {
+        self.import_step = ImportStep::FormatSelect;
+        self.import_format_cursor = 0;
+        self.import_text_input = crate::text_input::TextInput::new("");
+        self.import_result = None;
+        self.show_import_overlay = true;
     }
 
     pub fn export_formats(&self) -> &'static [ExportFormat] {
@@ -647,6 +684,7 @@ impl App {
             || self.show_auth_picker
             || self.show_body_type_picker
             || self.show_export_picker
+            || self.show_import_overlay
             || self.show_collection_picker
             || self.show_project_picker
             || self.show_env_manager

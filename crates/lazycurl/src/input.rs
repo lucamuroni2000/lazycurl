@@ -73,6 +73,7 @@ fn action_for_key(key: &str) -> Option<(InputContext, Action)> {
         "manage_envs" => Some((Global, Action::ManageEnvironments)),
         "open_variables" => Some((Global, Action::OpenVariables)),
         "open_export" => Some((Global, Action::OpenExportPicker)),
+        "open_import" => Some((Global, Action::OpenImportOverlay)),
         "open_log_viewer" => Some((Global, Action::OpenLogViewer)),
         "open_project_picker" => Some((Global, Action::OpenProjectPicker)),
         "reveal_secrets" => Some((Global, Action::RevealSecrets)),

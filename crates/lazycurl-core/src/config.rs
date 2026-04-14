@@ -33,6 +33,7 @@ fn default_preset_keybindings() -> HashMap<String, String> {
     map.insert("manage_envs".into(), "ctrl+shift+e".into());
     map.insert("open_variables".into(), "V".into());
     map.insert("open_export".into(), "ctrl+x".into());
+    map.insert("open_import".into(), "ctrl+i".into());
     map.insert("open_log_viewer".into(), "ctrl+l".into());
     map.insert("open_project_picker".into(), "ctrl+o".into());
     map.insert("reveal_secrets".into(), "f8".into());
@@ -98,6 +99,7 @@ fn vim_preset_keybindings() -> HashMap<String, String> {
     map.insert("open_project_picker".into(), "p".into());
     map.insert("open_variables".into(), "v".into());
     map.insert("open_export".into(), "x".into());
+    map.insert("open_import".into(), "I".into());
     map.insert("open_log_viewer".into(), "L".into());
     map.insert("focus_url".into(), "u".into());
     map.insert("cycle_method".into(), "M".into());
