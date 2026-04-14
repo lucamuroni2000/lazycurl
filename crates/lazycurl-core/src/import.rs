@@ -1,7 +1,9 @@
 use std::fmt;
+use std::path::Path;
 
 use crate::types::{
     Auth, Body, Collection, FormField, Header, Method, MultipartPart, Param, RawBodyType, Request,
+    Variable,
 };
 
 /// Supported import formats.
@@ -402,6 +404,393 @@ fn extract_query_params(url: &str) -> (String, Vec<Param>) {
     }
 }
 
+/// Import a Postman Collection v2.1 JSON file.
+pub fn import_postman(path: &Path) -> Result<ImportResult, ImportError> {
+    let content = std::fs::read_to_string(path)?;
+    let root: serde_json::Value = serde_json::from_str(&content)?;
+
+    // Validate schema
+    let schema = root
+        .get("info")
+        .and_then(|i| i.get("schema"))
+        .and_then(|s| s.as_str())
+        .unwrap_or("");
+    if !schema.contains("postman") {
+        return Err(ImportError::UnsupportedFormat(
+            "Not a Postman collection (missing schema field)".into(),
+        ));
+    }
+    if !schema.contains("v2.1") && !schema.contains("v2.0") {
+        return Err(ImportError::UnsupportedFormat(format!(
+            "Unsupported Postman schema version: {}",
+            schema
+        )));
+    }
+
+    let name = root
+        .get("info")
+        .and_then(|i| i.get("name"))
+        .and_then(|n| n.as_str())
+        .unwrap_or("Imported Collection")
+        .to_string();
+
+    // Parse collection variables
+    let mut variables = std::collections::HashMap::new();
+    if let Some(vars) = root.get("variable").and_then(|v| v.as_array()) {
+        for var in vars {
+            if let (Some(key), Some(value)) = (
+                var.get("key").and_then(|k| k.as_str()),
+                var.get("value").and_then(|v| v.as_str()),
+            ) {
+                variables.insert(
+                    key.to_string(),
+                    Variable {
+                        value: value.to_string(),
+                        secret: false,
+                    },
+                );
+            }
+        }
+    }
+
+    // Flatten and parse items
+    let mut requests = Vec::new();
+    let mut warnings = Vec::new();
+    if let Some(items) = root.get("item").and_then(|i| i.as_array()) {
+        flatten_postman_items(items, &mut requests, &mut warnings);
+    }
+
+    if requests.is_empty() {
+        return Err(ImportError::EmptyImport);
+    }
+
+    let collection = Collection {
+        id: uuid::Uuid::new_v4(),
+        name,
+        variables,
+        requests,
+    };
+
+    Ok(ImportResult {
+        collection,
+        warnings,
+    })
+}
+
+fn flatten_postman_items(
+    items: &[serde_json::Value],
+    requests: &mut Vec<Request>,
+    warnings: &mut Vec<ImportWarning>,
+) {
+    for item in items {
+        // If item has nested "item" array, it's a folder — recurse
+        if let Some(sub_items) = item.get("item").and_then(|i| i.as_array()) {
+            flatten_postman_items(sub_items, requests, warnings);
+            continue;
+        }
+
+        // Otherwise it's a request
+        let request_obj = match item.get("request") {
+            Some(r) => r,
+            None => continue,
+        };
+
+        let item_name = item
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("Unnamed Request")
+            .to_string();
+
+        match parse_postman_request(request_obj, &item_name) {
+            Ok(req) => requests.push(req),
+            Err(msg) => warnings.push(ImportWarning {
+                request_name: Some(item_name),
+                message: msg,
+            }),
+        }
+    }
+}
+
+fn parse_postman_request(req: &serde_json::Value, name: &str) -> Result<Request, String> {
+    let method_str = req.get("method").and_then(|m| m.as_str()).unwrap_or("GET");
+    let method = parse_method(method_str);
+
+    // URL can be a string or an object with "raw"
+    let (url, params) = parse_postman_url(req.get("url"));
+
+    // Headers
+    let headers = parse_postman_headers(req.get("header"));
+
+    // Body
+    let body = parse_postman_body(req.get("body"));
+
+    // Auth
+    let auth = parse_postman_auth(req.get("auth"));
+
+    Ok(Request {
+        id: uuid::Uuid::new_v4(),
+        name: name.to_string(),
+        method,
+        url,
+        headers,
+        params,
+        body,
+        auth,
+    })
+}
+
+fn parse_postman_url(url_val: Option<&serde_json::Value>) -> (String, Vec<Param>) {
+    let url_val = match url_val {
+        Some(v) => v,
+        None => return (String::new(), Vec::new()),
+    };
+
+    // URL can be a plain string
+    if let Some(s) = url_val.as_str() {
+        return extract_query_params(s);
+    }
+
+    let raw = url_val
+        .get("raw")
+        .and_then(|r| r.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    // If structured query params exist, use those (they have disabled state)
+    if let Some(query) = url_val.get("query").and_then(|q| q.as_array()) {
+        let base = raw.split('?').next().unwrap_or(&raw).to_string();
+        let params = query
+            .iter()
+            .filter_map(|p| {
+                let key = p.get("key").and_then(|k| k.as_str())?.to_string();
+                let value = p
+                    .get("value")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let enabled = !p.get("disabled").and_then(|d| d.as_bool()).unwrap_or(false);
+                Some(Param {
+                    key,
+                    value,
+                    enabled,
+                })
+            })
+            .collect();
+        return (base, params);
+    }
+
+    // Fallback: extract from raw URL
+    extract_query_params(&raw)
+}
+
+fn parse_postman_headers(header_val: Option<&serde_json::Value>) -> Vec<Header> {
+    let arr = match header_val.and_then(|h| h.as_array()) {
+        Some(a) => a,
+        None => return Vec::new(),
+    };
+
+    arr.iter()
+        .filter_map(|h| {
+            let key = h.get("key").and_then(|k| k.as_str())?.to_string();
+            let value = h
+                .get("value")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let enabled = !h.get("disabled").and_then(|d| d.as_bool()).unwrap_or(false);
+            Some(Header {
+                key,
+                value,
+                enabled,
+            })
+        })
+        .collect()
+}
+
+fn parse_postman_body(body_val: Option<&serde_json::Value>) -> Option<Body> {
+    let body = body_val?;
+    let mode = body.get("mode").and_then(|m| m.as_str()).unwrap_or("");
+
+    match mode {
+        "raw" => {
+            let content = body
+                .get("raw")
+                .and_then(|r| r.as_str())
+                .unwrap_or("")
+                .to_string();
+            let language = body
+                .get("options")
+                .and_then(|o| o.get("raw"))
+                .and_then(|r| r.get("language"))
+                .and_then(|l| l.as_str())
+                .unwrap_or("");
+            let content_type = match language {
+                "json" => RawBodyType::Json,
+                "xml" => RawBodyType::Xml,
+                "html" => RawBodyType::Html,
+                "javascript" => RawBodyType::Javascript,
+                _ => {
+                    if serde_json::from_str::<serde_json::Value>(&content).is_ok() {
+                        RawBodyType::Json
+                    } else {
+                        RawBodyType::Text
+                    }
+                }
+            };
+            Some(Body::Raw {
+                content,
+                content_type,
+            })
+        }
+        "formdata" => {
+            let parts = body
+                .get("formdata")
+                .and_then(|f| f.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|p| {
+                            let name = p.get("key").and_then(|k| k.as_str())?.to_string();
+                            let field_type =
+                                p.get("type").and_then(|t| t.as_str()).unwrap_or("text");
+                            if field_type == "file" {
+                                let file_path = p
+                                    .get("src")
+                                    .and_then(|s| s.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                Some(MultipartPart {
+                                    name,
+                                    value: None,
+                                    file_path: Some(file_path),
+                                })
+                            } else {
+                                let value = p
+                                    .get("value")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                Some(MultipartPart {
+                                    name,
+                                    value: Some(value),
+                                    file_path: None,
+                                })
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Some(Body::Multipart { parts })
+        }
+        "urlencoded" => {
+            let fields = body
+                .get("urlencoded")
+                .and_then(|u| u.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|f| {
+                            let key = f.get("key").and_then(|k| k.as_str())?.to_string();
+                            let value = f
+                                .get("value")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let enabled =
+                                !f.get("disabled").and_then(|d| d.as_bool()).unwrap_or(false);
+                            Some(FormField {
+                                key,
+                                value,
+                                enabled,
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Some(Body::Form { fields })
+        }
+        "graphql" => {
+            let gql = body.get("graphql")?;
+            let query = gql
+                .get("query")
+                .and_then(|q| q.as_str())
+                .unwrap_or("")
+                .to_string();
+            let variables = gql
+                .get("variables")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            Some(Body::GraphQL { query, variables })
+        }
+        "file" => {
+            let file_path = body
+                .get("file")
+                .and_then(|f| f.get("src"))
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string();
+            Some(Body::Binary { file_path })
+        }
+        _ => None,
+    }
+}
+
+fn parse_postman_auth(auth_val: Option<&serde_json::Value>) -> Option<Auth> {
+    let auth = auth_val?;
+    let auth_type = auth.get("type").and_then(|t| t.as_str())?;
+
+    match auth_type {
+        "bearer" => {
+            let token = get_postman_auth_field(auth, "bearer", "token")?;
+            Some(Auth::Bearer { token })
+        }
+        "basic" => {
+            let username = get_postman_auth_field(auth, "basic", "username").unwrap_or_default();
+            let password = get_postman_auth_field(auth, "basic", "password").unwrap_or_default();
+            Some(Auth::Basic { username, password })
+        }
+        "apikey" => {
+            let key = get_postman_auth_field(auth, "apikey", "key").unwrap_or_default();
+            let value = get_postman_auth_field(auth, "apikey", "value").unwrap_or_default();
+            let location_str = get_postman_auth_field(auth, "apikey", "in")
+                .unwrap_or_else(|| "header".to_string());
+            let location = match location_str.as_str() {
+                "query" => crate::types::ApiKeyLocation::Query,
+                _ => crate::types::ApiKeyLocation::Header,
+            };
+            Some(Auth::ApiKey {
+                key,
+                value,
+                location,
+            })
+        }
+        "noauth" => Some(Auth::None),
+        _ => None,
+    }
+}
+
+/// Extract a field value from Postman's auth array format:
+/// `{ "type": "bearer", "bearer": [{"key": "token", "value": "xxx"}] }`
+fn get_postman_auth_field(
+    auth: &serde_json::Value,
+    auth_type: &str,
+    field_key: &str,
+) -> Option<String> {
+    auth.get(auth_type)
+        .and_then(|arr| arr.as_array())
+        .and_then(|arr| {
+            arr.iter().find_map(|entry| {
+                if entry.get("key").and_then(|k| k.as_str()) == Some(field_key) {
+                    entry
+                        .get("value")
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                } else {
+                    None
+                }
+            })
+        })
+}
+
 /// Detect import format from file content.
 pub fn detect_format(content: &str) -> Result<ImportFormat, ImportError> {
     let trimmed = content.trim();
@@ -713,5 +1102,412 @@ mod tests {
     fn test_curl_collection_name() {
         let result = import_curl("curl https://example.com").unwrap();
         assert_eq!(result.collection.name, "Imported Curl Request");
+    }
+
+    // Helper to write JSON to a temp file
+    fn write_temp_json(content: &str) -> tempfile::NamedTempFile {
+        use std::io::Write;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        file.flush().unwrap();
+        file
+    }
+
+    #[test]
+    fn test_postman_minimal() {
+        let json = r#"{
+            "info": {
+                "name": "My API",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": [
+                {
+                    "name": "Get Users",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "https://api.test/users",
+                            "host": ["api", "test"],
+                            "path": ["users"]
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path()).unwrap();
+        assert_eq!(result.collection.name, "My API");
+        assert_eq!(result.collection.requests.len(), 1);
+        assert_eq!(result.collection.requests[0].name, "Get Users");
+        assert_eq!(result.collection.requests[0].method, Method::Get);
+        assert_eq!(result.collection.requests[0].url, "https://api.test/users");
+    }
+
+    #[test]
+    fn test_postman_with_variables() {
+        let json = r#"{
+            "info": {
+                "name": "Var Test",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": [
+                {
+                    "name": "Test",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{base_url}}/users"
+                        }
+                    }
+                }
+            ],
+            "variable": [
+                {"key": "base_url", "value": "https://api.test"},
+                {"key": "api_key", "value": "secret123"}
+            ]
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path()).unwrap();
+        assert_eq!(result.collection.variables.len(), 2);
+        assert_eq!(
+            result.collection.variables["base_url"].value,
+            "https://api.test"
+        );
+        assert_eq!(result.collection.variables["api_key"].value, "secret123");
+        assert_eq!(result.collection.requests[0].url, "{{base_url}}/users");
+    }
+
+    #[test]
+    fn test_postman_nested_folders() {
+        let json = r#"{
+            "info": {
+                "name": "Nested",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": [
+                {
+                    "name": "Users Folder",
+                    "item": [
+                        {
+                            "name": "Get Users",
+                            "request": {
+                                "method": "GET",
+                                "url": {"raw": "https://api.test/users"}
+                            }
+                        },
+                        {
+                            "name": "Inner Folder",
+                            "item": [
+                                {
+                                    "name": "Deep Request",
+                                    "request": {
+                                        "method": "POST",
+                                        "url": {"raw": "https://api.test/deep"}
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path()).unwrap();
+        assert_eq!(result.collection.requests.len(), 2);
+        assert_eq!(result.collection.requests[0].name, "Get Users");
+        assert_eq!(result.collection.requests[1].name, "Deep Request");
+    }
+
+    #[test]
+    fn test_postman_headers_and_body() {
+        let json = r#"{
+            "info": {
+                "name": "Body Test",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": [
+                {
+                    "name": "Create User",
+                    "request": {
+                        "method": "POST",
+                        "url": {"raw": "https://api.test/users"},
+                        "header": [
+                            {"key": "Content-Type", "value": "application/json", "disabled": false},
+                            {"key": "X-Debug", "value": "true", "disabled": true}
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\"name\":\"Alice\"}",
+                            "options": {"raw": {"language": "json"}}
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path()).unwrap();
+        let req = &result.collection.requests[0];
+        assert_eq!(req.headers.len(), 2);
+        assert!(req.headers[0].enabled);
+        assert!(!req.headers[1].enabled);
+        match &req.body {
+            Some(Body::Raw {
+                content,
+                content_type,
+            }) => {
+                assert_eq!(content, r#"{"name":"Alice"}"#);
+                assert_eq!(*content_type, RawBodyType::Json);
+            }
+            other => panic!("Expected Raw JSON body, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_postman_auth_bearer() {
+        let json = r#"{
+            "info": {
+                "name": "Auth Test",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": [
+                {
+                    "name": "Authed",
+                    "request": {
+                        "method": "GET",
+                        "url": {"raw": "https://api.test"},
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {"key": "token", "value": "mytoken123"}
+                            ]
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path()).unwrap();
+        match &result.collection.requests[0].auth {
+            Some(Auth::Bearer { token }) => assert_eq!(token, "mytoken123"),
+            other => panic!("Expected Bearer auth, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_postman_auth_basic() {
+        let json = r#"{
+            "info": {
+                "name": "Basic Auth",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": [
+                {
+                    "name": "Basic",
+                    "request": {
+                        "method": "GET",
+                        "url": {"raw": "https://api.test"},
+                        "auth": {
+                            "type": "basic",
+                            "basic": [
+                                {"key": "username", "value": "alice"},
+                                {"key": "password", "value": "pass123"}
+                            ]
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path()).unwrap();
+        match &result.collection.requests[0].auth {
+            Some(Auth::Basic { username, password }) => {
+                assert_eq!(username, "alice");
+                assert_eq!(password, "pass123");
+            }
+            other => panic!("Expected Basic auth, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_postman_formdata() {
+        let json = r#"{
+            "info": {
+                "name": "Form Test",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": [
+                {
+                    "name": "Form Post",
+                    "request": {
+                        "method": "POST",
+                        "url": {"raw": "https://api.test/upload"},
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {"key": "name", "value": "Alice", "type": "text"},
+                                {"key": "file", "src": "/path/to/file.png", "type": "file"}
+                            ]
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path()).unwrap();
+        match &result.collection.requests[0].body {
+            Some(Body::Multipart { parts }) => {
+                assert_eq!(parts.len(), 2);
+                assert_eq!(parts[0].name, "name");
+                assert_eq!(parts[0].value, Some("Alice".into()));
+                assert_eq!(parts[1].name, "file");
+                assert_eq!(parts[1].file_path, Some("/path/to/file.png".into()));
+            }
+            other => panic!("Expected Multipart body, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_postman_urlencoded() {
+        let json = r#"{
+            "info": {
+                "name": "Urlenc Test",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": [
+                {
+                    "name": "Login",
+                    "request": {
+                        "method": "POST",
+                        "url": {"raw": "https://api.test/login"},
+                        "body": {
+                            "mode": "urlencoded",
+                            "urlencoded": [
+                                {"key": "user", "value": "alice", "disabled": false},
+                                {"key": "pass", "value": "secret", "disabled": false}
+                            ]
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path()).unwrap();
+        match &result.collection.requests[0].body {
+            Some(Body::Form { fields }) => {
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].key, "user");
+                assert_eq!(fields[1].key, "pass");
+            }
+            other => panic!("Expected Form body, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_postman_graphql() {
+        let json = r#"{
+            "info": {
+                "name": "GQL Test",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": [
+                {
+                    "name": "Query",
+                    "request": {
+                        "method": "POST",
+                        "url": {"raw": "https://api.test/graphql"},
+                        "body": {
+                            "mode": "graphql",
+                            "graphql": {
+                                "query": "{ users { id name } }",
+                                "variables": "{\"limit\": 10}"
+                            }
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path()).unwrap();
+        match &result.collection.requests[0].body {
+            Some(Body::GraphQL { query, variables }) => {
+                assert_eq!(query, "{ users { id name } }");
+                assert_eq!(variables, "{\"limit\": 10}");
+            }
+            other => panic!("Expected GraphQL body, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_postman_query_params() {
+        let json = r#"{
+            "info": {
+                "name": "Params Test",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": [
+                {
+                    "name": "Search",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "https://api.test/search?q=rust&page=1",
+                            "query": [
+                                {"key": "q", "value": "rust"},
+                                {"key": "page", "value": "1", "disabled": true}
+                            ]
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path()).unwrap();
+        let req = &result.collection.requests[0];
+        assert!(!req.url.contains('?'));
+        assert_eq!(req.params.len(), 2);
+        assert!(req.params[0].enabled);
+        assert!(!req.params[1].enabled);
+    }
+
+    #[test]
+    fn test_postman_invalid_json() {
+        let path = write_temp_json("not json at all{{{");
+        assert!(import_postman(path.path()).is_err());
+    }
+
+    #[test]
+    fn test_postman_empty_items() {
+        let json = r#"{
+            "info": {
+                "name": "Empty",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": []
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path());
+        assert!(matches!(result, Err(ImportError::EmptyImport)));
+    }
+
+    #[test]
+    fn test_postman_url_as_string() {
+        let json = r#"{
+            "info": {
+                "name": "String URL",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": [
+                {
+                    "name": "Simple",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://api.test/simple"
+                    }
+                }
+            ]
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_postman(path.path()).unwrap();
+        assert_eq!(result.collection.requests[0].url, "https://api.test/simple");
     }
 }
