@@ -246,6 +246,8 @@ async fn run_loop(
                 handlers::pickers::handle_body_type_picker(app, &action);
             } else if app.show_export_picker {
                 handlers::pickers::handle_export_picker(app, &action);
+            } else if app.show_import_overlay {
+                handlers::pickers::handle_import_overlay(app, &action);
             } else if app.show_collection_picker {
                 handlers::pickers::handle_collection_picker(app, &action);
             } else if app.show_project_picker {
@@ -410,6 +412,76 @@ pub(crate) fn execute_export(app: &mut App, format: ExportFormat) {
                     app.status_message = Some(format!("Serialization failed: {}", e));
                 }
             }
+        }
+    }
+}
+
+pub(crate) fn execute_import(
+    app: &mut App,
+    format: &lazycurl_core::import::ImportFormat,
+    input: &str,
+) {
+    use lazycurl_core::import::{self, ImportFormat};
+
+    let result = match format {
+        ImportFormat::Curl => import::import_curl(input),
+        ImportFormat::Postman => import::import_postman(std::path::Path::new(input)),
+        ImportFormat::OpenAPI => import::import_openapi(std::path::Path::new(input)),
+    };
+
+    match result {
+        Ok(import_result) => {
+            let collection_name = import_result.collection.name.clone();
+            let request_count = import_result.collection.requests.len();
+            let variable_count = import_result.collection.variables.len();
+            let warnings: Vec<String> = import_result
+                .warnings
+                .iter()
+                .map(|w| w.to_string())
+                .collect();
+
+            // Save collection to active project
+            if let Some(ws) = app.active_workspace_mut() {
+                let projects_dir = lazycurl_core::config::config_dir().join("projects");
+                let collections_dir = projects_dir.join(&ws.data.slug).join("collections");
+                if let Err(e) = lazycurl_core::collection::save_collection(
+                    &collections_dir,
+                    &import_result.collection,
+                ) {
+                    app.import_result = Some(app::ImportResultDisplay {
+                        success: false,
+                        collection_name,
+                        request_count: 0,
+                        variable_count: 0,
+                        warnings: Vec::new(),
+                        error: Some(format!("Failed to save: {}", e)),
+                    });
+                    app.import_step = app::ImportStep::Result;
+                    return;
+                }
+                ws.data.collections.push(import_result.collection);
+            }
+
+            app.import_result = Some(app::ImportResultDisplay {
+                success: true,
+                collection_name,
+                request_count,
+                variable_count,
+                warnings,
+                error: None,
+            });
+            app.import_step = app::ImportStep::Result;
+        }
+        Err(e) => {
+            app.import_result = Some(app::ImportResultDisplay {
+                success: false,
+                collection_name: String::new(),
+                request_count: 0,
+                variable_count: 0,
+                warnings: Vec::new(),
+                error: Some(e.to_string()),
+            });
+            app.import_step = app::ImportStep::Result;
         }
     }
 }

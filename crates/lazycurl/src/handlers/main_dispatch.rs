@@ -126,6 +126,19 @@ pub async fn handle(app: &mut App, action: &Action) {
                 app.open_export_picker();
             }
         }
+        Action::OpenImportOverlay => {
+            if !app.show_method_picker
+                && !app.show_collection_picker
+                && !app.show_project_picker
+                && !app.show_env_manager
+                && !app.show_variables
+                && !app.show_log_viewer
+                && !app.show_export_picker
+                && !app.show_import_overlay
+            {
+                app.open_import_overlay();
+            }
+        }
         // Navigation actions (Normal mode)
         Action::MoveUp => app.handle_move_up(),
         Action::MoveDown => app.handle_move_down(),

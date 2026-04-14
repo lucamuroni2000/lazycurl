@@ -74,6 +74,7 @@ pub enum ImportStep {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // fields read by import overlay UI (Task 9)
 pub struct ImportResultDisplay {
     pub success: bool,
     pub collection_name: String,

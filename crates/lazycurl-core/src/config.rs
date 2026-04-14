@@ -625,7 +625,7 @@ mod tests {
     #[test]
     fn test_vim_preset_v2_overrides() {
         let kb = vim_preset_keybindings();
-        assert_eq!(kb.len(), 50);
+        assert_eq!(kb.len(), 51);
         // Vim-specific navigation
         assert_eq!(kb["move_up"], "k");
         assert_eq!(kb["move_down"], "j");
@@ -673,7 +673,7 @@ mod tests {
     #[test]
     fn test_default_preset_v2_has_all_keys() {
         let kb = default_preset_keybindings();
-        assert_eq!(kb.len(), 50);
+        assert_eq!(kb.len(), 51);
         // Global
         assert_eq!(kb["quit"], "q");
         assert_eq!(kb["cancel"], "escape");

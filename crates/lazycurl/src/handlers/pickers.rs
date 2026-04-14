@@ -295,6 +295,78 @@ pub fn handle_body_type_picker(app: &mut App, action: &Action) {
     }
 }
 
+/// Handle import overlay actions.
+pub fn handle_import_overlay(app: &mut App, action: &Action) {
+    match &app.import_step {
+        crate::app::ImportStep::FormatSelect => match action {
+            Action::Cancel => {
+                app.show_import_overlay = false;
+            }
+            Action::MoveUp => {
+                if app.import_format_cursor > 0 {
+                    app.import_format_cursor -= 1;
+                }
+            }
+            Action::MoveDown => {
+                let max = lazycurl_core::import::ImportFormat::all()
+                    .len()
+                    .saturating_sub(1);
+                if app.import_format_cursor < max {
+                    app.import_format_cursor += 1;
+                }
+            }
+            Action::Enter => {
+                app.import_step = crate::app::ImportStep::Input;
+                app.import_text_input = crate::text_input::TextInput::new("");
+                // For Curl format, try to auto-paste from clipboard
+                if app.import_format_cursor == 0 {
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        if let Ok(text) = clipboard.get_text() {
+                            let trimmed = text.trim();
+                            if trimmed.starts_with("curl ") || trimmed.starts_with("curl.exe ") {
+                                app.import_text_input.set_content(trimmed);
+                            }
+                        }
+                    }
+                }
+                app.input_mode = crate::app::InputMode::Editing;
+                app.edit_field = None;
+            }
+            Action::Quit => app.should_quit = true,
+            _ => {}
+        },
+        crate::app::ImportStep::Input => match action {
+            Action::Cancel => {
+                app.import_step = crate::app::ImportStep::FormatSelect;
+                app.input_mode = crate::app::InputMode::Normal;
+            }
+            Action::Enter => {
+                app.input_mode = crate::app::InputMode::Normal;
+                let input = app.import_text_input.content().to_string();
+                let format = lazycurl_core::import::ImportFormat::all()[app.import_format_cursor];
+                crate::execute_import(app, &format, &input);
+            }
+            Action::CharInput(c) => app.import_text_input.insert_char(*c),
+            Action::Backspace => app.import_text_input.delete_char_before(),
+            Action::Delete => app.import_text_input.delete_char_after(),
+            Action::CursorLeft => app.import_text_input.move_left(),
+            Action::CursorRight => app.import_text_input.move_right(),
+            Action::Home => app.import_text_input.move_home(),
+            Action::End => app.import_text_input.move_end(),
+            Action::Quit => app.should_quit = true,
+            _ => {}
+        },
+        crate::app::ImportStep::Result => match action {
+            Action::Cancel | Action::Enter => {
+                app.show_import_overlay = false;
+                app.input_mode = crate::app::InputMode::Normal;
+            }
+            Action::Quit => app.should_quit = true,
+            _ => {}
+        },
+    }
+}
+
 /// Handle environment manager actions.
 pub fn handle_env_manager(app: &mut App, action: &Action) {
     // Delete confirmation state
