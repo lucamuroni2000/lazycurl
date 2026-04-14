@@ -832,6 +832,54 @@ fn test_collection_save_reload_preserves_all_auth_types() {
     }
 }
 
+#[test]
+fn test_import_postman_save_load_roundtrip() {
+    use lazycurl_core::collection::{load_collection, save_collection};
+    use lazycurl_core::import::import_postman;
+    use std::io::Write;
+
+    let json = r#"{
+        "info": {
+            "name": "Roundtrip Test",
+            "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+            {
+                "name": "Get Items",
+                "request": {
+                    "method": "GET",
+                    "url": {"raw": "https://api.test/items"}
+                }
+            }
+        ],
+        "variable": [
+            {"key": "base_url", "value": "https://api.test"}
+        ]
+    }"#;
+
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    file.write_all(json.as_bytes()).unwrap();
+    file.flush().unwrap();
+
+    let result = import_postman(file.path()).unwrap();
+
+    let dir = tempfile::TempDir::new().unwrap();
+    save_collection(dir.path(), &result.collection).unwrap();
+
+    let files: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(files.len(), 1);
+
+    let loaded = load_collection(&files[0].path()).unwrap();
+    assert_eq!(loaded.name, "Roundtrip Test");
+    assert_eq!(loaded.requests.len(), 1);
+    assert_eq!(loaded.requests[0].name, "Get Items");
+    assert_eq!(loaded.variables.len(), 1);
+    assert_eq!(loaded.variables["base_url"].value, "https://api.test");
+}
+
 /// Verify request_id on log entries enables finding auth from collections.
 #[test]
 fn test_log_entry_request_id_enables_auth_recovery() {

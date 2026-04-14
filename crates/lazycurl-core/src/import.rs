@@ -1050,6 +1050,17 @@ fn parse_openapi_security(
     }
 }
 
+/// Unified import entry point.
+/// For Curl, `source` is the curl command string.
+/// For Postman/OpenAPI, `source` is the file path.
+pub fn import(format: &ImportFormat, source: &str) -> Result<ImportResult, ImportError> {
+    match format {
+        ImportFormat::Curl => import_curl(source),
+        ImportFormat::Postman => import_postman(Path::new(source)),
+        ImportFormat::OpenAPI => import_openapi(Path::new(source)),
+    }
+}
+
 /// Detect import format from file content.
 pub fn detect_format(content: &str) -> Result<ImportFormat, ImportError> {
     let trimmed = content.trim();
@@ -1967,6 +1978,28 @@ paths:
         let path = write_temp_json(json);
         let result = import_openapi(path.path());
         assert!(matches!(result, Err(ImportError::EmptyImport)));
+    }
+
+    #[test]
+    fn test_import_unified_curl() {
+        let result = import(&ImportFormat::Curl, "curl https://example.com").unwrap();
+        assert_eq!(result.collection.requests.len(), 1);
+    }
+
+    #[test]
+    fn test_import_unified_postman() {
+        let json = r#"{"info":{"name":"Test","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},"item":[{"name":"Req","request":{"method":"GET","url":{"raw":"https://test.com"}}}]}"#;
+        let path = write_temp_json(json);
+        let result = import(&ImportFormat::Postman, &path.path().to_string_lossy()).unwrap();
+        assert_eq!(result.collection.name, "Test");
+    }
+
+    #[test]
+    fn test_import_unified_openapi() {
+        let json = r#"{"openapi":"3.0.3","info":{"title":"Test","version":"1.0"},"servers":[{"url":"https://api.test"}],"paths":{"/x":{"get":{"operationId":"x"}}}}"#;
+        let path = write_temp_json(json);
+        let result = import(&ImportFormat::OpenAPI, &path.path().to_string_lossy()).unwrap();
+        assert_eq!(result.collection.name, "Test");
     }
 
     #[test]
