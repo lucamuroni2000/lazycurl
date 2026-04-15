@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::time::Instant;
 
 use lazycurl_core::command::CurlCommandBuilder;
@@ -9,6 +10,83 @@ use lazycurl_core::types::{
     RequestLogData, RequestLogEntry, ResponseLogData,
 };
 use lazycurl_core::variable::FileVariableResolver;
+
+/// Identifies an item in the flattened sidebar view.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SidebarItem {
+    Collection {
+        path: Vec<usize>,
+    },
+    Request {
+        path: Vec<usize>,
+        request_idx: usize,
+    },
+}
+
+pub fn build_sidebar_items(
+    collections: &[Collection],
+    expanded: &HashSet<Vec<usize>>,
+) -> Vec<SidebarItem> {
+    let mut items = Vec::new();
+    for (idx, col) in collections.iter().enumerate() {
+        let path = vec![idx];
+        build_sidebar_items_recursive(col, &path, expanded, &mut items);
+    }
+    items
+}
+
+fn build_sidebar_items_recursive(
+    collection: &Collection,
+    path: &[usize],
+    expanded: &HashSet<Vec<usize>>,
+    items: &mut Vec<SidebarItem>,
+) {
+    items.push(SidebarItem::Collection {
+        path: path.to_vec(),
+    });
+    if !expanded.contains(&path.to_vec()) {
+        return;
+    }
+    for (child_idx, child) in collection.children.iter().enumerate() {
+        let mut child_path = path.to_vec();
+        child_path.push(child_idx);
+        build_sidebar_items_recursive(child, &child_path, expanded, items);
+    }
+    for (req_idx, _) in collection.requests.iter().enumerate() {
+        items.push(SidebarItem::Request {
+            path: path.to_vec(),
+            request_idx: req_idx,
+        });
+    }
+}
+
+pub fn resolve_collection_path<'a>(
+    collections: &'a [Collection],
+    path: &[usize],
+) -> Option<&'a Collection> {
+    if path.is_empty() {
+        return None;
+    }
+    let mut col = collections.get(path[0])?;
+    for &idx in &path[1..] {
+        col = col.children.get(idx)?;
+    }
+    Some(col)
+}
+
+pub fn resolve_collection_path_mut<'a>(
+    collections: &'a mut [Collection],
+    path: &[usize],
+) -> Option<&'a mut Collection> {
+    if path.is_empty() {
+        return None;
+    }
+    let mut col = collections.get_mut(path[0])?;
+    for &idx in &path[1..] {
+        col = col.children.get_mut(idx)?;
+    }
+    Some(col)
+}
 
 pub const AUTH_TYPE_LABELS: &[&str] = &[
     "No Auth",
@@ -215,7 +293,8 @@ pub struct ProjectWorkspace {
     pub response_tab: ResponseTab,
     pub collection_scroll: usize,
     pub response_scroll: usize,
-    pub expanded_collections: std::collections::HashSet<uuid::Uuid>,
+    pub expanded_folders: HashSet<Vec<usize>>,
+    pub selected_sidebar_index: usize,
 }
 
 impl ProjectWorkspace {
@@ -226,7 +305,8 @@ impl ProjectWorkspace {
             response_tab: ResponseTab::Body,
             collection_scroll: 0,
             response_scroll: 0,
-            expanded_collections: std::collections::HashSet::new(),
+            expanded_folders: HashSet::new(),
+            selected_sidebar_index: 0,
         }
     }
 }
@@ -457,13 +537,9 @@ impl App {
             return;
         }
         self.export_collection_available = self
-            .active_workspace()
-            .and_then(|ws| ws.data.selected_collection)
-            .and_then(|idx| {
-                self.active_workspace()
-                    .and_then(|ws| ws.data.collections.get(idx))
-            })
-            .is_some();
+            .selected_sidebar_item()
+            .map(|item| matches!(item, SidebarItem::Collection { .. }))
+            .unwrap_or(false);
         self.export_scope_is_collection =
             self.active_pane == Pane::Collections && self.export_collection_available;
         self.export_format_cursor = 0;
@@ -539,14 +615,19 @@ impl App {
             .and_then(|ws| ws.data.active_environment)
     }
 
-    pub fn selected_collection(&self) -> Option<usize> {
-        self.active_workspace()
-            .and_then(|ws| ws.data.selected_collection)
+    pub fn selected_sidebar_item(&self) -> Option<SidebarItem> {
+        let ws = self.active_workspace()?;
+        let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+        items.get(ws.selected_sidebar_index).cloned()
     }
 
-    pub fn selected_request(&self) -> Option<usize> {
-        self.active_workspace()
-            .and_then(|ws| ws.data.selected_request)
+    /// Returns the root collection index for the currently selected sidebar item.
+    /// Used by code that still needs a root-level collection index (export, variables, etc.)
+    pub fn selected_root_collection_idx(&self) -> Option<usize> {
+        match self.selected_sidebar_item()? {
+            SidebarItem::Collection { path } => Some(path[0]),
+            SidebarItem::Request { path, .. } => Some(path[0]),
+        }
     }
 
     pub fn current_request(&self) -> Option<&Request> {
@@ -571,37 +652,46 @@ impl App {
             .unwrap_or(ResponseTab::Body)
     }
 
-    /// Toggle collapse/expand state for the currently selected collection.
+    /// Toggle collapse/expand state for the currently selected folder.
     pub fn toggle_collapse(&mut self) {
-        let Some(ws) = self.active_workspace_mut() else {
+        let Some(ws) = self.active_workspace() else {
             return;
         };
-        let Some(col_idx) = ws.data.selected_collection else {
-            return;
+        let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+        let item = match items.get(ws.selected_sidebar_index) {
+            Some(item) => item.clone(),
+            None => return,
         };
-        // If a request is selected, move selection to its parent collection first
-        if ws.data.selected_request.is_some() {
-            ws.data.selected_request = None;
-        }
-        if let Some(collection) = ws.data.collections.get(col_idx) {
-            let id = collection.id;
-            if ws.expanded_collections.contains(&id) {
-                ws.expanded_collections.remove(&id);
-            } else {
-                ws.expanded_collections.insert(id);
+        let ws = self.active_workspace_mut().unwrap();
+        match item {
+            SidebarItem::Collection { path } => {
+                if ws.expanded_folders.contains(&path) {
+                    ws.expanded_folders.remove(&path);
+                } else {
+                    ws.expanded_folders.insert(path);
+                }
+            }
+            SidebarItem::Request { path, .. } => {
+                // Collapse the parent folder and move selection to it
+                if ws.expanded_folders.contains(&path) {
+                    ws.expanded_folders.remove(&path);
+                    // Rebuild items to find parent folder index
+                    let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+                    if let Some(idx) = items.iter().position(
+                        |i| matches!(i, SidebarItem::Collection { path: p } if *p == path),
+                    ) {
+                        ws.selected_sidebar_index = idx;
+                    }
+                }
             }
         }
     }
 
-    /// Check whether a collection is expanded in the current workspace.
-    pub fn is_collection_expanded(&self, col_idx: usize) -> bool {
-        let Some(ws) = self.active_workspace() else {
-            return false;
-        };
-        ws.data
-            .collections
-            .get(col_idx)
-            .map(|c| ws.expanded_collections.contains(&c.id))
+    /// Check whether a folder path is expanded in the current workspace.
+    #[allow(dead_code)]
+    pub fn is_folder_expanded(&self, path: &[usize]) -> bool {
+        self.active_workspace()
+            .map(|ws| ws.expanded_folders.contains(path))
             .unwrap_or(false)
     }
 
@@ -964,16 +1054,25 @@ impl App {
             .active_environment
             .and_then(|i| ws.data.environments.get(i))
             .map(|e| e.variables.clone());
-        let col_vars = ws
-            .data
-            .selected_collection
-            .and_then(|i| ws.data.collections.get(i))
+        // Determine the collection path from sidebar selection for variable resolution
+        let selected_col_path = {
+            let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+            items
+                .get(ws.selected_sidebar_index)
+                .map(|item| match item {
+                    SidebarItem::Collection { path } | SidebarItem::Request { path, .. } => {
+                        path.clone()
+                    }
+                })
+        };
+        let col_vars = selected_col_path
+            .as_ref()
+            .and_then(|path| resolve_collection_path(&ws.data.collections, path))
             .map(|c| c.variables.clone());
         let request = request.clone();
-        let collection_id = ws
-            .data
-            .selected_collection
-            .and_then(|i| ws.data.collections.get(i))
+        let collection_id = selected_col_path
+            .as_ref()
+            .and_then(|path| resolve_collection_path(&ws.data.collections, path))
             .map(|c| c.id);
         let project_name = Some(ws.data.project.name.clone());
         let default_timeout = self.config.default_timeout;
@@ -1579,9 +1678,7 @@ impl App {
             .active_workspace()
             .map(|ws| ws.data.collections.len())
             .unwrap_or(0);
-        let selected_collection = self
-            .active_workspace()
-            .and_then(|ws| ws.data.selected_collection);
+        let selected_root = self.selected_root_collection_idx();
 
         if collections_len == 0 {
             // No collections at all — prompt to create one
@@ -1589,19 +1686,19 @@ impl App {
             self.start_editing(EditField::NewCollectionName);
             self.status_message =
                 Some("Name your collection, then press Enter to save".to_string());
-        } else if collections_len == 1 && selected_collection == Some(0) {
+        } else if collections_len == 1 && selected_root == Some(0) {
             // Only one collection and it's selected — save directly
             self.save_request_to_collection(0);
         } else {
             // Multiple collections or none selected — show picker
-            self.picker_cursor = selected_collection.unwrap_or(0);
+            self.picker_cursor = selected_root.unwrap_or(0);
             self.picker_context = PickerContext::SaveRequest;
             self.show_collection_picker = true;
             self.status_message = Some("Choose a collection to save into".to_string());
         }
     }
 
-    /// Save the current request into a specific collection by index
+    /// Save the current request into a specific collection by root index
     pub fn save_request_to_collection(&mut self, col_idx: usize) {
         let Some(ws) = self.active_workspace_mut() else {
             return;
@@ -1610,23 +1707,38 @@ impl App {
             return;
         };
 
-        if let Some(collection) = ws.data.collections.get_mut(col_idx) {
-            // If this request already exists in this collection (same id), update it
-            let existing_idx = collection.requests.iter().position(|r| r.id == request.id);
+        let Some(collection) = ws.data.collections.get_mut(col_idx) else {
+            return;
+        };
 
-            if let Some(req_idx) = existing_idx {
-                collection.requests[req_idx] = request.clone();
-                ws.data.selected_request = Some(req_idx);
-            } else {
-                collection.requests.push(request.clone());
-                ws.data.selected_request = Some(collection.requests.len() - 1);
-            }
+        // If this request already exists in this collection (same id), update it
+        let existing_idx = collection.requests.iter().position(|r| r.id == request.id);
 
-            ws.data.selected_collection = Some(col_idx);
-            let collections_dir = config_dir()
-                .join("projects")
-                .join(&ws.data.slug)
-                .join("collections");
+        if let Some(req_idx) = existing_idx {
+            collection.requests[req_idx] = request.clone();
+        } else {
+            collection.requests.push(request.clone());
+        }
+        let req_idx = existing_idx.unwrap_or(collection.requests.len() - 1);
+
+        // Drop the mutable borrow on collection before rebuilding sidebar
+        let path = vec![col_idx];
+        ws.expanded_folders.insert(path.clone());
+
+        // Rebuild sidebar items to find the correct flat index
+        let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+        if let Some(flat_idx) = items.iter().position(|i| {
+            matches!(i, SidebarItem::Request { path: p, request_idx: ri } if *p == path && *ri == req_idx)
+        }) {
+            ws.selected_sidebar_index = flat_idx;
+        }
+
+        // Save to disk
+        let collections_dir = config_dir()
+            .join("projects")
+            .join(&ws.data.slug)
+            .join("collections");
+        if let Some(collection) = ws.data.collections.get(col_idx) {
             match lazycurl_core::collection::save_collection(&collections_dir, collection) {
                 Ok(_) => self.status_message = Some(format!("Saved to '{}'!", collection.name)),
                 Err(e) => self.status_message = Some(format!("Save error: {}", e)),
@@ -1674,12 +1786,16 @@ impl App {
             };
 
             // Auto-expand the target collection
-            let col_id = collection.id;
-            ws.expanded_collections.insert(col_id);
+            let path = vec![target_col];
+            ws.expanded_folders.insert(path.clone());
 
-            // Select the new request
-            ws.data.selected_collection = Some(target_col);
-            ws.data.selected_request = Some(idx);
+            // Select the new request in the sidebar
+            let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+            if let Some(flat_idx) = items.iter().position(|i| {
+                matches!(i, SidebarItem::Request { path: p, request_idx: ri } if *p == path && *ri == idx)
+            }) {
+                ws.selected_sidebar_index = flat_idx;
+            }
             idx
         };
 
@@ -1699,32 +1815,35 @@ impl App {
         if self.active_pane != Pane::Collections {
             return;
         }
-        let Some(ws) = self.active_workspace() else {
-            return;
-        };
-        let Some(col_idx) = ws.data.selected_collection else {
-            return;
+        let item = match self.selected_sidebar_item() {
+            Some(item) => item,
+            None => return,
         };
 
-        if let Some(req_idx) = ws.data.selected_request {
-            // Duplicating a request
-            let collections_len = ws.data.collections.len();
-            if collections_len == 1 {
-                // Only one collection — duplicate in place
-                self.duplicate_request_to_collection(col_idx, req_idx, col_idx);
-            } else {
-                // Multiple collections — show picker
-                self.picker_context = PickerContext::DuplicateRequest {
-                    source_collection: col_idx,
-                    source_request: req_idx,
-                };
-                self.picker_cursor = col_idx;
-                self.show_collection_picker = true;
-                self.status_message = Some("Choose a collection for the duplicate".to_string());
+        match item {
+            SidebarItem::Request { path, request_idx } => {
+                // Only support duplicate for root-level collection requests
+                let col_idx = path[0];
+                let collections_len = self
+                    .active_workspace()
+                    .map(|ws| ws.data.collections.len())
+                    .unwrap_or(0);
+                if collections_len == 1 {
+                    self.duplicate_request_to_collection(col_idx, request_idx, col_idx);
+                } else {
+                    self.picker_context = PickerContext::DuplicateRequest {
+                        source_collection: col_idx,
+                        source_request: request_idx,
+                    };
+                    self.picker_cursor = col_idx;
+                    self.show_collection_picker = true;
+                    self.status_message = Some("Choose a collection for the duplicate".to_string());
+                }
             }
-        } else {
-            // Duplicating a collection
-            self.duplicate_collection_in_place(col_idx);
+            SidebarItem::Collection { path } if path.len() == 1 => {
+                self.duplicate_collection_in_place(path[0]);
+            }
+            _ => {}
         }
     }
 
@@ -1747,9 +1866,15 @@ impl App {
             // Insert after the original
             let pos = col_idx + 1;
             ws.data.collections.insert(pos, cloned.clone());
-            ws.data.selected_collection = Some(pos);
-            ws.data.selected_request = None;
-            // Stays collapsed (not in expanded_collections)
+            // Select the new collection in sidebar
+            let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+            if let Some(flat_idx) = items
+                .iter()
+                .position(|i| matches!(i, SidebarItem::Collection { path } if *path == vec![pos]))
+            {
+                ws.selected_sidebar_index = flat_idx;
+            }
+            // Stays collapsed (not in expanded_folders)
             pos
         };
 
@@ -1768,17 +1893,19 @@ impl App {
         if self.active_pane != Pane::Collections {
             return;
         }
-        let Some(ws) = self.active_workspace() else {
-            return;
+        let item = match self.selected_sidebar_item() {
+            Some(item) => item,
+            None => return,
         };
-        let Some(col_idx) = ws.data.selected_collection else {
-            return;
+        let (col_idx, req_idx) = match item {
+            SidebarItem::Request { path, request_idx } => (path[0], request_idx),
+            _ => return, // No-op on collections — only requests can be moved
         };
-        let Some(req_idx) = ws.data.selected_request else {
-            // No-op on collections — only requests can be moved
-            return;
-        };
-        if ws.data.collections.len() < 2 {
+        let collections_len = self
+            .active_workspace()
+            .map(|ws| ws.data.collections.len())
+            .unwrap_or(0);
+        if collections_len < 2 {
             self.status_message = Some("Need at least 2 collections to move a request".to_string());
             return;
         }
@@ -1827,13 +1954,16 @@ impl App {
         };
 
         // Auto-expand target
-        if let Some(col) = ws.data.collections.get(target_col) {
-            ws.expanded_collections.insert(col.id);
-        }
+        let target_path = vec![target_col];
+        ws.expanded_folders.insert(target_path.clone());
 
-        // Move selection to the request's new location
-        ws.data.selected_collection = Some(target_col);
-        ws.data.selected_request = Some(new_req_idx);
+        // Select the moved request in sidebar
+        let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+        if let Some(flat_idx) = items.iter().position(|i| {
+            matches!(i, SidebarItem::Request { path, request_idx } if *path == target_path && *request_idx == new_req_idx)
+        }) {
+            ws.selected_sidebar_index = flat_idx;
+        }
 
         // Save both collections to disk
         let collections_dir = lazycurl_core::config::config_dir()
@@ -1877,8 +2007,13 @@ impl App {
             Ok(_) => {
                 ws.data.collections.push(collection);
                 let idx = ws.data.collections.len() - 1;
-                ws.data.selected_collection = Some(idx);
-                ws.data.selected_request = None;
+                // Select the new collection in sidebar
+                let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+                if let Some(flat_idx) = items.iter().position(
+                    |i| matches!(i, SidebarItem::Collection { path } if *path == vec![idx]),
+                ) {
+                    ws.selected_sidebar_index = flat_idx;
+                }
                 self.name_input.set_content("New Collection");
                 self.start_editing(EditField::CollectionName(idx));
                 self.status_message = Some("Name your collection, then press Enter".to_string());
@@ -1891,107 +2026,169 @@ impl App {
 
     /// Show delete confirmation for the selected collection or request.
     pub fn request_collection_delete(&mut self) {
-        let Some(ws) = self.active_workspace() else {
-            return;
+        let item = match self.selected_sidebar_item() {
+            Some(item) => item,
+            None => {
+                self.status_message = Some("Nothing selected".to_string());
+                return;
+            }
         };
-        let Some(col_idx) = ws.data.selected_collection else {
-            self.status_message = Some("Nothing selected".to_string());
-            return;
-        };
-        if let Some(req_idx) = ws.data.selected_request {
-            if let Some(col) = ws.data.collections.get(col_idx) {
-                if let Some(req) = col.requests.get(req_idx) {
+        match item {
+            SidebarItem::Request { path, request_idx } => {
+                let ws = self.active_workspace().unwrap();
+                if let Some(col) = resolve_collection_path(&ws.data.collections, &path) {
+                    if let Some(req) = col.requests.get(request_idx) {
+                        self.status_message = Some(format!(
+                            "Delete request '{}'? y to confirm, Esc to cancel",
+                            req.name
+                        ));
+                        self.confirm_delete = true;
+                    }
+                }
+            }
+            SidebarItem::Collection { path } => {
+                let ws = self.active_workspace().unwrap();
+                if let Some(col) = resolve_collection_path(&ws.data.collections, &path) {
+                    let label = if path.len() == 1 {
+                        "collection"
+                    } else {
+                        "folder"
+                    };
                     self.status_message = Some(format!(
-                        "Delete request '{}'? y to confirm, Esc to cancel",
-                        req.name
+                        "Delete {} '{}'? y to confirm, Esc to cancel",
+                        label, col.name
                     ));
                     self.confirm_delete = true;
                 }
             }
-        } else if let Some(col) = ws.data.collections.get(col_idx) {
-            self.status_message = Some(format!(
-                "Delete collection '{}'? y to confirm, Esc to cancel",
-                col.name
-            ));
-            self.confirm_delete = true;
         }
     }
 
     pub fn delete_selected_in_collections(&mut self) {
-        let Some(ws) = self.active_workspace_mut() else {
-            return;
-        };
-        let Some(col_idx) = ws.data.selected_collection else {
-            self.status_message = Some("Nothing selected".to_string());
-            return;
+        let item = match self.selected_sidebar_item() {
+            Some(item) => item,
+            None => {
+                self.status_message = Some("Nothing selected".to_string());
+                return;
+            }
         };
 
-        if let Some(req_idx) = ws.data.selected_request {
-            // Delete a request from the collection
-            if let Some(collection) = ws.data.collections.get_mut(col_idx) {
-                if req_idx < collection.requests.len() {
-                    let name = collection.requests[req_idx].name.clone();
-                    collection.requests.remove(req_idx);
+        match item {
+            SidebarItem::Request {
+                path, request_idx, ..
+            } => {
+                let Some(ws) = self.active_workspace_mut() else {
+                    return;
+                };
+                if let Some(collection) =
+                    resolve_collection_path_mut(&mut ws.data.collections, &path)
+                {
+                    if request_idx < collection.requests.len() {
+                        let name = collection.requests[request_idx].name.clone();
+                        collection.requests.remove(request_idx);
 
-                    // Save collection to disk
+                        // Clear current request if it was the deleted one
+                        if ws
+                            .data
+                            .current_request
+                            .as_ref()
+                            .is_some_and(|r| r.name == name)
+                        {
+                            ws.data.current_request = None;
+                            ws.data.last_response = None;
+                        }
+
+                        // Adjust sidebar index (move up if at end)
+                        let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+                        if ws.selected_sidebar_index >= items.len() && !items.is_empty() {
+                            ws.selected_sidebar_index = items.len() - 1;
+                        }
+
+                        self.status_message = Some(format!("Deleted request '{}'", name));
+                    }
+                }
+                self.save_root_collection(&path);
+            }
+            SidebarItem::Collection { path } if path.len() == 1 => {
+                // Delete root collection from disk
+                let Some(ws) = self.active_workspace_mut() else {
+                    return;
+                };
+                let col_idx = path[0];
+                if let Some(collection) = ws.data.collections.get(col_idx) {
+                    let name = collection.name.clone();
                     let collections_dir = config_dir()
                         .join("projects")
                         .join(&ws.data.slug)
                         .join("collections");
-                    let _ =
-                        lazycurl_core::collection::save_collection(&collections_dir, collection);
+                    let _ = lazycurl_core::collection::delete_collection_from_dir(
+                        &collections_dir,
+                        collection,
+                    );
 
-                    // Adjust selection
-                    if collection.requests.is_empty() {
-                        ws.data.selected_request = None;
-                    } else if req_idx >= collection.requests.len() {
-                        ws.data.selected_request = Some(collection.requests.len() - 1);
+                    ws.data.collections.remove(col_idx);
+
+                    // Adjust var_collection_idx
+                    if ws.data.collections.is_empty() {
+                        ws.data.var_collection_idx = None;
+                    } else {
+                        let max = ws.data.collections.len() - 1;
+                        ws.data.var_collection_idx = ws.data.var_collection_idx.map(|i| i.min(max));
                     }
 
-                    // Clear current request if it was the deleted one
-                    if ws
-                        .data
-                        .current_request
-                        .as_ref()
-                        .is_some_and(|r| r.name == name)
-                    {
-                        ws.data.current_request = None;
-                        ws.data.last_response = None;
+                    // Adjust sidebar index
+                    let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+                    if ws.selected_sidebar_index >= items.len() && !items.is_empty() {
+                        ws.selected_sidebar_index = items.len() - 1;
+                    } else if items.is_empty() {
+                        ws.selected_sidebar_index = 0;
                     }
 
-                    self.status_message = Some(format!("Deleted request '{}'", name));
+                    self.status_message = Some(format!("Deleted collection '{}'", name));
                 }
             }
-        } else {
-            // Delete the entire collection
-            if let Some(collection) = ws.data.collections.get(col_idx) {
-                let name = collection.name.clone();
-                let collections_dir = config_dir()
-                    .join("projects")
-                    .join(&ws.data.slug)
-                    .join("collections");
-                let _ = lazycurl_core::collection::delete_collection_from_dir(
-                    &collections_dir,
-                    collection,
-                );
+            SidebarItem::Collection { path } => {
+                // Delete subfolder from parent's children
+                let Some(ws) = self.active_workspace_mut() else {
+                    return;
+                };
+                let child_idx = *path.last().unwrap();
+                let parent_path = &path[..path.len() - 1];
+                if let Some(parent) =
+                    resolve_collection_path_mut(&mut ws.data.collections, parent_path)
+                {
+                    if child_idx < parent.children.len() {
+                        let name = parent.children[child_idx].name.clone();
+                        parent.children.remove(child_idx);
 
-                ws.data.collections.remove(col_idx);
+                        // Adjust sidebar index
+                        let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+                        if ws.selected_sidebar_index >= items.len() && !items.is_empty() {
+                            ws.selected_sidebar_index = items.len() - 1;
+                        }
 
-                // Adjust all collection indices
-                if ws.data.collections.is_empty() {
-                    ws.data.selected_collection = None;
-                    ws.data.var_collection_idx = None;
-                } else {
-                    let max = ws.data.collections.len() - 1;
-                    if col_idx > max {
-                        ws.data.selected_collection = Some(max);
+                        self.status_message = Some(format!("Deleted folder '{}'", name));
                     }
-                    ws.data.var_collection_idx = ws.data.var_collection_idx.map(|i| i.min(max));
                 }
-                ws.data.selected_request = None;
-
-                self.status_message = Some(format!("Deleted collection '{}'", name));
+                self.save_root_collection(&path);
             }
+        }
+    }
+
+    /// Save the root-level collection to disk for any path into a collection tree.
+    fn save_root_collection(&self, path: &[usize]) {
+        if path.is_empty() {
+            return;
+        }
+        let Some(ws) = self.active_workspace() else {
+            return;
+        };
+        if let Some(collection) = ws.data.collections.get(path[0]) {
+            let collections_dir = config_dir()
+                .join("projects")
+                .join(&ws.data.slug)
+                .join("collections");
+            let _ = lazycurl_core::collection::save_collection(&collections_dir, collection);
         }
     }
 
@@ -2009,7 +2206,6 @@ impl App {
             body: None,
             auth: None,
         });
-        ws.data.selected_request = None;
         ws.data.last_response = None;
         // Start editing the request name immediately
         self.name_input.set_content("New Request");
@@ -2040,11 +2236,9 @@ impl App {
                                 col.requests.remove(request);
                             }
                         }
-                        // Move selection back to the original
-                        if request > 0 {
-                            ws.data.selected_request = Some(request - 1);
-                        } else {
-                            ws.data.selected_request = None;
+                        // Move sidebar index back
+                        if ws.selected_sidebar_index > 0 {
+                            ws.selected_sidebar_index -= 1;
                         }
                     }
                     self.status_message = Some("Duplicate cancelled".to_string());
@@ -2054,15 +2248,13 @@ impl App {
                         if collection < ws.data.collections.len() {
                             ws.data.collections.remove(collection);
                         }
-                        // Move selection back
-                        if collection > 0 {
-                            ws.data.selected_collection = Some(collection - 1);
-                        } else if !ws.data.collections.is_empty() {
-                            ws.data.selected_collection = Some(0);
-                        } else {
-                            ws.data.selected_collection = None;
+                        // Adjust sidebar index
+                        let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+                        if ws.selected_sidebar_index >= items.len() && !items.is_empty() {
+                            ws.selected_sidebar_index = items.len() - 1;
+                        } else if items.is_empty() {
+                            ws.selected_sidebar_index = 0;
                         }
-                        ws.data.selected_request = None;
                     }
                     self.status_message = Some("Duplicate cancelled".to_string());
                 }
@@ -2131,8 +2323,15 @@ impl App {
             Ok(_) => {
                 ws.data.collections.push(new_collection);
                 let col_idx = ws.data.collections.len() - 1;
-                ws.data.selected_collection = Some(col_idx);
-                ws.data.selected_request = Some(0);
+                // Expand the new collection and select the request
+                let path = vec![col_idx];
+                ws.expanded_folders.insert(path.clone());
+                let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+                if let Some(flat_idx) = items.iter().position(
+                    |i| matches!(i, SidebarItem::Request { path: p, request_idx: 0 } if *p == path),
+                ) {
+                    ws.selected_sidebar_index = flat_idx;
+                }
                 self.status_message = Some(format!("Created '{}' and saved!", name));
             }
             Err(e) => self.status_message = Some(format!("Save error: {}", e)),
@@ -2299,33 +2498,37 @@ impl App {
             EditField::RequestName => {
                 let name = self.name_input.content().to_string();
                 if !name.is_empty() {
+                    // Get the current sidebar item to find which collection/request to update
+                    let sidebar_item = self.selected_sidebar_item();
                     if let Some(ws) = self.active_workspace_mut() {
                         if let Some(request) = &mut ws.data.current_request {
                             request.name = name.clone();
                         }
                         // Auto-save the renamed request to its collection
-                        if let Some(col_idx) = ws.data.selected_collection {
-                            if let Some(req_idx) = ws.data.selected_request {
-                                if let Some(collection) = ws.data.collections.get_mut(col_idx) {
-                                    if let Some(existing) = collection.requests.get_mut(req_idx) {
-                                        existing.name = name;
+                        if let Some(SidebarItem::Request { path, request_idx }) = &sidebar_item {
+                            if let Some(collection) =
+                                resolve_collection_path_mut(&mut ws.data.collections, path)
+                            {
+                                if let Some(existing) = collection.requests.get_mut(*request_idx) {
+                                    existing.name = name;
+                                }
+                            }
+                            // Save the root collection to disk
+                            if let Some(root_col) = ws.data.collections.get(path[0]) {
+                                let collections_dir = config_dir()
+                                    .join("projects")
+                                    .join(&ws.data.slug)
+                                    .join("collections");
+                                match lazycurl_core::collection::save_collection(
+                                    &collections_dir,
+                                    root_col,
+                                ) {
+                                    Ok(_) => {
+                                        self.status_message = Some("Renamed and saved!".to_string())
                                     }
-                                    let collections_dir = config_dir()
-                                        .join("projects")
-                                        .join(&ws.data.slug)
-                                        .join("collections");
-                                    match lazycurl_core::collection::save_collection(
-                                        &collections_dir,
-                                        collection,
-                                    ) {
-                                        Ok(_) => {
-                                            self.status_message =
-                                                Some("Renamed and saved!".to_string())
-                                        }
-                                        Err(e) => {
-                                            self.status_message =
-                                                Some(format!("Rename ok, save error: {}", e))
-                                        }
+                                    Err(e) => {
+                                        self.status_message =
+                                            Some(format!("Rename ok, save error: {}", e))
                                     }
                                 }
                             }
@@ -2770,46 +2973,40 @@ impl App {
     pub fn handle_rename(&mut self) {
         match self.active_pane {
             Pane::Collections => {
-                // Clone out the data we need to avoid borrow issues
-                let rename_info = self.active_workspace().and_then(|ws| {
-                    let col_idx = ws.data.selected_collection?;
-                    if let Some(req_idx) = ws.data.selected_request {
-                        let req = ws
-                            .data
-                            .collections
-                            .get(col_idx)?
-                            .requests
-                            .get(req_idx)?
-                            .clone();
-                        Some((col_idx, Some((req_idx, req))))
-                    } else {
-                        let _col_name = ws.data.collections.get(col_idx)?.name.clone();
-                        Some((col_idx, Option::<(usize, Request)>::None))
-                    }
-                });
-
-                if let Some((col_idx, req_info)) = rename_info {
-                    if let Some((_req_idx, req)) = req_info {
-                        // Rename a request
-                        self.name_input.set_content(&req.name);
-                        if let Some(ws) = self.active_workspace_mut() {
-                            ws.data.current_request = Some(req);
+                let item = match self.selected_sidebar_item() {
+                    Some(item) => item,
+                    None => return,
+                };
+                match item {
+                    SidebarItem::Request { path, request_idx } => {
+                        // Clone out the request we need
+                        let req = self
+                            .active_workspace()
+                            .and_then(|ws| resolve_collection_path(&ws.data.collections, &path))
+                            .and_then(|col| col.requests.get(request_idx).cloned());
+                        if let Some(req) = req {
+                            self.name_input.set_content(&req.name);
+                            if let Some(ws) = self.active_workspace_mut() {
+                                ws.data.current_request = Some(req);
+                            }
+                            self.load_request_into_inputs();
+                            self.start_editing(EditField::RequestName);
+                            self.status_message = Some("Rename request".to_string());
                         }
-                        self.load_request_into_inputs();
-                        self.start_editing(EditField::RequestName);
-                        self.status_message = Some("Rename request".to_string());
-                    } else {
-                        // Rename a collection
+                    }
+                    SidebarItem::Collection { path } if path.len() == 1 => {
+                        // Rename a root collection
                         let col_name = self
                             .active_workspace()
-                            .and_then(|ws| ws.data.collections.get(col_idx))
+                            .and_then(|ws| ws.data.collections.get(path[0]))
                             .map(|c| c.name.clone());
                         if let Some(name) = col_name {
                             self.name_input.set_content(&name);
-                            self.start_editing(EditField::CollectionName(col_idx));
+                            self.start_editing(EditField::CollectionName(path[0]));
                             self.status_message = Some("Rename collection".to_string());
                         }
                     }
+                    _ => {}
                 }
             }
             Pane::Request => {
@@ -2946,32 +3143,31 @@ impl App {
     pub fn handle_enter(&mut self) {
         match self.active_pane {
             Pane::Collections => {
-                if let Some(_col_idx) = self.selected_collection() {
-                    if self.selected_request().is_none() {
-                        // On a collection header — toggle expand instead of loading
+                let item = match self.selected_sidebar_item() {
+                    Some(item) => item,
+                    None => return,
+                };
+                match item {
+                    SidebarItem::Collection { .. } => {
+                        // On a collection header — toggle expand
                         self.toggle_collapse();
-                        return;
                     }
-                }
-                // Load the selected request
-                let req_clone = self.active_workspace().and_then(|ws| {
-                    let col_idx = ws.data.selected_collection?;
-                    let req_idx = ws.data.selected_request?;
-                    ws.data
-                        .collections
-                        .get(col_idx)?
-                        .requests
-                        .get(req_idx)
-                        .cloned()
-                });
-                if let Some(req) = req_clone {
-                    let name = req.name.clone();
-                    if let Some(ws) = self.active_workspace_mut() {
-                        ws.data.current_request = Some(req);
+                    SidebarItem::Request { path, request_idx } => {
+                        // Load the selected request
+                        let req_clone = self
+                            .active_workspace()
+                            .and_then(|ws| resolve_collection_path(&ws.data.collections, &path))
+                            .and_then(|col| col.requests.get(request_idx).cloned());
+                        if let Some(req) = req_clone {
+                            let name = req.name.clone();
+                            if let Some(ws) = self.active_workspace_mut() {
+                                ws.data.current_request = Some(req);
+                            }
+                            self.load_request_into_inputs();
+                            self.active_pane = Pane::Request;
+                            self.status_message = Some(format!("Loaded: {}", name));
+                        }
                     }
-                    self.load_request_into_inputs();
-                    self.active_pane = Pane::Request;
-                    self.status_message = Some(format!("Loaded: {}", name));
                 }
             }
             Pane::Request => {
@@ -3326,27 +3522,9 @@ impl App {
 
     /// Calculate the flat index of the current collection cursor position
     fn collection_cursor_flat_index(&self) -> usize {
-        let Some(ws) = self.active_workspace() else {
-            return 0;
-        };
-        let mut idx = 0;
-        for (col_idx, col) in ws.data.collections.iter().enumerate() {
-            if Some(col_idx) == ws.data.selected_collection && ws.data.selected_request.is_none() {
-                return idx;
-            }
-            idx += 1; // collection row
-            if ws.expanded_collections.contains(&col.id) {
-                for (req_idx, _) in col.requests.iter().enumerate() {
-                    if Some(col_idx) == ws.data.selected_collection
-                        && Some(req_idx) == ws.data.selected_request
-                    {
-                        return idx;
-                    }
-                    idx += 1;
-                }
-            }
-        }
-        idx
+        self.active_workspace()
+            .map(|ws| ws.selected_sidebar_index)
+            .unwrap_or(0)
     }
 
     /// Adjust collection_scroll to keep the cursor visible
@@ -3362,74 +3540,26 @@ impl App {
         }
     }
 
-    /// Move collection cursor up through the flat list of collections and their requests
+    /// Move collection cursor up through the flat sidebar list
     fn move_collection_cursor_up(&mut self) {
-        let expanded: std::collections::HashSet<uuid::Uuid> = self
-            .active_workspace()
-            .map(|ws| ws.expanded_collections.clone())
-            .unwrap_or_default();
-
         let Some(ws) = self.active_workspace_mut() else {
             return;
         };
-        if let Some(req_idx) = ws.data.selected_request {
-            if req_idx > 0 {
-                ws.data.selected_request = Some(req_idx - 1);
-            } else {
-                // Move back to collection level
-                ws.data.selected_request = None;
-            }
-        } else if let Some(col_idx) = ws.data.selected_collection {
-            if col_idx > 0 {
-                let prev_idx = col_idx - 1;
-                ws.data.selected_collection = Some(prev_idx);
-                // Select last request of previous collection if expanded
-                if let Some(prev_col) = ws.data.collections.get(prev_idx) {
-                    let prev_expanded = expanded.contains(&prev_col.id);
-                    if prev_expanded && !prev_col.requests.is_empty() {
-                        ws.data.selected_request = Some(prev_col.requests.len() - 1);
-                    }
-                }
-            }
-        } else if !ws.data.collections.is_empty() {
-            ws.data.selected_collection = Some(0);
+        if ws.selected_sidebar_index > 0 {
+            ws.selected_sidebar_index -= 1;
         }
     }
 
-    /// Move collection cursor down through the flat list
+    /// Move collection cursor down through the flat sidebar list
     fn move_collection_cursor_down(&mut self) {
-        let expanded: std::collections::HashSet<uuid::Uuid> = self
-            .active_workspace()
-            .map(|ws| ws.expanded_collections.clone())
-            .unwrap_or_default();
-
-        let Some(ws) = self.active_workspace_mut() else {
+        let Some(ws) = self.active_workspace() else {
             return;
         };
-        if let Some(col_idx) = ws.data.selected_collection {
-            if let Some(collection) = ws.data.collections.get(col_idx) {
-                let is_expanded = expanded.contains(&collection.id);
-                let requests_len = collection.requests.len();
-
-                if let Some(req_idx) = ws.data.selected_request {
-                    // Currently on a request
-                    if req_idx + 1 < requests_len {
-                        ws.data.selected_request = Some(req_idx + 1);
-                    } else if col_idx + 1 < ws.data.collections.len() {
-                        // Move to next collection
-                        ws.data.selected_collection = Some(col_idx + 1);
-                        ws.data.selected_request = None;
-                    }
-                } else if is_expanded && !collection.requests.is_empty() {
-                    // On a collection header, expanded — move into first request
-                    ws.data.selected_request = Some(0);
-                } else if col_idx + 1 < ws.data.collections.len() {
-                    // Collapsed or empty — skip to next collection
-                    ws.data.selected_collection = Some(col_idx + 1);
-                }
-            }
-        } else if !ws.data.collections.is_empty() {
-            ws.data.selected_collection = Some(0);
+        let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+        let max = items.len().saturating_sub(1);
+        let ws = self.active_workspace_mut().unwrap();
+        if ws.selected_sidebar_index < max {
+            ws.selected_sidebar_index += 1;
         }
     }
 

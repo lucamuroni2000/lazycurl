@@ -47,7 +47,7 @@ pub fn handle(app: &mut App, action: &Action) {
                 // If on Environment/Collection tier with nothing selected, create one first
                 let needs_container = match app.var_tier {
                     app::VarTier::Environment => app.active_environment().is_none(),
-                    app::VarTier::Collection => app.selected_collection().is_none(),
+                    app::VarTier::Collection => app.selected_root_collection_idx().is_none(),
                     app::VarTier::Global => false,
                 };
                 if needs_container {

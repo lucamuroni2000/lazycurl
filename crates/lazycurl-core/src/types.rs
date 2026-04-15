@@ -585,8 +585,6 @@ pub struct ProjectWorkspaceData {
     pub collections: Vec<Collection>,
     pub environments: Vec<Environment>,
     pub active_environment: Option<usize>,
-    pub selected_collection: Option<usize>,
-    pub selected_request: Option<usize>,
     pub current_request: Option<Request>,
     pub last_response: Option<CurlResponse>,
     pub var_collection_idx: Option<usize>,
@@ -601,8 +599,6 @@ impl ProjectWorkspaceData {
             collections: Vec::new(),
             environments: Vec::new(),
             active_environment: None,
-            selected_collection: None,
-            selected_request: None,
             current_request: Some(Request {
                 id: uuid::Uuid::new_v4(),
                 name: "New Request".to_string(),
@@ -628,13 +624,24 @@ impl ProjectWorkspaceData {
             .map(|env| env.name.clone());
     }
 
-    /// Find the auth config for a request by its UUID, searching all collections.
+    /// Find the auth config for a request by its UUID, searching all collections recursively.
     pub fn find_request_auth(&self, request_id: uuid::Uuid) -> Option<Auth> {
+        fn search_collection(col: &Collection, id: uuid::Uuid) -> Option<Auth> {
+            for r in &col.requests {
+                if r.id == id {
+                    return r.auth.clone();
+                }
+            }
+            for child in &col.children {
+                if let Some(auth) = search_collection(child, id) {
+                    return Some(auth);
+                }
+            }
+            None
+        }
         self.collections
             .iter()
-            .flat_map(|c| &c.requests)
-            .find(|r| r.id == request_id)
-            .and_then(|r| r.auth.clone())
+            .find_map(|c| search_collection(c, request_id))
     }
 
     /// Restore `active_environment` index from the saved `project.active_environment` name.

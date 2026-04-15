@@ -48,13 +48,9 @@ pub fn draw(frame: &mut Frame, app: &App, kb: &HashMap<String, String>) {
 
     if app.export_collection_available {
         let collection_name = app
-            .active_workspace()
-            .and_then(|ws| {
-                ws.data
-                    .selected_collection
-                    .and_then(|idx| ws.data.collections.get(idx))
-                    .map(|c| c.name.clone())
-            })
+            .selected_root_collection_idx()
+            .and_then(|idx| app.collections().get(idx))
+            .map(|c| c.name.clone())
             .unwrap_or_else(|| "Collection".to_string());
         scope_spans.push(Span::raw("  "));
         scope_spans.push(Span::styled(collection_name, scope_collection_style));

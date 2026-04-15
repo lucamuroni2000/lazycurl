@@ -70,15 +70,13 @@ pub async fn handle(app: &mut App, action: &Action) {
             app.show_variables = true;
             app.var_cursor = 0;
             app.var_editing = None;
+            let root_col_idx = app.selected_root_collection_idx();
             if let Some(ws) = app.active_workspace_mut() {
-                ws.data.var_collection_idx =
-                    ws.data
-                        .selected_collection
-                        .or(if ws.data.collections.is_empty() {
-                            None
-                        } else {
-                            Some(0)
-                        });
+                ws.data.var_collection_idx = root_col_idx.or(if ws.data.collections.is_empty() {
+                    None
+                } else {
+                    Some(0)
+                });
                 ws.data.var_environment_idx =
                     ws.data
                         .active_environment

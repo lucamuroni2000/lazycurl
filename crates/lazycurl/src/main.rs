@@ -462,13 +462,8 @@ pub(crate) fn execute_export(app: &mut App, format: ExportFormat) {
         ExportFormat::PostmanV21 | ExportFormat::OpenApi3 => {
             let (json, name) = if app.export_scope_is_collection {
                 let collection = app
-                    .active_workspace()
-                    .and_then(|ws| {
-                        ws.data
-                            .selected_collection
-                            .and_then(|idx| ws.data.collections.get(idx))
-                    })
-                    .cloned();
+                    .selected_root_collection_idx()
+                    .and_then(|idx| app.collections().get(idx).cloned());
                 if let Some(col) = collection {
                     let json = match format {
                         ExportFormat::PostmanV21 => export::export_postman_collection(&col),
@@ -605,12 +600,10 @@ fn resolve_request(
             .and_then(|i| ws.data.environments.get(i))
             .map(|e| e.variables.clone())
     });
-    let col_vars = ws.and_then(|ws| {
-        ws.data
-            .selected_collection
-            .and_then(|i| ws.data.collections.get(i))
-            .map(|c| c.variables.clone())
-    });
+    let col_vars = app
+        .selected_root_collection_idx()
+        .and_then(|i| app.collections().get(i))
+        .map(|c| c.variables.clone());
 
     let resolver = FileVariableResolver::new(global_vars, env_vars, col_vars);
     let mut secrets = Vec::new();

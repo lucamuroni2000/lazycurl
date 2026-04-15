@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
-use crate::app::{App, Pane};
+use crate::app::{build_sidebar_items, resolve_collection_path, App, Pane, SidebarItem};
 
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let is_focused = app.active_pane == Pane::Collections;
@@ -29,45 +29,63 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    let ws = match app.active_workspace() {
+        Some(ws) => ws,
+        None => return,
+    };
+
+    let sidebar_items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
+    let selected_idx = ws.selected_sidebar_index;
+
     let mut lines = Vec::new();
-    for (col_idx, collection) in app.collections().iter().enumerate() {
-        let is_selected_col =
-            app.selected_collection() == Some(col_idx) && app.selected_request().is_none();
-        let is_expanded = app.is_collection_expanded(col_idx);
+    for (flat_idx, item) in sidebar_items.iter().enumerate() {
+        let is_selected = flat_idx == selected_idx && is_focused;
 
-        let style = if is_selected_col && is_focused {
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD | Modifier::REVERSED)
-        } else {
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD)
-        };
-
-        let arrow = if is_expanded { "\u{25BC}" } else { "\u{25B6}" };
-        lines.push(Line::from(Span::styled(
-            format!(" {} {}", arrow, collection.name),
-            style,
-        )));
-
-        // Only show requests if expanded
-        if is_expanded {
-            for (req_idx, req) in collection.requests.iter().enumerate() {
-                let is_selected_req = app.selected_collection() == Some(col_idx)
-                    && app.selected_request() == Some(req_idx);
-
+        match item {
+            SidebarItem::Collection { path } => {
+                let depth = path.len() - 1;
+                let indent = "  ".repeat(depth);
+                let col = match resolve_collection_path(&ws.data.collections, path) {
+                    Some(c) => c,
+                    None => continue,
+                };
+                let is_expanded = ws.expanded_folders.contains(path);
+                let arrow = if is_expanded { "\u{25BC}" } else { "\u{25B6}" };
+                let style = if is_selected {
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+                } else {
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                };
+                lines.push(Line::from(Span::styled(
+                    format!("{} {} {}", indent, arrow, col.name),
+                    style,
+                )));
+            }
+            SidebarItem::Request { path, request_idx } => {
+                let depth = path.len();
+                let indent = "  ".repeat(depth);
+                let col = match resolve_collection_path(&ws.data.collections, path) {
+                    Some(c) => c,
+                    None => continue,
+                };
+                let req = match col.requests.get(*request_idx) {
+                    Some(r) => r,
+                    None => continue,
+                };
                 let method_style = Style::default().fg(method_color(req.method));
-                let name_style = if is_selected_req && is_focused {
+                let name_style = if is_selected {
                     Style::default()
                         .fg(Color::White)
                         .add_modifier(Modifier::REVERSED)
                 } else {
                     Style::default().fg(Color::White)
                 };
-
                 lines.push(Line::from(vec![
-                    Span::raw("   "),
+                    Span::raw(format!("{} ", indent)),
                     Span::styled(format!("{:7}", req.method), method_style),
                     Span::styled(&req.name, name_style),
                 ]));
