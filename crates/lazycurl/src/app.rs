@@ -157,6 +157,7 @@ pub struct ImportResultDisplay {
     pub success: bool,
     pub collection_name: String,
     pub request_count: usize,
+    pub folder_count: usize,
     pub variable_count: usize,
     pub warnings: Vec<String>,
     pub error: Option<String>,
@@ -1057,13 +1058,11 @@ impl App {
         // Determine the collection path from sidebar selection for variable resolution
         let selected_col_path = {
             let items = build_sidebar_items(&ws.data.collections, &ws.expanded_folders);
-            items
-                .get(ws.selected_sidebar_index)
-                .map(|item| match item {
-                    SidebarItem::Collection { path } | SidebarItem::Request { path, .. } => {
-                        path.clone()
-                    }
-                })
+            items.get(ws.selected_sidebar_index).map(|item| match item {
+                SidebarItem::Collection { path } | SidebarItem::Request { path, .. } => {
+                    path.clone()
+                }
+            })
         };
         let col_vars = selected_col_path
             .as_ref()

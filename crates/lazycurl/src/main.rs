@@ -124,10 +124,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "Imported \"{}\" into project \"{}\"",
                         import_result.collection.name, slug
                     );
-                    println!(
-                        "  {} requests added",
-                        import_result.collection.requests.len()
-                    );
+                    let total_requests = count_all_requests(&import_result.collection);
+                    let total_folders = count_all_folders(&import_result.collection);
+                    println!("  {} requests added", total_requests);
+                    if total_folders > 0 {
+                        println!("  {} folders", total_folders);
+                    }
                     if !import_result.collection.variables.is_empty() {
                         println!(
                             "  {} collection variables",
@@ -515,6 +517,14 @@ pub(crate) fn execute_export(app: &mut App, format: ExportFormat) {
     }
 }
 
+fn count_all_requests(col: &lazycurl_core::types::Collection) -> usize {
+    col.requests.len() + col.children.iter().map(count_all_requests).sum::<usize>()
+}
+
+fn count_all_folders(col: &lazycurl_core::types::Collection) -> usize {
+    col.children.len() + col.children.iter().map(count_all_folders).sum::<usize>()
+}
+
 pub(crate) fn execute_import(
     app: &mut App,
     format: &lazycurl_core::import::ImportFormat,
@@ -531,7 +541,8 @@ pub(crate) fn execute_import(
     match result {
         Ok(import_result) => {
             let collection_name = import_result.collection.name.clone();
-            let request_count = import_result.collection.requests.len();
+            let request_count = count_all_requests(&import_result.collection);
+            let folder_count = count_all_folders(&import_result.collection);
             let variable_count = import_result.collection.variables.len();
             let warnings: Vec<String> = import_result
                 .warnings
@@ -551,6 +562,7 @@ pub(crate) fn execute_import(
                         success: false,
                         collection_name,
                         request_count: 0,
+                        folder_count: 0,
                         variable_count: 0,
                         warnings: Vec::new(),
                         error: Some(format!("Failed to save: {}", e)),
@@ -565,6 +577,7 @@ pub(crate) fn execute_import(
                 success: true,
                 collection_name,
                 request_count,
+                folder_count,
                 variable_count,
                 warnings,
                 error: None,
@@ -576,6 +589,7 @@ pub(crate) fn execute_import(
                 success: false,
                 collection_name: String::new(),
                 request_count: 0,
+                folder_count: 0,
                 variable_count: 0,
                 warnings: Vec::new(),
                 error: Some(e.to_string()),

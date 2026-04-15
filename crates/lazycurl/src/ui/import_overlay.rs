@@ -187,10 +187,17 @@ fn draw_result(frame: &mut Frame, app: &App, kb: &HashMap<String, String>) {
             ),
         ]));
         lines.push(Line::from(Span::styled(
-            format!(
-                "   {} requests, {} variables",
-                result.request_count, result.variable_count
-            ),
+            if result.folder_count > 0 {
+                format!(
+                    "   {} requests, {} folders, {} variables",
+                    result.request_count, result.folder_count, result.variable_count
+                )
+            } else {
+                format!(
+                    "   {} requests, {} variables",
+                    result.request_count, result.variable_count
+                )
+            },
             Style::default().fg(Color::DarkGray),
         )));
 
