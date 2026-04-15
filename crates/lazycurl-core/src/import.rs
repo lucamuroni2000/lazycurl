@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 
@@ -844,6 +845,34 @@ fn get_postman_auth_field(
         })
 }
 
+/// Convert OpenAPI `{param}` path parameters to `{{param}}` variable syntax.
+fn convert_openapi_path_params(url: &str) -> String {
+    let mut result = String::with_capacity(url.len());
+    let mut chars = url.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '{' {
+            if chars.peek() == Some(&'{') {
+                result.push('{');
+                result.push(chars.next().unwrap());
+            } else {
+                result.push('{');
+                result.push('{');
+            }
+        } else if ch == '}' {
+            if chars.peek() == Some(&'}') {
+                result.push('}');
+                result.push(chars.next().unwrap());
+            } else {
+                result.push('}');
+                result.push('}');
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
+
 /// Import an OpenAPI 3.x specification file (JSON or YAML).
 pub fn import_openapi(path: &Path) -> Result<ImportResult, ImportError> {
     let content = std::fs::read_to_string(path)?;
@@ -896,10 +925,14 @@ pub fn import_openapi(path: &Path) -> Result<ImportResult, ImportError> {
         .and_then(|p| p.as_object())
         .ok_or(ImportError::ParseError("Missing 'paths' object".into()))?;
 
-    let mut requests = Vec::new();
     let warnings = Vec::new();
 
     let http_methods = ["get", "post", "put", "delete", "patch", "head", "options"];
+
+    // First pass: parse all operations, collecting (group_key, request) pairs
+    // group_key is Some(tag_or_prefix) or None for ungrouped
+    let mut parsed_ops: Vec<(Option<String>, Request)> = Vec::new();
+    let mut has_tags = false;
 
     for (path_str, path_item) in paths {
         let path_obj = match path_item.as_object() {
@@ -920,10 +953,18 @@ pub fn import_openapi(path: &Path) -> Result<ImportResult, ImportError> {
                 None => continue,
             };
 
+            // Name: summary > operationId > METHOD /path
             let name = operation
-                .get("operationId")
-                .and_then(|o| o.as_str())
+                .get("summary")
+                .and_then(|s| s.as_str())
+                .filter(|s| !s.is_empty())
                 .map(String::from)
+                .or_else(|| {
+                    operation
+                        .get("operationId")
+                        .and_then(|o| o.as_str())
+                        .map(String::from)
+                })
                 .unwrap_or_else(|| format!("{} {}", method_str.to_uppercase(), path_str));
 
             let method = parse_method(method_str);
@@ -932,6 +973,7 @@ pub fn import_openapi(path: &Path) -> Result<ImportResult, ImportError> {
             } else {
                 format!("{}{}", base_url, path_str)
             };
+            let url = convert_openapi_path_params(&url);
 
             // Merge path-level and operation-level parameters
             let op_params = operation
@@ -991,7 +1033,19 @@ pub fn import_openapi(path: &Path) -> Result<ImportResult, ImportError> {
                 &security_schemes,
             );
 
-            requests.push(Request {
+            // Determine tag for grouping
+            let tag = operation
+                .get("tags")
+                .and_then(|t| t.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|t| t.as_str())
+                .map(String::from);
+
+            if tag.is_some() {
+                has_tags = true;
+            }
+
+            let request = Request {
                 id: uuid::Uuid::new_v4(),
                 name,
                 method,
@@ -1000,26 +1054,96 @@ pub fn import_openapi(path: &Path) -> Result<ImportResult, ImportError> {
                 params,
                 body,
                 auth,
-            });
+            };
+
+            parsed_ops.push((tag, request));
         }
     }
 
-    if requests.is_empty() {
+    if parsed_ops.is_empty() {
         return Err(ImportError::EmptyImport);
     }
+
+    // Second pass: organize into folders
+    let mut folder_map: BTreeMap<String, Vec<Request>> = BTreeMap::new();
+    let mut ungrouped: Vec<Request> = Vec::new();
+
+    if has_tags {
+        // Tag-based grouping: operations with tags go into folders, untagged go to root
+        for (tag, request) in parsed_ops {
+            if let Some(tag_name) = tag {
+                folder_map.entry(tag_name).or_default().push(request);
+            } else {
+                ungrouped.push(request);
+            }
+        }
+    } else {
+        // Path-prefix grouping: group by first path segment after /
+        for (_, request) in parsed_ops {
+            // Extract path from URL (after base_url)
+            let url_path = if !base_url.is_empty() {
+                request.url.strip_prefix(base_url).unwrap_or(&request.url)
+            } else {
+                &request.url
+            };
+
+            // Get first path segment
+            let segments: Vec<&str> = url_path
+                .trim_start_matches('/')
+                .split('/')
+                .filter(|s| !s.is_empty())
+                .collect();
+
+            if segments.len() > 1 {
+                // Has a prefix segment — group by it
+                let prefix = segments[0];
+                // Title-case the prefix
+                let folder_name = titlecase_segment(prefix);
+                folder_map.entry(folder_name).or_default().push(request);
+            } else {
+                // Single segment or empty — root level
+                ungrouped.push(request);
+            }
+        }
+    }
+
+    // Build children from folder map
+    let children: Vec<Collection> = folder_map
+        .into_iter()
+        .map(|(name, requests)| Collection {
+            id: uuid::Uuid::new_v4(),
+            name,
+            variables: std::collections::HashMap::new(),
+            requests,
+            children: Vec::new(),
+        })
+        .collect();
 
     let collection = Collection {
         id: uuid::Uuid::new_v4(),
         name: title,
         variables: std::collections::HashMap::new(),
-        requests,
-        children: Vec::new(),
+        requests: ungrouped,
+        children,
     };
 
     Ok(ImportResult {
         collection,
         warnings,
     })
+}
+
+/// Convert a path segment to title case (e.g., "admin" → "Admin").
+fn titlecase_segment(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(first) => {
+            let mut result = first.to_uppercase().to_string();
+            result.extend(chars);
+            result
+        }
+    }
 }
 
 fn parse_openapi_body(body_val: Option<&serde_json::Value>) -> Option<Body> {
@@ -2032,10 +2156,11 @@ mod tests {
         let path = write_temp_json(json);
         let result = import_openapi(path.path()).unwrap();
         assert_eq!(result.collection.name, "Pet API");
-        assert_eq!(result.collection.requests.len(), 1);
-        assert_eq!(result.collection.requests[0].name, "listPets");
-        assert_eq!(result.collection.requests[0].method, Method::Get);
-        assert_eq!(result.collection.requests[0].url, "https://api.test/pets");
+        let all_requests = collect_all_requests(&result.collection);
+        assert_eq!(all_requests.len(), 1);
+        assert_eq!(all_requests[0].name, "List all pets");
+        assert_eq!(all_requests[0].method, Method::Get);
+        assert_eq!(all_requests[0].url, "https://api.test/pets");
     }
 
     #[test]
@@ -2057,13 +2182,9 @@ mod tests {
         }"#;
         let path = write_temp_json(json);
         let result = import_openapi(path.path()).unwrap();
-        assert_eq!(result.collection.requests.len(), 4);
-        let names: Vec<&str> = result
-            .collection
-            .requests
-            .iter()
-            .map(|r| r.name.as_str())
-            .collect();
+        let all_requests = collect_all_requests(&result.collection);
+        assert_eq!(all_requests.len(), 4);
+        let names: Vec<&str> = all_requests.iter().map(|r| r.name.as_str()).collect();
         assert!(names.contains(&"listUsers"));
         assert!(names.contains(&"createUser"));
         assert!(names.contains(&"getUser"));
@@ -2084,7 +2205,8 @@ mod tests {
         }"#;
         let path = write_temp_json(json);
         let result = import_openapi(path.path()).unwrap();
-        assert_eq!(result.collection.requests[0].name, "GET /health");
+        let all_requests = collect_all_requests(&result.collection);
+        assert_eq!(all_requests[0].name, "Health check");
     }
 
     #[test]
@@ -2107,7 +2229,8 @@ mod tests {
         }"#;
         let path = write_temp_json(json);
         let result = import_openapi(path.path()).unwrap();
-        let req = &result.collection.requests[0];
+        let all_requests = collect_all_requests(&result.collection);
+        let req = all_requests[0];
         assert_eq!(req.params.len(), 1);
         assert_eq!(req.params[0].key, "q");
         assert_eq!(req.headers.len(), 1);
@@ -2136,7 +2259,8 @@ mod tests {
         }"#;
         let path = write_temp_json(json);
         let result = import_openapi(path.path()).unwrap();
-        let req = &result.collection.requests[0];
+        let all_requests = collect_all_requests(&result.collection);
+        let req = all_requests[0];
         assert_eq!(req.params.len(), 3);
         // No example → empty
         assert_eq!(req.params[0].key, "vendor_id");
@@ -2178,7 +2302,8 @@ mod tests {
         }"#;
         let path = write_temp_json(json);
         let result = import_openapi(path.path()).unwrap();
-        match &result.collection.requests[0].body {
+        let all_requests = collect_all_requests(&result.collection);
+        match &all_requests[0].body {
             Some(Body::Raw {
                 content,
                 content_type,
@@ -2204,7 +2329,8 @@ mod tests {
         }"#;
         let path = write_temp_json(json);
         let result = import_openapi(path.path()).unwrap();
-        assert_eq!(result.collection.requests[0].url, "/test");
+        let all_requests = collect_all_requests(&result.collection);
+        assert_eq!(all_requests[0].url, "/test");
     }
 
     #[test]
@@ -2227,7 +2353,8 @@ paths:
         file.flush().unwrap();
         let result = import_openapi(file.path()).unwrap();
         assert_eq!(result.collection.name, "YAML API");
-        assert_eq!(result.collection.requests[0].url, "https://yaml.test/items");
+        let all_requests = collect_all_requests(&result.collection);
+        assert_eq!(all_requests[0].url, "https://yaml.test/items");
     }
 
     #[test]
@@ -2301,7 +2428,8 @@ paths:
         }"#;
         let path = write_temp_json(json);
         let result = import_openapi(path.path()).unwrap();
-        match &result.collection.requests[0].auth {
+        let all_requests = collect_all_requests(&result.collection);
+        match &all_requests[0].auth {
             Some(Auth::Bearer { token }) => assert_eq!(token, ""),
             other => panic!("Expected Bearer auth, got {:?}", other),
         }
@@ -2333,7 +2461,8 @@ paths:
         }"#;
         let path = write_temp_json(json);
         let result = import_openapi(path.path()).unwrap();
-        match &result.collection.requests[0].auth {
+        let all_requests = collect_all_requests(&result.collection);
+        match &all_requests[0].auth {
             Some(Auth::ApiKey {
                 key,
                 value,
@@ -2345,5 +2474,186 @@ paths:
             }
             other => panic!("Expected ApiKey auth, got {:?}", other),
         }
+    }
+
+    /// Helper: recursively collect all requests from a collection tree
+    fn collect_all_requests(col: &Collection) -> Vec<&Request> {
+        let mut result: Vec<&Request> = col.requests.iter().collect();
+        for child in &col.children {
+            result.extend(collect_all_requests(child));
+        }
+        result
+    }
+
+    #[test]
+    fn test_openapi_summary_as_name() {
+        let json = r#"{
+            "openapi": "3.0.3",
+            "info": {"title": "Test API", "version": "1.0"},
+            "paths": {
+                "/users": {
+                    "get": {
+                        "summary": "List Users",
+                        "responses": {"200": {"description": "ok"}}
+                    }
+                }
+            }
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path()).unwrap();
+        let all_requests = collect_all_requests(&result.collection);
+        assert_eq!(all_requests.len(), 1);
+        assert_eq!(all_requests[0].name, "List Users");
+    }
+
+    #[test]
+    fn test_openapi_operationid_fallback() {
+        let json = r#"{
+            "openapi": "3.0.3",
+            "info": {"title": "Test API", "version": "1.0"},
+            "paths": {
+                "/users": {
+                    "get": {
+                        "operationId": "listUsers",
+                        "responses": {"200": {"description": "ok"}}
+                    }
+                }
+            }
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path()).unwrap();
+        let all_requests = collect_all_requests(&result.collection);
+        assert_eq!(all_requests[0].name, "listUsers");
+    }
+
+    #[test]
+    fn test_openapi_path_prefix_grouping() {
+        let json = r#"{
+            "openapi": "3.0.3",
+            "info": {"title": "Test API", "version": "1.0"},
+            "paths": {
+                "/admin/users": {
+                    "get": {
+                        "summary": "List Users",
+                        "responses": {"200": {"description": "ok"}}
+                    }
+                },
+                "/admin/roles": {
+                    "get": {
+                        "summary": "List Roles",
+                        "responses": {"200": {"description": "ok"}}
+                    }
+                },
+                "/store/products": {
+                    "get": {
+                        "summary": "List Products",
+                        "responses": {"200": {"description": "ok"}}
+                    }
+                }
+            }
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path()).unwrap();
+        assert_eq!(result.collection.children.len(), 2);
+        let admin = result
+            .collection
+            .children
+            .iter()
+            .find(|c| c.name == "Admin")
+            .unwrap();
+        assert_eq!(admin.requests.len(), 2);
+        let store = result
+            .collection
+            .children
+            .iter()
+            .find(|c| c.name == "Store")
+            .unwrap();
+        assert_eq!(store.requests.len(), 1);
+    }
+
+    #[test]
+    fn test_openapi_tag_grouping() {
+        let json = r#"{
+            "openapi": "3.0.3",
+            "info": {"title": "Test API", "version": "1.0"},
+            "paths": {
+                "/users": {
+                    "get": {
+                        "summary": "List Users",
+                        "tags": ["Users"],
+                        "responses": {"200": {"description": "ok"}}
+                    }
+                },
+                "/users/{id}": {
+                    "get": {
+                        "summary": "Get User",
+                        "tags": ["Users"],
+                        "responses": {"200": {"description": "ok"}}
+                    }
+                },
+                "/orders": {
+                    "get": {
+                        "summary": "List Orders",
+                        "tags": ["Orders"],
+                        "responses": {"200": {"description": "ok"}}
+                    }
+                },
+                "/health": {
+                    "get": {
+                        "summary": "Health Check",
+                        "responses": {"200": {"description": "ok"}}
+                    }
+                }
+            }
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path()).unwrap();
+        assert_eq!(result.collection.children.len(), 2);
+        assert_eq!(result.collection.requests.len(), 1);
+        assert_eq!(result.collection.requests[0].name, "Health Check");
+        let users = result
+            .collection
+            .children
+            .iter()
+            .find(|c| c.name == "Users")
+            .unwrap();
+        assert_eq!(users.requests.len(), 2);
+        let orders = result
+            .collection
+            .children
+            .iter()
+            .find(|c| c.name == "Orders")
+            .unwrap();
+        assert_eq!(orders.requests.len(), 1);
+    }
+
+    #[test]
+    fn test_openapi_path_param_conversion() {
+        let json = r#"{
+            "openapi": "3.0.3",
+            "info": {"title": "Test", "version": "1.0"},
+            "paths": {
+                "/users/{user_id}/posts/{post_id}": {
+                    "get": {
+                        "summary": "Get Post",
+                        "parameters": [
+                            {"name": "user_id", "in": "path", "required": true, "schema": {"type": "string"}},
+                            {"name": "post_id", "in": "path", "required": true, "schema": {"type": "string"}}
+                        ],
+                        "responses": {"200": {"description": "ok"}}
+                    }
+                }
+            }
+        }"#;
+        let path = write_temp_json(json);
+        let result = import_openapi(path.path()).unwrap();
+        let all_requests = collect_all_requests(&result.collection);
+        assert!(all_requests[0].url.contains("{{user_id}}"));
+        assert!(all_requests[0].url.contains("{{post_id}}"));
+        // Verify no single-brace params remain (double braces replaced single)
+        let url = &all_requests[0].url;
+        let without_double = url.replace("{{", "").replace("}}", "");
+        assert!(!without_double.contains('{'));
+        assert!(!without_double.contains('}'));
     }
 }
