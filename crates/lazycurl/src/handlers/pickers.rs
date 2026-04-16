@@ -8,15 +8,13 @@ pub fn handle_method_picker(app: &mut App, action: &Action) {
         Action::Cancel => {
             app.show_method_picker = false;
         }
-        Action::MoveUp => {
-            if app.method_picker_cursor > 0 {
-                app.method_picker_cursor -= 1;
-            }
+        Action::MoveUp if app.method_picker_cursor > 0 => {
+            app.method_picker_cursor -= 1;
         }
-        Action::MoveDown => {
-            if app.method_picker_cursor + 1 < lazycurl_core::types::Method::ALL.len() {
-                app.method_picker_cursor += 1;
-            }
+        Action::MoveDown
+            if app.method_picker_cursor + 1 < lazycurl_core::types::Method::ALL.len() =>
+        {
+            app.method_picker_cursor += 1;
         }
         Action::Enter => {
             let method = lazycurl_core::types::Method::ALL[app.method_picker_cursor];
@@ -33,15 +31,11 @@ pub fn handle_auth_picker(app: &mut App, action: &Action) {
         Action::Cancel => {
             app.show_auth_picker = false;
         }
-        Action::MoveUp => {
-            if app.auth_picker_cursor > 0 {
-                app.auth_picker_cursor -= 1;
-            }
+        Action::MoveUp if app.auth_picker_cursor > 0 => {
+            app.auth_picker_cursor -= 1;
         }
-        Action::MoveDown => {
-            if app.auth_picker_cursor < app::AUTH_TYPE_LABELS.len() - 1 {
-                app.auth_picker_cursor += 1;
-            }
+        Action::MoveDown if app.auth_picker_cursor < app::AUTH_TYPE_LABELS.len() - 1 => {
+            app.auth_picker_cursor += 1;
         }
         Action::Enter => {
             app.select_auth_type(app.auth_picker_cursor);
@@ -59,10 +53,8 @@ pub fn handle_export_picker(app: &mut App, action: &Action) {
         Action::Cancel => {
             app.show_export_picker = false;
         }
-        Action::MoveUp => {
-            if app.export_format_cursor > 0 {
-                app.export_format_cursor -= 1;
-            }
+        Action::MoveUp if app.export_format_cursor > 0 => {
+            app.export_format_cursor -= 1;
         }
         Action::MoveDown => {
             let max = app.export_formats().len().saturating_sub(1);
@@ -70,11 +62,9 @@ pub fn handle_export_picker(app: &mut App, action: &Action) {
                 app.export_format_cursor += 1;
             }
         }
-        Action::CyclePaneForward => {
-            if app.export_collection_available {
-                app.export_scope_is_collection = !app.export_scope_is_collection;
-                app.export_format_cursor = 0;
-            }
+        Action::CyclePaneForward if app.export_collection_available => {
+            app.export_scope_is_collection = !app.export_scope_is_collection;
+            app.export_format_cursor = 0;
         }
         Action::Enter => {
             let format = app.selected_export_format();
@@ -95,15 +85,11 @@ pub fn handle_collection_picker(app: &mut App, action: &Action) {
             app.show_collection_picker = false;
             app.status_message = None;
         }
-        Action::MoveUp => {
-            if app.picker_cursor > 0 {
-                app.picker_cursor -= 1;
-            }
+        Action::MoveUp if app.picker_cursor > 0 => {
+            app.picker_cursor -= 1;
         }
-        Action::MoveDown => {
-            if app.picker_cursor + 1 < filtered_count {
-                app.picker_cursor += 1;
-            }
+        Action::MoveDown if app.picker_cursor + 1 < filtered_count => {
+            app.picker_cursor += 1;
         }
         Action::Enter => {
             // Map picker_cursor back to the original collection index
@@ -192,15 +178,11 @@ pub fn handle_project_picker(app: &mut App, action: &Action) {
         Action::Cancel => {
             app.show_project_picker = false;
         }
-        Action::MoveUp => {
-            if app.project_picker_cursor > 0 {
-                app.project_picker_cursor -= 1;
-            }
+        Action::MoveUp if app.project_picker_cursor > 0 => {
+            app.project_picker_cursor -= 1;
         }
-        Action::MoveDown => {
-            if app.project_picker_cursor + 1 < app.all_projects.len() {
-                app.project_picker_cursor += 1;
-            }
+        Action::MoveDown if app.project_picker_cursor + 1 < app.all_projects.len() => {
+            app.project_picker_cursor += 1;
         }
         Action::Enter => {
             if let Some((project, slug)) = app.all_projects.get(app.project_picker_cursor).cloned()
@@ -243,10 +225,8 @@ pub fn handle_project_picker(app: &mut App, action: &Action) {
                 app.project_picker_start_rename();
             }
         }
-        Action::Rename => {
-            if !app.all_projects.is_empty() {
-                app.project_picker_start_rename();
-            }
+        Action::Rename if !app.all_projects.is_empty() => {
+            app.project_picker_start_rename();
         }
         Action::CloseProject => {
             // Close project (remove from tab bar)
@@ -260,10 +240,8 @@ pub fn handle_project_picker(app: &mut App, action: &Action) {
                 }
             }
         }
-        Action::DeleteItem => {
-            if !app.all_projects.is_empty() {
-                app.project_picker_request_delete();
-            }
+        Action::DeleteItem if !app.all_projects.is_empty() => {
+            app.project_picker_request_delete();
         }
         Action::Quit => app.should_quit = true,
         _ => {}
@@ -276,15 +254,13 @@ pub fn handle_body_type_picker(app: &mut App, action: &Action) {
         Action::Cancel => {
             app.show_body_type_picker = false;
         }
-        Action::MoveUp => {
-            if app.body_type_picker_cursor > 0 {
-                app.body_type_picker_cursor -= 1;
-            }
+        Action::MoveUp if app.body_type_picker_cursor > 0 => {
+            app.body_type_picker_cursor -= 1;
         }
-        Action::MoveDown => {
-            if app.body_type_picker_cursor + 1 < lazycurl_core::types::BodyType::ALL.len() {
-                app.body_type_picker_cursor += 1;
-            }
+        Action::MoveDown
+            if app.body_type_picker_cursor + 1 < lazycurl_core::types::BodyType::ALL.len() =>
+        {
+            app.body_type_picker_cursor += 1;
         }
         Action::Enter => {
             let body_type = lazycurl_core::types::BodyType::ALL[app.body_type_picker_cursor];
@@ -302,10 +278,8 @@ pub fn handle_import_overlay(app: &mut App, action: &Action) {
             Action::Cancel => {
                 app.show_import_overlay = false;
             }
-            Action::MoveUp => {
-                if app.import_format_cursor > 0 {
-                    app.import_format_cursor -= 1;
-                }
+            Action::MoveUp if app.import_format_cursor > 0 => {
+                app.import_format_cursor -= 1;
             }
             Action::MoveDown => {
                 let max = lazycurl_core::import::ImportFormat::all()
@@ -410,33 +384,23 @@ pub fn handle_env_manager(app: &mut App, action: &Action) {
             // Return to variables overlay if it was open underneath
             app.show_env_manager = false;
         }
-        Action::MoveUp => {
-            if app.env_manager_cursor > 0 {
-                app.env_manager_cursor -= 1;
-            }
+        Action::MoveUp if app.env_manager_cursor > 0 => {
+            app.env_manager_cursor -= 1;
         }
-        Action::MoveDown => {
-            if env_count > 0 && app.env_manager_cursor + 1 < env_count {
-                app.env_manager_cursor += 1;
-            }
+        Action::MoveDown if env_count > 0 && app.env_manager_cursor + 1 < env_count => {
+            app.env_manager_cursor += 1;
         }
-        Action::Enter => {
-            if env_count > 0 {
-                app.env_manager_activate();
-            }
+        Action::Enter if env_count > 0 => {
+            app.env_manager_activate();
         }
         Action::NewRequest => {
             app.env_manager_create();
         }
-        Action::Rename => {
-            if env_count > 0 {
-                app.env_manager_start_rename();
-            }
+        Action::Rename if env_count > 0 => {
+            app.env_manager_start_rename();
         }
-        Action::DeleteItem => {
-            if env_count > 0 {
-                app.env_manager_request_delete();
-            }
+        Action::DeleteItem if env_count > 0 => {
+            app.env_manager_request_delete();
         }
         Action::Quit => app.should_quit = true,
         _ => {}

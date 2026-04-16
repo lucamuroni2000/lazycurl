@@ -72,7 +72,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
                 .filter_map(|e| matcher.fuzzy_match(&e.desc, search).map(|score| (score, e)))
                 .collect();
             if !scored.is_empty() {
-                scored.sort_by(|a, b| b.0.cmp(&a.0)); // highest score first
+                scored.sort_by_key(|b| std::cmp::Reverse(b.0)); // highest score first
                 lines.push(section.header.clone());
                 for (_score, entry) in scored {
                     entry_indices.push(lines.len());

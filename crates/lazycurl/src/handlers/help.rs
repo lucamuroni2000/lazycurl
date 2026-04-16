@@ -58,9 +58,9 @@ pub fn handle(app: &mut App, action: &Action) {
             app.help_search_input.set_content(&app.help_search);
             app.input_mode = app::InputMode::Editing;
         }
-        Action::CharInput(c) => {
+        Action::CharInput(c)
             // Clear search using the same key as log_viewer.clear_search
-            if !app.help_search.is_empty() {
+            if !app.help_search.is_empty() => {
                 if let Some(key) = app.config.keybindings.get("log_viewer.clear_search") {
                     if c.to_string() == *key {
                         app.help_search.clear();
@@ -68,7 +68,6 @@ pub fn handle(app: &mut App, action: &Action) {
                     }
                 }
             }
-        }
         Action::Quit => {
             app.should_quit = true;
         }

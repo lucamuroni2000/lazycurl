@@ -5,10 +5,8 @@ use lazycurl_core::types::Auth;
 pub async fn handle(app: &mut App, action: &Action) {
     match action {
         Action::Quit => app.should_quit = true,
-        Action::Cancel => {
-            if app.input_mode == app::InputMode::Editing {
-                app.cancel_editing();
-            }
+        Action::Cancel if app.input_mode == app::InputMode::Editing => {
+            app.cancel_editing();
         }
         Action::CyclePaneForward => {
             if app.input_mode == app::InputMode::Editing {
@@ -47,21 +45,18 @@ pub async fn handle(app: &mut App, action: &Action) {
         Action::FocusCollections => app.toggle_pane(0),
         Action::FocusRequest => app.toggle_pane(1),
         Action::FocusResponse => app.toggle_pane(2),
-        Action::FocusUrl => {
-            if app.active_pane == app::Pane::Request {
-                app.start_editing(app::EditField::Url);
-            }
+        Action::FocusUrl if app.active_pane == app::Pane::Request => {
+            app.start_editing(app::EditField::Url);
         }
         Action::RevealSecrets => app.secrets_revealed = !app.secrets_revealed,
-        Action::OpenLogViewer => {
+        Action::OpenLogViewer
             if !app.show_method_picker
                 && !app.show_collection_picker
                 && !app.show_project_picker
                 && !app.show_env_manager
-                && !app.show_variables
-            {
-                app.open_log_viewer();
-            }
+                && !app.show_variables =>
+        {
+            app.open_log_viewer();
         }
         Action::Help => app.show_help = !app.show_help,
         Action::OpenVariables => {
@@ -111,18 +106,17 @@ pub async fn handle(app: &mut App, action: &Action) {
         }
         Action::SwitchEnvironment => app.cycle_environment(),
         Action::ManageEnvironments => app.open_env_manager(),
-        Action::OpenExportPicker => {
+        Action::OpenExportPicker
             if !app.show_method_picker
                 && !app.show_collection_picker
                 && !app.show_project_picker
                 && !app.show_env_manager
                 && !app.show_variables
-                && !app.show_log_viewer
-            {
-                app.open_export_picker();
-            }
+                && !app.show_log_viewer =>
+        {
+            app.open_export_picker();
         }
-        Action::OpenImportOverlay => {
+        Action::OpenImportOverlay
             if !app.show_method_picker
                 && !app.show_collection_picker
                 && !app.show_project_picker
@@ -130,10 +124,9 @@ pub async fn handle(app: &mut App, action: &Action) {
                 && !app.show_variables
                 && !app.show_log_viewer
                 && !app.show_export_picker
-                && !app.show_import_overlay
-            {
-                app.open_import_overlay();
-            }
+                && !app.show_import_overlay =>
+        {
+            app.open_import_overlay();
         }
         // Navigation actions (Normal mode)
         Action::MoveUp => app.handle_move_up(),
@@ -155,15 +148,11 @@ pub async fn handle(app: &mut App, action: &Action) {
             app::Pane::Response => app.prev_response_tab(),
             _ => {}
         },
-        Action::AddItem => {
-            if app.active_pane == app::Pane::Request {
-                match app.request_tab() {
-                    app::RequestTab::Headers => app.add_header(),
-                    app::RequestTab::Params => app.add_param(),
-                    _ => {}
-                }
-            }
-        }
+        Action::AddItem if app.active_pane == app::Pane::Request => match app.request_tab() {
+            app::RequestTab::Headers => app.add_header(),
+            app::RequestTab::Params => app.add_param(),
+            _ => {}
+        },
         Action::NextProject => app.next_project(),
         Action::PrevProject => app.prev_project(),
         Action::OpenProjectPicker => {
@@ -191,70 +180,58 @@ pub async fn handle(app: &mut App, action: &Action) {
                 }
             }
         }
-        Action::CycleMethod => {
-            if app.active_pane == app::Pane::Request {
-                app.open_method_picker();
-            }
+        Action::CycleMethod if app.active_pane == app::Pane::Request => {
+            app.open_method_picker();
         }
-        Action::ToggleEnabled => {
-            if app.active_pane == app::Pane::Request {
-                match app.request_tab() {
-                    app::RequestTab::Headers => app.toggle_header_enabled(),
-                    app::RequestTab::Params => app.toggle_param_enabled(),
-                    _ => {}
-                }
-            }
-        }
-        Action::Copy => {
-            if app.active_pane == app::Pane::Response && app.input_mode == app::InputMode::Normal {
-                if let Some(resp) = app.last_response() {
-                    let text = if resp.body.is_empty() {
-                        "[no response body]".to_string()
-                    } else {
-                        resp.body.clone()
-                    };
-                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                        let _ = clipboard.set_text(&text);
-                        app.status_message = Some("Copied response body to clipboard".to_string());
-                    }
+        Action::ToggleEnabled if app.active_pane == app::Pane::Request => match app.request_tab() {
+            app::RequestTab::Headers => app.toggle_header_enabled(),
+            app::RequestTab::Params => app.toggle_param_enabled(),
+            _ => {}
+        },
+        Action::Copy
+            if app.active_pane == app::Pane::Response
+                && app.input_mode == app::InputMode::Normal =>
+        {
+            if let Some(resp) = app.last_response() {
+                let text = if resp.body.is_empty() {
+                    "[no response body]".to_string()
+                } else {
+                    resp.body.clone()
+                };
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    let _ = clipboard.set_text(&text);
+                    app.status_message = Some("Copied response body to clipboard".to_string());
                 }
             }
         }
         Action::Rename => app.handle_rename(),
-        Action::ToggleCollapse => {
-            if app.active_pane == app::Pane::Collections {
-                app.toggle_collapse();
-            }
+        Action::ToggleCollapse if app.active_pane == app::Pane::Collections => {
+            app.toggle_collapse();
         }
-        Action::DuplicateItem => {
-            if app.active_pane == app::Pane::Collections {
-                app.handle_duplicate();
-            }
+        Action::DuplicateItem if app.active_pane == app::Pane::Collections => {
+            app.handle_duplicate();
         }
-        Action::MoveRequest => {
-            if app.active_pane == app::Pane::Collections {
-                app.handle_move_request();
-            }
+        Action::MoveRequest if app.active_pane == app::Pane::Collections => {
+            app.handle_move_request();
         }
-        Action::ChangeAuthType => {
+        Action::ChangeAuthType
             if app.active_pane == app::Pane::Request
                 && app.request_tab() == app::RequestTab::Auth
-                && app.input_mode == app::InputMode::Normal
-            {
-                app.open_auth_picker();
-            }
+                && app.input_mode == app::InputMode::Normal =>
+        {
+            app.open_auth_picker();
         }
-        Action::CycleBodyType => {
-            if app.active_pane == app::Pane::Request && app.request_tab() == app::RequestTab::Body {
-                app.open_body_type_picker();
-            }
-        }
-        Action::ToggleAutoHeaders => {
+        Action::CycleBodyType
             if app.active_pane == app::Pane::Request
-                && app.request_tab() == app::RequestTab::Headers
-            {
-                app.show_auto_headers = !app.show_auto_headers;
-            }
+                && app.request_tab() == app::RequestTab::Body =>
+        {
+            app.open_body_type_picker();
+        }
+        Action::ToggleAutoHeaders
+            if app.active_pane == app::Pane::Request
+                && app.request_tab() == app::RequestTab::Headers =>
+        {
+            app.show_auto_headers = !app.show_auto_headers;
         }
         // Editing actions
         Action::CharInput(c) => {

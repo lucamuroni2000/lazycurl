@@ -99,10 +99,8 @@ pub fn handle(app: &mut App, action: &Action) {
                 app.show_log_viewer = false;
             }
         }
-        Action::CyclePaneForward | Action::CyclePaneBackward => {
-            if app.log_viewer_show_detail {
-                app.log_viewer_detail_focused = !app.log_viewer_detail_focused;
-            }
+        Action::CyclePaneForward | Action::CyclePaneBackward if app.log_viewer_show_detail => {
+            app.log_viewer_detail_focused = !app.log_viewer_detail_focused;
         }
         Action::MoveUp => {
             if app.log_viewer_detail_focused {
@@ -153,47 +151,43 @@ pub fn handle(app: &mut App, action: &Action) {
         Action::LogClearSearch => {
             app.log_viewer_search.clear();
         }
-        Action::LogNextMatch => {
-            if !app.log_viewer_search.is_empty() {
-                let search_lower = app.log_viewer_search.to_lowercase();
-                let filtered = app.filtered_log_entries();
-                let start = app.log_viewer_cursor + 1;
-                if let Some(pos) = filtered
-                    .iter()
-                    .skip(start)
-                    .position(|e| e.request.url.to_lowercase().contains(&search_lower))
-                {
-                    app.log_viewer_cursor = start + pos;
-                } else if let Some(pos) = filtered
-                    .iter()
-                    .position(|e| e.request.url.to_lowercase().contains(&search_lower))
-                {
-                    app.log_viewer_cursor = pos;
-                }
+        Action::LogNextMatch if !app.log_viewer_search.is_empty() => {
+            let search_lower = app.log_viewer_search.to_lowercase();
+            let filtered = app.filtered_log_entries();
+            let start = app.log_viewer_cursor + 1;
+            if let Some(pos) = filtered
+                .iter()
+                .skip(start)
+                .position(|e| e.request.url.to_lowercase().contains(&search_lower))
+            {
+                app.log_viewer_cursor = start + pos;
+            } else if let Some(pos) = filtered
+                .iter()
+                .position(|e| e.request.url.to_lowercase().contains(&search_lower))
+            {
+                app.log_viewer_cursor = pos;
             }
         }
-        Action::LogPrevMatch => {
-            if !app.log_viewer_search.is_empty() {
-                let search_lower = app.log_viewer_search.to_lowercase();
-                let filtered = app.filtered_log_entries();
-                if app.log_viewer_cursor > 0 {
-                    if let Some(pos) = filtered[..app.log_viewer_cursor]
-                        .iter()
-                        .rposition(|e| e.request.url.to_lowercase().contains(&search_lower))
-                    {
-                        app.log_viewer_cursor = pos;
-                    } else if let Some(pos) = filtered
-                        .iter()
-                        .rposition(|e| e.request.url.to_lowercase().contains(&search_lower))
-                    {
-                        app.log_viewer_cursor = pos;
-                    }
+        Action::LogPrevMatch if !app.log_viewer_search.is_empty() => {
+            let search_lower = app.log_viewer_search.to_lowercase();
+            let filtered = app.filtered_log_entries();
+            if app.log_viewer_cursor > 0 {
+                if let Some(pos) = filtered[..app.log_viewer_cursor]
+                    .iter()
+                    .rposition(|e| e.request.url.to_lowercase().contains(&search_lower))
+                {
+                    app.log_viewer_cursor = pos;
                 } else if let Some(pos) = filtered
                     .iter()
                     .rposition(|e| e.request.url.to_lowercase().contains(&search_lower))
                 {
                     app.log_viewer_cursor = pos;
                 }
+            } else if let Some(pos) = filtered
+                .iter()
+                .rposition(|e| e.request.url.to_lowercase().contains(&search_lower))
+            {
+                app.log_viewer_cursor = pos;
             }
         }
         Action::Rename => {

@@ -36,14 +36,13 @@ pub fn handle(app: &mut App, action: &Action) {
                 app.var_start_edit_value();
             }
         }
-        Action::Rename => {
+        Action::Rename
             // Edit key of selected variable
-            if app.input_mode != app::InputMode::Editing {
+            if app.input_mode != app::InputMode::Editing => {
                 app.var_start_edit_key();
             }
-        }
-        Action::AddItem => {
-            if app.input_mode != app::InputMode::Editing {
+        Action::AddItem
+            if app.input_mode != app::InputMode::Editing => {
                 // If on Environment/Collection tier with nothing selected, create one first
                 let needs_container = match app.var_tier {
                     app::VarTier::Environment => app.active_environment().is_none(),
@@ -70,7 +69,6 @@ pub fn handle(app: &mut App, action: &Action) {
                     app.var_add();
                 }
             }
-        }
         Action::ManageEnvironments => {
             // Open env manager on top of variables overlay
             app.open_env_manager();
@@ -83,31 +81,27 @@ pub fn handle(app: &mut App, action: &Action) {
                 ws.data.var_environment_idx = ws.data.active_environment;
             }
         }
-        Action::DeleteItem => {
-            if app.input_mode != app::InputMode::Editing {
+        Action::DeleteItem
+            if app.input_mode != app::InputMode::Editing => {
                 app.var_request_delete();
             }
-        }
-        Action::ToggleEnabled => {
-            if app.input_mode != app::InputMode::Editing {
+        Action::ToggleEnabled
+            if app.input_mode != app::InputMode::Editing => {
                 app.var_toggle_secret();
             }
-        }
         Action::RevealSecrets => {
             app.secrets_revealed = !app.secrets_revealed;
         }
-        Action::CycleContainerBackward => {
+        Action::CycleContainerBackward
             if app.input_mode != app::InputMode::Editing && app.var_tier == app::VarTier::Collection
-            {
+            => {
                 app.var_cycle_container_backward();
             }
-        }
-        Action::CycleContainerForward => {
+        Action::CycleContainerForward
             if app.input_mode != app::InputMode::Editing && app.var_tier == app::VarTier::Collection
-            {
+            => {
                 app.var_cycle_container_forward();
             }
-        }
         // Text editing actions for variable inputs
         Action::CharInput(c) => {
             if let Some(input) = app.var_active_input() {
