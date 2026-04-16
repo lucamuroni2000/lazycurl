@@ -24,7 +24,7 @@ fn default_preset_keybindings() -> HashMap<String, String> {
     // Global (35 keys)
     map.insert("quit".into(), "q".into());
     map.insert("cancel".into(), "escape".into());
-    map.insert("help".into(), "f1".into());
+    map.insert("help".into(), "?".into());
     map.insert("search".into(), "/".into());
     map.insert("send_request".into(), "ctrl+enter".into());
     map.insert("save_request".into(), "ctrl+s".into());
@@ -60,7 +60,6 @@ fn default_preset_keybindings() -> HashMap<String, String> {
     // confirm_yes is NOT in the keymap — confirmations bypass the keymap
     // and resolve raw key events directly (y/Y → confirm, Esc → cancel)
     map.insert("close_project".into(), "space".into());
-    map.insert("toggle_collapse".into(), "space".into());
     map.insert("duplicate_item".into(), "c".into());
     map.insert("move_request".into(), "m".into());
     map.insert("cycle_body_type".into(), "b".into());
@@ -82,15 +81,16 @@ fn default_preset_keybindings() -> HashMap<String, String> {
 
 fn vim_preset_keybindings() -> HashMap<String, String> {
     let mut map = default_preset_keybindings();
-    // Navigation — vim-style hjkl
+    // Navigation — hjkl as arrow keys within a tab
     map.insert("move_up".into(), "k".into());
     map.insert("move_down".into(), "j".into());
-    map.insert("cycle_pane_forward".into(), "l".into());
-    map.insert("cycle_pane_backward".into(), "h".into());
-    map.insert("next_tab".into(), "]".into());
-    map.insert("prev_tab".into(), "[".into());
-    map.insert("next_project".into(), "}".into());
-    map.insert("prev_project".into(), "{".into());
+    map.insert("next_tab".into(), "l".into());
+    map.insert("prev_tab".into(), "h".into());
+    // Shift+H/L switch panels (panes); J/K have no vertical panel equivalent
+    map.insert("cycle_pane_forward".into(), "L".into());
+    map.insert("cycle_pane_backward".into(), "H".into());
+    map.insert("next_project".into(), "]".into());
+    map.insert("prev_project".into(), "[".into());
     // Commands — single letters where possible
     map.insert("help".into(), "?".into());
     map.insert("new_request".into(), "n".into());
@@ -100,13 +100,13 @@ fn vim_preset_keybindings() -> HashMap<String, String> {
     map.insert("open_variables".into(), "v".into());
     map.insert("open_export".into(), "x".into());
     map.insert("open_import".into(), "I".into());
-    map.insert("open_log_viewer".into(), "L".into());
+    // open_log_viewer falls back to ctrl+l from default preset (L is now cycle_pane_forward)
     map.insert("focus_url".into(), "u".into());
     map.insert("cycle_method".into(), "M".into());
     map.insert("change_auth_type".into(), "t".into());
-    // Variables context ([ ] taken by next_tab/prev_tab, use { } instead)
-    map.insert("variables.cycle_container_fwd".into(), "}".into());
-    map.insert("variables.cycle_container_back".into(), "{".into());
+    // Variables context — ] [ shared with next_project/prev_project (different input context)
+    map.insert("variables.cycle_container_fwd".into(), "]".into());
+    map.insert("variables.cycle_container_back".into(), "[".into());
     map
 }
 
@@ -507,7 +507,7 @@ mod tests {
             "ctrl+right"
         );
         assert_eq!(config.keybindings.get("prev_project").unwrap(), "ctrl+left");
-        assert_eq!(config.keybindings.get("help").unwrap(), "f1");
+        assert_eq!(config.keybindings.get("help").unwrap(), "?");
         // v1 → v2 stripped
         assert_eq!(config.keybindings.get("open_variables").unwrap(), "V");
         assert_eq!(config.keybindings.get("cycle_method").unwrap(), "ctrl+m");
@@ -529,10 +529,10 @@ mod tests {
         // Old defaults stripped, vim preset takes over
         assert_eq!(config.keybindings.get("focus_collections").unwrap(), "1");
         assert_eq!(config.keybindings.get("open_export").unwrap(), "x");
-        assert_eq!(config.keybindings.get("next_project").unwrap(), "}");
-        assert_eq!(config.keybindings.get("prev_project").unwrap(), "{");
+        assert_eq!(config.keybindings.get("next_project").unwrap(), "]");
+        assert_eq!(config.keybindings.get("prev_project").unwrap(), "[");
         assert_eq!(config.keybindings.get("move_up").unwrap(), "k");
-        assert_eq!(config.keybindings.get("cycle_pane_forward").unwrap(), "l");
+        assert_eq!(config.keybindings.get("cycle_pane_forward").unwrap(), "L");
     }
 
     #[test]
@@ -560,7 +560,7 @@ mod tests {
         assert_eq!(loaded.keymap_preset, "vim");
         assert_eq!(loaded.keybindings.get("help").unwrap(), "?");
         assert_eq!(loaded.keybindings.get("move_up").unwrap(), "k");
-        assert_eq!(loaded.keybindings.get("cycle_pane_forward").unwrap(), "l");
+        assert_eq!(loaded.keybindings.get("cycle_pane_forward").unwrap(), "L");
     }
 
     #[test]
@@ -599,7 +599,7 @@ mod tests {
         assert_eq!(config.keymap_preset, "vim");
         assert_eq!(config.keybindings.get("help").unwrap(), "?");
         assert_eq!(config.keybindings.get("move_up").unwrap(), "k");
-        assert_eq!(config.keybindings.get("cycle_pane_forward").unwrap(), "l");
+        assert_eq!(config.keybindings.get("cycle_pane_forward").unwrap(), "L");
     }
 
     #[test]
@@ -613,28 +613,29 @@ mod tests {
     #[test]
     fn test_preset_keybindings_dispatches_by_name() {
         let default_kb = preset_keybindings("default");
-        assert_eq!(default_kb["help"], "f1");
+        assert_eq!(default_kb["help"], "?");
 
         let vim_kb = preset_keybindings("vim");
         assert_eq!(vim_kb["help"], "?");
 
         let fallback_kb = preset_keybindings("nonexistent");
-        assert_eq!(fallback_kb["help"], "f1");
+        assert_eq!(fallback_kb["help"], "?");
     }
 
     #[test]
     fn test_vim_preset_v2_overrides() {
         let kb = vim_preset_keybindings();
-        assert_eq!(kb.len(), 51);
-        // Vim-specific navigation
+        assert_eq!(kb.len(), 50);
+        // Vim-specific navigation — hjkl as arrows within a tab
         assert_eq!(kb["move_up"], "k");
         assert_eq!(kb["move_down"], "j");
-        assert_eq!(kb["cycle_pane_forward"], "l");
-        assert_eq!(kb["cycle_pane_backward"], "h");
-        assert_eq!(kb["next_tab"], "]");
-        assert_eq!(kb["prev_tab"], "[");
-        assert_eq!(kb["next_project"], "}");
-        assert_eq!(kb["prev_project"], "{");
+        assert_eq!(kb["next_tab"], "l");
+        assert_eq!(kb["prev_tab"], "h");
+        // Shift+H/L switch panels (panes)
+        assert_eq!(kb["cycle_pane_forward"], "L");
+        assert_eq!(kb["cycle_pane_backward"], "H");
+        assert_eq!(kb["next_project"], "]");
+        assert_eq!(kb["prev_project"], "[");
         // Vim-specific commands (single letters)
         assert_eq!(kb["help"], "?");
         assert_eq!(kb["new_request"], "n");
@@ -643,13 +644,14 @@ mod tests {
         assert_eq!(kb["open_project_picker"], "p");
         assert_eq!(kb["open_variables"], "v");
         assert_eq!(kb["open_export"], "x");
-        assert_eq!(kb["open_log_viewer"], "L");
+        // open_log_viewer falls back to ctrl+l from default preset
+        assert_eq!(kb["open_log_viewer"], "ctrl+l");
         assert_eq!(kb["focus_url"], "u");
         assert_eq!(kb["cycle_method"], "M");
         assert_eq!(kb["change_auth_type"], "t");
-        // Variables context ([ ] taken by tabs, use { })
-        assert_eq!(kb["variables.cycle_container_fwd"], "}");
-        assert_eq!(kb["variables.cycle_container_back"], "{");
+        // Variables context — ] [ shared with projects (different input context)
+        assert_eq!(kb["variables.cycle_container_fwd"], "]");
+        assert_eq!(kb["variables.cycle_container_back"], "[");
         // Inherited from default (unchanged)
         assert_eq!(kb["quit"], "q");
         assert_eq!(kb["cancel"], "escape");
@@ -663,7 +665,6 @@ mod tests {
         assert_eq!(kb["toggle_enabled"], "s");
         assert_eq!(kb["copy"], "y");
         assert_eq!(kb["close_project"], "space");
-        assert_eq!(kb["toggle_collapse"], "space");
         assert_eq!(kb["duplicate_item"], "c");
         assert_eq!(kb["move_request"], "m");
         assert_eq!(kb["cycle_body_type"], "b");
@@ -673,11 +674,11 @@ mod tests {
     #[test]
     fn test_default_preset_v2_has_all_keys() {
         let kb = default_preset_keybindings();
-        assert_eq!(kb.len(), 51);
+        assert_eq!(kb.len(), 50);
         // Global
         assert_eq!(kb["quit"], "q");
         assert_eq!(kb["cancel"], "escape");
-        assert_eq!(kb["help"], "f1");
+        assert_eq!(kb["help"], "?");
         assert_eq!(kb["search"], "/");
         assert_eq!(kb["send_request"], "ctrl+enter");
         assert_eq!(kb["save_request"], "ctrl+s");
@@ -712,7 +713,6 @@ mod tests {
         assert_eq!(kb["toggle_enabled"], "s");
         assert_eq!(kb["copy"], "y");
         assert_eq!(kb["close_project"], "space");
-        assert_eq!(kb["toggle_collapse"], "space");
         assert_eq!(kb["duplicate_item"], "c");
         assert_eq!(kb["move_request"], "m");
         // Log viewer context
@@ -731,17 +731,16 @@ mod tests {
     #[test]
     fn test_default_preset_has_new_collection_actions() {
         let kb = default_preset_keybindings();
-        assert_eq!(kb.get("toggle_collapse").unwrap(), "space");
+        assert!(kb.get("toggle_collapse").is_none());
         assert_eq!(kb.get("duplicate_item").unwrap(), "c");
         assert_eq!(kb.get("move_request").unwrap(), "m");
-        // close_project moved to space
         assert_eq!(kb.get("close_project").unwrap(), "space");
     }
 
     #[test]
     fn test_vim_preset_has_new_collection_actions() {
         let kb = vim_preset_keybindings();
-        assert_eq!(kb.get("toggle_collapse").unwrap(), "space");
+        assert!(kb.get("toggle_collapse").is_none());
         assert_eq!(kb.get("duplicate_item").unwrap(), "c");
         assert_eq!(kb.get("move_request").unwrap(), "m");
         assert_eq!(kb.get("close_project").unwrap(), "space");

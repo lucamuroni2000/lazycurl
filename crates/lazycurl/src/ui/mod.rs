@@ -61,74 +61,81 @@ pub fn key_pair_for(kb: &HashMap<String, String>, action1: &str, action2: &str) 
     format!("{}/{}", key_for(kb, action1), key_for(kb, action2))
 }
 
-pub fn draw(frame: &mut Frame, app: &App) {
-    let kb = &app.config.keybindings;
-    let pane_layout = layout::compute_layout(frame.area(), app.pane_visible);
+pub fn draw(frame: &mut Frame, app: &mut App) {
+    // All non-help rendering uses an immutable borrow of app + keybindings.
+    // Help overlay needs &mut App (to clamp cursor), so it's rendered last
+    // after the immutable borrows are dropped.
+    {
+        let kb = &app.config.keybindings;
+        let pane_layout = layout::compute_layout(frame.area(), app.pane_visible);
 
-    // Title bar — project tabs + env
-    project_tabs::draw(frame, app, pane_layout.title_bar);
+        // Title bar — project tabs + env
+        project_tabs::draw(frame, app, pane_layout.title_bar);
 
-    // Panes
-    if let Some(area) = pane_layout.collections {
-        collections::draw(frame, app, area);
-    }
-    if let Some(area) = pane_layout.request {
-        request::draw(frame, app, area, kb);
-    }
-    if let Some(area) = pane_layout.response {
-        response::draw(frame, app, area);
-    }
-
-    // Status bar
-    statusbar::draw(frame, app, pane_layout.status_bar, kb);
-
-    // Method picker (rendered relative to request pane)
-    if app.show_method_picker {
+        // Panes
+        if let Some(area) = pane_layout.collections {
+            collections::draw(frame, app, area);
+        }
         if let Some(area) = pane_layout.request {
-            request::draw_method_picker(frame, app, area);
+            request::draw(frame, app, area, kb);
+        }
+        if let Some(area) = pane_layout.response {
+            response::draw(frame, app, area);
+        }
+
+        // Status bar
+        statusbar::draw(frame, app, pane_layout.status_bar, kb);
+
+        // Method picker (rendered relative to request pane)
+        if app.show_method_picker {
+            if let Some(area) = pane_layout.request {
+                request::draw_method_picker(frame, app, area);
+            }
+        }
+
+        // Auth type picker (rendered relative to request pane)
+        if app.show_auth_picker {
+            if let Some(area) = pane_layout.request {
+                request::draw_auth_picker(frame, app, area);
+            }
+        }
+
+        // Body type picker (rendered relative to request pane)
+        if app.show_body_type_picker {
+            if let Some(area) = pane_layout.request {
+                request::draw_body_type_picker(frame, app, area);
+            }
+        }
+
+        // Overlays (on top of everything)
+        if app.show_export_picker {
+            export_picker::draw(frame, app, kb);
+        }
+        if app.show_import_overlay {
+            import_overlay::draw(frame, app, kb);
+        }
+        if app.show_collection_picker {
+            picker::draw_collection_picker(frame, app, kb);
+        }
+        if app.show_variables {
+            variables::draw(frame, app, kb);
+        }
+        if app.show_env_manager {
+            environment_manager::draw(frame, app, kb);
+        }
+        if app.show_project_picker {
+            project_picker::draw(frame, app, kb);
+        }
+        if app.show_log_viewer {
+            log_viewer::draw(frame, app);
+        }
+        if app.show_first_launch {
+            project_picker::draw_first_launch(frame, app);
         }
     }
 
-    // Auth type picker (rendered relative to request pane)
-    if app.show_auth_picker {
-        if let Some(area) = pane_layout.request {
-            request::draw_auth_picker(frame, app, area);
-        }
-    }
-
-    // Body type picker (rendered relative to request pane)
-    if app.show_body_type_picker {
-        if let Some(area) = pane_layout.request {
-            request::draw_body_type_picker(frame, app, area);
-        }
-    }
-
-    // Overlays (on top of everything)
-    if app.show_export_picker {
-        export_picker::draw(frame, app, kb);
-    }
-    if app.show_import_overlay {
-        import_overlay::draw(frame, app, kb);
-    }
-    if app.show_collection_picker {
-        picker::draw_collection_picker(frame, app, kb);
-    }
-    if app.show_variables {
-        variables::draw(frame, app, kb);
-    }
-    if app.show_env_manager {
-        environment_manager::draw(frame, app, kb);
-    }
+    // Help overlay rendered last — needs &mut App to clamp cursor
     if app.show_help {
-        help::draw(frame, kb);
-    }
-    if app.show_project_picker {
-        project_picker::draw(frame, app, kb);
-    }
-    if app.show_log_viewer {
-        log_viewer::draw(frame, app);
-    }
-    if app.show_first_launch {
-        project_picker::draw_first_launch(frame, app);
+        help::draw(frame, app);
     }
 }

@@ -11,7 +11,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-lazycurl-core = { version = "0.5.4", path = "../lazycurl-core" }
+lazycurl-core = { version = "0.5.5", path = "../lazycurl-core" }
 ratatui = "0.30"
 crossterm = "0.29"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "time", "net", "io-util"] }
@@ -21,5 +21,6 @@ serde_json = "1"
 log = "0.4"
 simplelog = "0.12"
 arboard = "3"
+fuzzy-matcher = "0.3"
 open = "5"
 url = "2"

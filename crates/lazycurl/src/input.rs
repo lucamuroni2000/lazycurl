@@ -127,8 +127,14 @@ pub fn build_context_keymaps(keybindings: &HashMap<String, String>) -> ContextKe
 
     for (key, binding) in keybindings {
         if let Some((context, action)) = action_for_key(key) {
-            if let Some(parsed) = parse_binding(binding) {
-                keymaps.entry(context).or_default().insert(parsed, action);
+            // Support multiple bindings per action separated by comma (e.g. "],l")
+            for single in binding.split(',') {
+                if let Some(parsed) = parse_binding(single.trim()) {
+                    keymaps
+                        .entry(context)
+                        .or_default()
+                        .insert(parsed, action.clone());
+                }
             }
         }
     }

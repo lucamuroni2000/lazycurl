@@ -8,8 +8,6 @@ pub async fn handle(app: &mut App, action: &Action) {
         Action::Cancel => {
             if app.input_mode == app::InputMode::Editing {
                 app.cancel_editing();
-            } else if app.show_help {
-                app.show_help = false;
             }
         }
         Action::CyclePaneForward => {

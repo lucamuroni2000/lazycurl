@@ -242,6 +242,9 @@ pub fn handle(app: &mut App, action: &Action) {
                 crate::open_in_file_explorer(&path);
             }
         }
+        Action::Help => {
+            app.show_help = true;
+        }
         Action::Quit => {
             app.should_quit = true;
         }

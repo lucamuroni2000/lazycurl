@@ -248,7 +248,7 @@ pub fn handle_project_picker(app: &mut App, action: &Action) {
                 app.project_picker_start_rename();
             }
         }
-        Action::CloseProject | Action::ToggleCollapse => {
+        Action::CloseProject => {
             // Close project (remove from tab bar)
             if let Some((_, slug)) = app.all_projects.get(app.project_picker_cursor) {
                 if let Some(idx) = app

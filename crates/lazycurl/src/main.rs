@@ -268,7 +268,7 @@ async fn run_loop(
         }
 
         terminal.draw(|frame| {
-            ui::draw(frame, app);
+            ui::draw(frame, &mut *app);
         })?;
 
         // Config auto-reload: poll file mtime while waiting for editor save
@@ -362,6 +362,8 @@ async fn run_loop(
                 handlers::pickers::handle_env_manager(app, &action);
             } else if app.show_variables {
                 handlers::variables::handle(app, &action);
+            } else if app.show_help {
+                handlers::help::handle(app, &action);
             } else if app.show_log_viewer {
                 handlers::log_viewer::handle(app, &action);
             } else {
